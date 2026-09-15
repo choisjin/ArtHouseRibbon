@@ -83,7 +83,51 @@ class OpenAICompatLLM:
         await self._client.aclose()
 
 
+class OllamaLLM:
+    """Ollama 자체 API(/api/chat). think=false 로 qwen3 생각 모드를 확실히 끈다."""
+
+    def __init__(self, settings: Settings):
+        base = settings.llm_base_url.rstrip("/")
+        if base.endswith("/v1"):
+            base = base[:-3]
+        self.base_url = base
+        self.model = settings.llm_model
+        self.max_tokens = settings.llm_max_tokens
+        self.no_think = settings.llm_no_think
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0))
+
+    async def stream(self, messages: List[Message]) -> AsyncIterator[str]:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "think": not self.no_think,
+            "options": {"num_predict": self.max_tokens, "temperature": 0.7},
+        }
+        async with self._client.stream("POST", f"{self.base_url}/api/chat", json=payload) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("error"):
+                    raise RuntimeError(obj["error"])
+                delta = (obj.get("message") or {}).get("content") or ""
+                if delta:
+                    yield delta
+                if obj.get("done"):
+                    break
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
 def make_llm(settings: Settings) -> LLM:
     if settings.llm_provider == "openai":
         return OpenAICompatLLM(settings)
+    if settings.llm_provider == "ollama":
+        return OllamaLLM(settings)
     return MockLLM()

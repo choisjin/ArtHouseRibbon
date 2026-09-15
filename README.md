@@ -55,7 +55,7 @@ cd server && pytest
 2. `pip install mlx-whisper` (호출어까지 쓰려면 `pip install -r requirements-models.txt`)
 3. `.env` 에서
    ```
-   RIBBON_LLM_PROVIDER=openai
+   RIBBON_LLM_PROVIDER=ollama
    RIBBON_STT_PROVIDER=mlx_whisper
    RIBBON_TTS_PROVIDER=mac_say
    ```

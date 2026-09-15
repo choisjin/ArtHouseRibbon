@@ -90,7 +90,7 @@ cp .env.example .env
 
 ```
 RIBBON_STT_PROVIDER=mlx_whisper
-RIBBON_LLM_PROVIDER=openai
+RIBBON_LLM_PROVIDER=ollama
 RIBBON_TTS_PROVIDER=mac_say
 RIBBON_LLM_MODEL=qwen3:30b-a3b
 ```
@@ -112,7 +112,7 @@ source .venv/bin/activate
 uvicorn ribbon.main:app --host 0.0.0.0 --port 8765
 ```
 
-시작 로그에 `stt=mlx_whisper llm=openai tts=mac_say` 가 보여야 한다.
+시작 로그에 `stt=mlx_whisper llm=ollama tts=mac_say` 가 보여야 한다.
 
 맥미니 브라우저(Safari 또는 Chrome)에서 `http://localhost:8765/?mode=debug&demo=1` 을 연다.
 

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     port: int = 8765
 
     stt_provider: str = "mock"          # mock | faster_whisper | mlx_whisper
-    llm_provider: str = "mock"          # mock | openai
+    llm_provider: str = "mock"          # mock | ollama | openai(OpenAI 호환: mlx-lm, vLLM 등)
     tts_provider: str = "browser"       # browser | mac_say
     wakeword_provider: str = "mock"     # mock | openwakeword
 
