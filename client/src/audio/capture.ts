@@ -14,6 +14,10 @@ export class AudioCapture {
   private ctx: AudioContext | null = null;
   private nodes: AudioWorkletNode[] = [];
   private streams: MediaStream[] = [];
+  /** 채널별 최근 음량 (RMS 0~1). 디버그 패널의 막대 표시용 */
+  readonly levels: number[] = [0, 0, 0, 0];
+  /** 장치별로 브라우저가 실제로 준 채널 수 (모노로 열렸는지 확인용) */
+  readonly opened: { label: string; channelCount: number; channelOffset: number }[] = [];
 
   constructor(private socket: RibbonSocket) {}
 
@@ -27,6 +31,7 @@ export class AudioCapture {
     await this.stop();
     this.ctx = new AudioContext();
     await this.ctx.audioWorklet.addModule("/pcm-worklet.js");
+    this.opened.length = 0;
     for (const dev of devices) {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -37,12 +42,23 @@ export class AudioCapture {
           autoGainControl: false,
         },
       });
+      const track = stream.getAudioTracks()[0];
+      const st = track?.getSettings() ?? {};
+      this.opened.push({ label: track?.label ?? dev.deviceId, channelCount: (st as { channelCount?: number }).channelCount ?? 0, channelOffset: dev.channelOffset });
       const source = this.ctx.createMediaStreamSource(stream);
       const node = new AudioWorkletNode(this.ctx, "pcm-capture", {
         numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2, channelCountMode: "explicit",
         processorOptions: { channelOffset: dev.channelOffset },
       });
-      node.port.onmessage = (ev) => this.socket.sendAudio(ev.data.channel, ev.data.pcm as Int16Array);
+      node.port.onmessage = (ev) => {
+        const pcm = ev.data.pcm as Int16Array;
+        const ch = ev.data.channel as number;
+        let sum = 0;
+        for (let i = 0; i < pcm.length; i++) { const v = pcm[i] / 32768; sum += v * v; }
+        const rms = Math.sqrt(sum / pcm.length);
+        if (ch < this.levels.length) this.levels[ch] = Math.max(rms, this.levels[ch] * 0.8); // 살짝 여운을 둔 피크
+        this.socket.sendAudio(ch, pcm);
+      };
       source.connect(node);
       this.nodes.push(node);
       this.streams.push(stream);

@@ -45,7 +45,32 @@ class OpenWakeWordDetector:
         return False
 
 
+class EnergyWakeWord:
+    """호출어 모델이 없을 때의 대안: 채널에 말소리가 min_ms 이상 이어지면 깨어난다.
+    어느 마이크에서 말했는지(채널 배정)를 확인하는 데 유용하다. 잡음이 많은 방에서는 오작동할 수 있다."""
+
+    def __init__(self, settings: Settings, min_ms: int = 350, cooldown_s: float = 3.0):
+        self._threshold = settings.vad_rms_threshold * 1.5
+        self._need = max(1, int(min_ms / 20))   # 20ms 프레임 수
+        self._run = 0
+        self._cooldown = cooldown_s
+        self._last_fire = 0.0
+
+    def process(self, pcm: np.ndarray) -> bool:
+        x = pcm.astype(np.float32) / 32768.0
+        rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
+        self._run = self._run + 1 if rms > self._threshold else 0
+        now = time.time()
+        if self._run >= self._need and now - self._last_fire > self._cooldown:
+            self._last_fire = now
+            self._run = 0
+            return True
+        return False
+
+
 def make_wakeword(settings: Settings) -> WakeWordDetector:
     if settings.wakeword_provider == "openwakeword":
         return OpenWakeWordDetector(settings)
+    if settings.wakeword_provider == "energy":
+        return EnergyWakeWord(settings)
     return MockWakeWord()

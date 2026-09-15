@@ -47,6 +47,8 @@ class ChannelProcessor:
             if self.wakeword.process(pcm):
                 self.start_listening(now)
                 events.append(("wake", None))
+                # 에너지 호출은 말하는 도중에 깨어나므로, 지금 프레임부터 발화로 이어 붙인다
+                self.segmenter.push(pcm)
             return events
 
         utterance = self.segmenter.push(pcm)

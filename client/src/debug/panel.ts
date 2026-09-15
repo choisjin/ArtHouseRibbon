@@ -25,6 +25,9 @@ export function mountDebugPanel(socket: RibbonSocket, getKids: () => KidInfo[]):
     <select id="dbg-dev1"></select>
     <select id="dbg-dev2"></select>
     <button id="dbg-mic">마이크 시작</button>
+    <div id="dbg-vu" style="display:flex;gap:6px;align-items:flex-end;height:44px;margin:6px 0">
+      ${[0, 1, 2, 3].map((c) => `<div style="flex:1;text-align:center;font-size:10px;color:#aaa"><div style="height:30px;background:#222;border-radius:3px;position:relative"><div id="dbg-vu-${c}" style="position:absolute;left:0;right:0;bottom:0;height:0;background:#4aa3ff;border-radius:3px"></div></div>ch${c}</div>`).join("")}
+    </div>
     <div class="log" id="dbg-log"></div>
   `;
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -81,11 +84,27 @@ export function mountDebugPanel(socket: RibbonSocket, getKids: () => KidInfo[]):
     if (capture.running) { await capture.stop(); $("dbg-mic").textContent = "마이크 시작"; return; }
     const devices = [dev1.value && { deviceId: dev1.value, channelOffset: 0 }, dev2.value && { deviceId: dev2.value, channelOffset: 2 }]
       .filter(Boolean) as { deviceId: string; channelOffset: number }[];
+    if (devices.length === 2 && devices[0].deviceId === devices[1].deviceId) {
+      devices.pop();
+      append("두 번째 장치가 첫 번째와 같아서 무시합니다 (세트가 하나면 두 번째는 '사용 안 함')");
+    }
     if (!devices.length) { append("마이크 장치를 고르세요"); return; }
-    await capture.start(devices);
+    try {
+      await capture.start(devices);
+    } catch (e) { append("마이크 열기 실패: " + String(e)); return; }
     $("dbg-mic").textContent = "마이크 중지";
-    append("마이크 전송 중: " + devices.map((d) => d.channelOffset).join(","));
+    for (const o of capture.opened) {
+      append(`열림: ${o.label} → 채널 ${o.channelOffset}-${o.channelOffset + 1}, 브라우저가 준 채널 수 = ${o.channelCount || "?"}` +
+        (o.channelCount === 1 ? "  ⚠ 모노로 열림: 좌우가 합쳐집니다" : ""));
+    }
   };
+  // 채널별 음량 막대 (좌우 분리 확인용)
+  setInterval(() => {
+    for (let c = 0; c < 4; c++) {
+      const bar = document.getElementById(`dbg-vu-${c}`);
+      if (bar) bar.style.height = `${Math.min(100, Math.round(capture.levels[c] * 400))}%`;
+    }
+  }, 80);
 
   socket.on((m) => append("← " + JSON.stringify(m).slice(0, 300)));
   window.addEventListener("keydown", (e) => { if (e.key === "d" && document.activeElement !== text) root.style.display = root.style.display === "none" ? "block" : "none"; });
