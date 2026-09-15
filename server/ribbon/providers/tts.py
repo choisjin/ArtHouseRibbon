@@ -33,6 +33,17 @@ def configure_tts(tts: object, voice: Optional[str], speed: Optional[float], ste
         fn(voice=voice, speed=speed, steps=steps, pitch=pitch)
 
 
+def detect_lang(text: str, default: str = "ko") -> str:
+    """문장의 주 언어. 한글이 하나라도 있으면 ko, 로마자만 있으면 en. (영어 대화 모드용)"""
+    hangul = sum(1 for ch in text if "가" <= ch <= "힣")
+    latin = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    if hangul == 0 and latin >= 2:
+        return "en"
+    if latin > hangul * 3:
+        return "en"
+    return default
+
+
 def pitch_shift(wav: "np.ndarray", sample_rate: int, semitones: float) -> "np.ndarray":
     """길이를 유지한 채 음높이만 바꾼다 (librosa). 0 이면 그대로."""
     if not semitones:
@@ -119,9 +130,10 @@ class SupertonicTTS:
     def _run(self, text: str, voice: Optional[str] = None, speed: Optional[float] = None,
              steps: Optional[int] = None, pitch: Optional[float] = None) -> Optional[bytes]:
         style = self._tts.get_voice_style(voice_name=voice) if voice and voice != self._voice else self._style
+        lang = detect_lang(text, self._lang)  # 영어 문장은 영어 발음으로
         wav, _duration = self._tts.synthesize(
             text=text, voice_style=style, total_steps=int(steps or self._steps), speed=float(speed or self._speed),
-            lang=self._lang, verbose=False)
+            lang=lang, verbose=False)
         wav = pitch_shift(wav, self._sample_rate, self._pitch if pitch is None else float(pitch))
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.wav"
