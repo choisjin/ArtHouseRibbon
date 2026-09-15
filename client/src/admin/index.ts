@@ -77,6 +77,14 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
             <label>한 번에 최대 문장 수 <input name="max_sentences" type="number" min="1" max="6" /></label>
             <label>성격 추가 지시문 <textarea name="persona_extra" rows="4" placeholder="예: 그림 이야기를 할 때 색 이름을 영어로도 한 번 말해준다."></textarea></label>
             <div class="colors">
+              <label class="inline"><input name="ack_enabled" type="checkbox" /> 인식 즉시 반응 ("알았어, 잠깐 생각해 볼게!")</label>
+              <label class="inline"><input name="filler_enabled" type="checkbox" /> 답이 늦으면 추임새 ("음...")</label>
+            </div>
+            <div class="colors">
+              <label>첫 추임새까지 (초) <input name="filler_delay_s" type="number" step="0.5" min="0.5" max="10" /></label>
+              <label>추임새 간격 (초) <input name="filler_interval_s" type="number" step="0.5" min="1" max="15" /></label>
+            </div>
+            <div class="colors">
               <label>몸 <input name="body" type="color" /></label>
               <label>날개 <input name="wing" type="color" /></label>
               <label>머리 리본 <input name="bow" type="color" /></label>
@@ -217,6 +225,9 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     set("name", rc.name); set("voice", rc.voice); set("speed", String(rc.speed)); set("steps", String(rc.steps));
     set("pitch", String(rc.pitch ?? 0));
     set("max_sentences", String(rc.max_sentences)); set("persona_extra", rc.persona_extra ?? "");
+    (rf.elements.namedItem("ack_enabled") as HTMLInputElement).checked = rc.ack_enabled ?? true;
+    (rf.elements.namedItem("filler_enabled") as HTMLInputElement).checked = rc.filler_enabled ?? true;
+    set("filler_delay_s", String(rc.filler_delay_s ?? 1.5)); set("filler_interval_s", String(rc.filler_interval_s ?? 4));
     set("body", rc.colors.body); set("wing", rc.colors.wing); set("bow", rc.colors.bow); set("cheek", rc.colors.cheek);
     $("#speed-out").textContent = String(rc.speed); $("#steps-out").textContent = String(rc.steps);
     $("#pitch-out").textContent = String(rc.pitch ?? 0);
@@ -230,6 +241,9 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       name: s("name").trim() || "리본", voice: s("voice"), speed: Number(s("speed")), steps: Number(s("steps")),
       pitch: Number(s("pitch")) || 0,
       max_sentences: Number(s("max_sentences")) || 3, persona_extra: s("persona_extra"),
+      ack_enabled: (rf.elements.namedItem("ack_enabled") as HTMLInputElement).checked,
+      filler_enabled: (rf.elements.namedItem("filler_enabled") as HTMLInputElement).checked,
+      filler_delay_s: Number(s("filler_delay_s")) || 1.5, filler_interval_s: Number(s("filler_interval_s")) || 4,
       colors: { body: s("body"), wing: s("wing"), bow: s("bow"), cheek: s("cheek") },
     };
   }

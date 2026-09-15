@@ -20,7 +20,13 @@ class LLM(Protocol):
 
 
 class MockLLM:
+    def __init__(self, delay_s: float = 0.0):
+        self.delay_s = delay_s
+
     async def stream(self, messages: List[Message]) -> AsyncIterator[str]:
+        import asyncio
+        if self.delay_s:
+            await asyncio.sleep(self.delay_s)
         user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         reply = f"응, 들었어! '{user[:20]}' 라고 했지? 정말 재미있는 생각이다. 조금 더 이야기해 줄래?"
         for piece in reply.split(" "):
@@ -130,4 +136,4 @@ def make_llm(settings: Settings) -> LLM:
         return OpenAICompatLLM(settings)
     if settings.llm_provider == "ollama":
         return OllamaLLM(settings)
-    return MockLLM()
+    return MockLLM(settings.llm_mock_delay_s)

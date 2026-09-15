@@ -174,38 +174,72 @@ class DialogueManager:
                 max_sentences=rc.max_sentences if rc else 3)
 
             max_sentences = rc.max_sentences if rc else 3
-            full = ""
-            pending = ""
             sentences: List[str] = []
-            # 문장이 완성되는 즉시 합성을 시작해 두고(pipelining), 재생은 순서대로 한다
-            synth: List[asyncio.Task] = []
-            truncated = False
-            async for delta in self.llm.stream(messages):
-                full += delta
-                pending += delta
-                parts = _SENTENCE_END.split(pending)
-                if len(parts) > 1:
-                    for s in parts[:-1]:
-                        if s.strip():
-                            sentences.append(s.strip())
-                            synth.append(asyncio.create_task(self.tts.synthesize(s.strip())))
-                    pending = parts[-1]
-                if len(sentences) >= max_sentences:
-                    truncated = True
+            synth: List[asyncio.Task] = []   # 문장이 완성되는 즉시 합성을 시작한다 (pipelining)
+            first_ready = asyncio.Event()
+
+            async def produce() -> None:
+                pending = ""
+                truncated = False
+                async for delta in self.llm.stream(messages):
+                    pending += delta
+                    parts = _SENTENCE_END.split(pending)
+                    if len(parts) > 1:
+                        for s in parts[:-1]:
+                            if s.strip():
+                                sentences.append(s.strip())
+                                synth.append(asyncio.create_task(self.tts.synthesize(s.strip())))
+                                first_ready.set()
+                        pending = parts[-1]
+                    if len(sentences) >= max_sentences:
+                        truncated = True
+                        break
+                if not truncated and pending.strip():
+                    sentences.append(pending.strip())
+                    synth.append(asyncio.create_task(self.tts.synthesize(pending.strip())))
+                if truncated:
+                    log.info("답이 %d문장을 넘어 잘랐음", max_sentences)
+                if not sentences:
+                    log.warning("LLM 이 빈 답을 돌려줌 (모델 오류 또는 빈 응답). 입력: %s", text)
+                    sentences.append("음, 다시 한 번 말해줄래?")
+                    synth.append(asyncio.create_task(self.tts.synthesize(sentences[0])))
+                first_ready.set()
+
+            producer = asyncio.create_task(produce())
+
+            # 1) 인식 직후 즉시 반응 (LLM 을 기다리지 않는다)
+            if rc is None or rc.ack_enabled:
+                await self._say(persona.acknowledge(text, kid.name), kid.id, final=False, wait=True)
+                await self._set_ribbon("thinking", kid.id)
+            # 2) 첫 문장이 늦으면 추임새로 침묵을 메운다
+            if rc is None or rc.filler_enabled:
+                delay = rc.filler_delay_s if rc else 1.5
+                n = 0
+                while not first_ready.is_set():
+                    try:
+                        await asyncio.wait_for(first_ready.wait(), timeout=delay)
+                    except asyncio.TimeoutError:
+                        if first_ready.is_set():
+                            break
+                        await self._say(persona.filler(n), kid.id, final=False, wait=True)
+                        await self._set_ribbon("thinking", kid.id)
+                        n += 1
+                        delay = rc.filler_interval_s if rc else 4.0
+                        if n >= 4:
+                            break
+            # 3) 준비된 문장부터 순서대로 재생 (앞 문장은 기다리지 않고 이어 보낸다)
+            i = 0
+            while True:
+                while i >= len(sentences) and not producer.done():
+                    await asyncio.sleep(0.05)
+                if i >= len(sentences):
                     break
-            if not truncated and pending.strip():
-                sentences.append(pending.strip())
-                synth.append(asyncio.create_task(self.tts.synthesize(pending.strip())))
-            if truncated:
-                log.info("답이 %d문장을 넘어 잘랐음", max_sentences)
-            if not sentences:
-                log.warning("LLM 이 빈 답을 돌려줌 (모델 오류 또는 빈 응답). 입력: %s", text)
-                sentences.append("음, 다시 한 번 말해줄래?")
-                synth.append(asyncio.create_task(self.tts.synthesize(sentences[0])))
-            for i, (s, task) in enumerate(zip(sentences, synth)):
-                audio = await task
-                # 마지막 문장만 재생 완료를 기다린다. 앞 문장들은 클라이언트가 순서대로 이어 재생한다
-                await self._say(s, kid.id, final=(i == len(sentences) - 1), audio=audio, wait=(i == len(sentences) - 1))
+                audio = await synth[i]
+                is_last = producer.done() and i == len(sentences) - 1
+                await self._say(sentences[i], kid.id, final=is_last, audio=audio, wait=False)
+                i += 1
+            await producer
+            await self._wait_spoken()
 
             history.append({"role": "user", "content": text})
             history.append({"role": "assistant", "content": " ".join(sentences)})
@@ -252,18 +286,20 @@ class DialogueManager:
             self._pending_done.append((utt_id, ev, len(text)))
             await self.broadcast(SpeakMessage(utterance_id=utt_id, text=text, kid_id=kid_id,
                                               audio_b64=audio_b64, final=final).model_dump())
-            if not wait:
-                return
-            # 지금까지 보낸 문장들의 재생 완료를 순서대로 기다린다 (문장당 최대 글자수 비례 시간)
-            while self._pending_done:
-                uid, pending_ev, n = self._pending_done.pop(0)
-                try:
-                    await asyncio.wait_for(pending_ev.wait(), timeout=2.0 + 0.25 * n)
-                except asyncio.TimeoutError:
-                    pass
-                finally:
-                    self._spoken.pop(uid, None)
-            self._last_spoken_at = time.time()
+            if wait:
+                await self._wait_spoken()
+
+    async def _wait_spoken(self) -> None:
+        """지금까지 보낸 문장들의 재생 완료를 순서대로 기다린다 (문장당 최대 글자수 비례 시간)."""
+        while self._pending_done:
+            uid, pending_ev, n = self._pending_done.pop(0)
+            try:
+                await asyncio.wait_for(pending_ev.wait(), timeout=2.0 + 0.25 * n)
+            except asyncio.TimeoutError:
+                pass
+            finally:
+                self._spoken.pop(uid, None)
+        self._last_spoken_at = time.time()
 
     async def _set_ribbon(self, state: RibbonState, target_kid: Optional[str]) -> None:
         self.ribbon_state = state

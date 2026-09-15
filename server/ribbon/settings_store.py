@@ -27,6 +27,10 @@ class RibbonConfig(BaseModel):
     pitch: float = 0.0           # 반음 단위 -6 ~ +8. 어린아이 느낌은 +3 ~ +5
     max_sentences: int = 3
     persona_extra: str = ""      # 시스템 프롬프트 뒤에 붙는 추가 지시문
+    ack_enabled: bool = True     # 인식 직후 "알았어, 잠깐 생각해 볼게!" 같은 즉시 반응
+    filler_enabled: bool = True  # 답이 늦으면 "음..." 추임새
+    filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
+    filler_interval_s: float = 4.0  # 그 뒤 추임새 간격
     colors: RibbonColors = Field(default_factory=RibbonColors)
     sprite_url: str | None = None
 

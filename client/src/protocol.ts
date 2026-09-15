@@ -33,6 +33,10 @@ export interface RibbonConfig {
   pitch: number;
   max_sentences: number;
   persona_extra: string;
+  ack_enabled?: boolean;
+  filler_enabled?: boolean;
+  filler_delay_s?: number;
+  filler_interval_s?: number;
   colors: RibbonColors;
   sprite_url: string | null;
 }
