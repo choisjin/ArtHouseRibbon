@@ -40,20 +40,27 @@ class FasterWhisperSTT:
 
 
 class MLXWhisperSTT:
-    """Apple Silicon 전용. pip install mlx-whisper. 첫 실행 때 모델을 내려받는다."""
+    """Apple Silicon 전용. pip install mlx-whisper. 첫 실행 때 모델을 내려받는다.
+
+    MLX 는 스레드마다 스트림이 따로 있어서 여러 스레드에서 번갈아 부르면
+    'There is no Stream(cpu, 1) in current thread' 로 죽는다. 그래서 전용 스레드 하나에서만 돌린다.
+    (두 채널이 동시에 발화하면 순서대로 처리된다.)
+    """
 
     def __init__(self, settings: Settings):
         import mlx_whisper  # 지연 임포트
+        from concurrent.futures import ThreadPoolExecutor
 
         self._mlx = mlx_whisper
         name = settings.stt_model
         self._repo = name if "/" in name else f"mlx-community/whisper-{name}"
         self._language = settings.stt_language
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-stt")
 
     async def transcribe(self, pcm: np.ndarray, sample_rate: int) -> str:
         audio = pcm.astype(np.float32) / 32768.0
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run, audio)
+        return await loop.run_in_executor(self._pool, self._run, audio)
 
     def _run(self, audio: np.ndarray) -> str:
         result = self._mlx.transcribe(audio, path_or_hf_repo=self._repo, language=self._language)

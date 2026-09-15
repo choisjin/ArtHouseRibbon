@@ -230,7 +230,11 @@ def _spawn(coro) -> None:
 
 
 async def _transcribe_and_dispatch(channel: int, pcm: np.ndarray) -> None:
-    text = await stt.transcribe(pcm, settings.sample_rate)
+    try:
+        text = await stt.transcribe(pcm, settings.sample_rate)
+    except Exception:
+        log.exception("STT 실패 (ch=%s, %.1fs)", channel, len(pcm) / settings.sample_rate)
+        return
     if text:
         await dialogue.on_utterance(channel, text)
 
