@@ -1,5 +1,11 @@
 import { Container, Graphics } from "pixi.js";
-import type { RibbonState } from "../protocol";
+import type { RibbonColors, RibbonState } from "../protocol";
+
+function hex(c: string | undefined, fallback: number): number {
+  if (!c) return fallback;
+  const n = parseInt(c.replace("#", ""), 16);
+  return Number.isNaN(n) ? fallback : n;
+}
 
 /**
  * 리본이: 도트 얼굴. 눈동자가 gaze 목표를 따라가고, 상태에 따라 표정이 바뀐다.
@@ -15,6 +21,7 @@ export class RibbonSprite extends Container {
   private t = 0;
   private mouthLevel = 0;
   private wander = { x: 0, y: 0, until: 0 };
+  private colors = { body: 0xff7aa8, wing: 0xff9ec4, bow: 0xffd54a, cheek: 0xff4d88 };
 
   constructor() {
     super();
@@ -22,6 +29,13 @@ export class RibbonSprite extends Container {
   }
 
   setState(s: RibbonState): void { this.state = s; }
+
+  setColors(c: Partial<RibbonColors> | undefined): void {
+    if (!c) return;
+    this.colors = {
+      body: hex(c.body, 0xff7aa8), wing: hex(c.wing, 0xff9ec4), bow: hex(c.bow, 0xffd54a), cheek: hex(c.cheek, 0xff4d88),
+    };
+  }
 
   /** -1~1 (왼쪽/위가 음수) */
   lookAt(x: number, y: number): void { this.target = { x, y }; }
@@ -49,19 +63,21 @@ export class RibbonSprite extends Container {
 
   private draw(): void {
     const g = this.g;
+    const c = this.colors;
     g.clear();
     const bob = this.state === "idle" ? Math.round(Math.sin(this.t / 600) * 1) : 0;
     const y0 = -30 + bob;
 
     // 몸통 (둥근 리본 매듭 모양)
-    g.rect(-12, y0, 24, 22).fill(0xff7aa8);
-    g.rect(-14, y0 + 3, 28, 16).fill(0xff7aa8);
-    g.rect(-12, y0 + 22, 24, 2).fill(0xd9527f);
+    g.rect(-12, y0, 24, 22).fill(c.body);
+    g.rect(-14, y0 + 3, 28, 16).fill(c.body);
+    g.rect(-12, y0 + 22, 24, 2).fill({ color: c.body, alpha: 0.6 });
+    g.rect(-12, y0 + 22, 24, 2).fill({ color: 0x000000, alpha: 0.25 });
     // 리본 날개
-    g.poly([-14, y0 + 6, -24, y0 - 2, -24, y0 + 16, -14, y0 + 12]).fill(0xff9ec4);
-    g.poly([14, y0 + 6, 24, y0 - 2, 24, y0 + 16, 14, y0 + 12]).fill(0xff9ec4);
+    g.poly([-14, y0 + 6, -24, y0 - 2, -24, y0 + 16, -14, y0 + 12]).fill(c.wing);
+    g.poly([14, y0 + 6, 24, y0 - 2, 24, y0 + 16, 14, y0 + 12]).fill(c.wing);
     // 머리 위 작은 리본
-    g.rect(-3, y0 - 5, 6, 5).fill(0xffd54a);
+    g.rect(-3, y0 - 5, 6, 5).fill(c.bow);
 
     // 눈
     const eyeOpen = this.blink > 0 ? 1 : (this.state === "listening" ? 7 : 6);
@@ -90,8 +106,8 @@ export class RibbonSprite extends Container {
       g.rect(1, mouthY, 2, 1).fill(0x7a2040);
     }
     // 볼
-    g.rect(-11, y0 + 13, 2, 1).fill(0xff4d88);
-    g.rect(9, y0 + 13, 2, 1).fill(0xff4d88);
+    g.rect(-11, y0 + 13, 2, 1).fill(c.cheek);
+    g.rect(9, y0 + 13, 2, 1).fill(c.cheek);
     // 그림자
     g.rect(-10, 0, 20, 2).fill({ color: 0x000000, alpha: 0.25 });
   }

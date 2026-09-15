@@ -34,6 +34,7 @@ class SessionSnapshot(BaseModel):
     queue: List[TurnInfo]
     ribbon: RibbonState
     target_kid: Optional[str] = None
+    config: Dict[str, Any] = {}   # 관리자 설정(RibbonConfig 등). TV 가 색/이름/스프라이트에 쓴다
 
 
 class SpeakMessage(BaseModel):

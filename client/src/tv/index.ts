@@ -48,9 +48,13 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   function applyState(s: StateMsg): void {
     kids = s.kids;
     for (const k of kids) {
-      if (k.present) ensureAvatar(k);
-      else if (avatars.has(k.id)) removeAvatar(k.id);
+      if (k.present) {
+        const a = ensureAvatar(k);
+        if (JSON.stringify(a.kid) !== JSON.stringify(k)) a.setKid(k);
+      } else if (avatars.has(k.id)) removeAvatar(k.id);
     }
+    for (const id of [...avatars.keys()]) if (!kids.some((k) => k.id === id)) removeAvatar(id); // 삭제된 아이
+    ribbon.setColors(s.config?.ribbon?.colors);
     const active = s.queue.find((t) => t.state === "active");
     for (const a of avatars.values()) {
       a.handRaised = s.queue.some((t) => t.kid_id === a.kid.id && t.state === "waiting");

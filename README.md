@@ -10,7 +10,7 @@
 ```
 server/   FastAPI + WebSocket. 호출어 -> 대기열 -> LLM -> TTS (맥미니에서 실행)
 client/   Vite + PixiJS 웹앱. ?mode=tv | entrance | camera | debug (노트북/폰 브라우저)
-data/     kids.json (아이 명단), faces/ (얼굴 벡터, git 제외)
+data/     kids.example.json (예제 명단) → 첫 실행 때 kids.json 으로 복사됨. settings.json, assets/ 는 관리자 페이지가 씀 (git 제외)
 tools/    mic_test.py (무선 마이크 채널 분리 테스트)
 docs/     설계 문서
 ```
@@ -78,3 +78,12 @@ cd server && pytest
 3. 출입구 폰 얼굴 식별 → 입장 연출, 마이크 채널 자동 배정 (insightface)
 4. 벽면 갤러리, 그림 보고 대화 (멀티모달 모델), 작품 아카이브·부모 전송
 5. 아이가 그린 캐릭터를 아바타로 변환
+
+## 관리자 페이지
+
+`http://<서버>:8765/?mode=admin`
+
+- 아이: 추가·수정·삭제, 이름·나이·마이크 채널·자리, 머리 모양·머리색·피부색·옷색, 직접 그린 스프라이트 PNG 업로드, 미리보기
+- 리본이: 이름, 목소리(Supertonic 10종) 미리 듣기, 속도·품질, 한 번에 말할 문장 수, 성격 추가 지시문, 몸 색상
+- 저장하면 `data/kids.json`, `data/settings.json` 에 기록되고 TV 화면에 즉시 반영된다. 서버 재시작 불필요.
+- 같은 LAN 안에서만 쓰는 전제라 아직 로그인은 없다.

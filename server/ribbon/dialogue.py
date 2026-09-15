@@ -20,6 +20,7 @@ from .protocol import (KidInfo, RibbonState, RibbonStateMessage, SessionSnapshot
 from .providers.llm import LLM
 from .providers.tts import TTS
 from .queue import Turn, TurnQueue
+from .settings_store import ConfigStore
 
 log = logging.getLogger("ribbon.dialogue")
 Broadcast = Callable[[dict], Awaitable[None]]
@@ -28,12 +29,14 @@ _SENTENCE_END = re.compile(r"(?<=[.!?。！？])\s+|(?<=[다요네까지야어])
 
 
 class DialogueManager:
-    def __init__(self, settings: Settings, kids: KidRegistry, llm: LLM, tts: TTS, broadcast: Broadcast):
+    def __init__(self, settings: Settings, kids: KidRegistry, llm: LLM, tts: TTS, broadcast: Broadcast,
+                 store: Optional[ConfigStore] = None):
         self.settings = settings
         self.kids = kids
         self.llm = llm
         self.tts = tts
         self.broadcast = broadcast
+        self.store = store
         self.queue = TurnQueue()
         self.ribbon_state: RibbonState = "idle"
         self.target_kid: Optional[str] = None
@@ -45,8 +48,17 @@ class DialogueManager:
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
+        config = self.store.config.model_dump() if self.store else {}
         return SessionSnapshot(kids=self.kids.all(), queue=self.queue.snapshot(),
-                               ribbon=self.ribbon_state, target_kid=self.target_kid)
+                               ribbon=self.ribbon_state, target_kid=self.target_kid, config=config)
+
+    async def notify_config_changed(self) -> None:
+        """관리자 페이지 저장 후 호출: 모든 화면에 새 설정을 보낸다."""
+        await self._broadcast_state()
+
+    @property
+    def ribbon_name(self) -> str:
+        return self.store.config.ribbon.name if self.store else "리본"
 
     def _kid_for_channel(self, channel: int) -> KidInfo:
         kid = self.kids.by_channel(channel)
@@ -149,7 +161,11 @@ class DialogueManager:
         try:
             await self._set_ribbon("thinking", kid.id)
             history = self._history.setdefault(kid.id, [])
-            messages = persona.build_messages(kid if not kid.id.startswith("unknown_") else None, history, text)
+            rc = self.store.config.ribbon if self.store else None
+            messages = persona.build_messages(
+                kid if not kid.id.startswith("unknown_") else None, history, text,
+                name=rc.name if rc else "리본", extra=rc.persona_extra if rc else "",
+                max_sentences=rc.max_sentences if rc else 3)
 
             full = ""
             pending = ""

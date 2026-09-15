@@ -9,12 +9,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import uuid
 from contextlib import asynccontextmanager
 from typing import Dict, List, Set
 
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .audio.stream import ChannelProcessor
@@ -24,7 +26,8 @@ from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
 from .providers.llm import make_llm
 from .providers.stt import make_stt
-from .providers.tts import make_tts
+from .providers.tts import configure_tts, make_tts
+from .settings_store import ConfigStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("ribbon.main")
@@ -52,10 +55,12 @@ class Hub:
 
 hub = Hub()
 kids = KidRegistry.load(settings.kids_path())
+store = ConfigStore(settings.settings_path())
 llm = make_llm(settings)
 stt = make_stt(settings)
 tts = make_tts(settings)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast)
+configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps)
+dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store)
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
@@ -90,6 +95,88 @@ async def api_state():
 @app.get("/api/kids")
 async def api_kids():
     return JSONResponse([k.model_dump() for k in kids.all()])
+
+
+# ---------- 관리자 API (같은 LAN 안에서만 쓰는 전제. 인증은 아직 없음) ----------
+
+@app.post("/api/kids")
+@app.put("/api/kids/{kid_id}")
+async def api_kid_upsert(kid_id: str | None = None, data: dict = Body(...)):
+    if kid_id:
+        data["id"] = kid_id
+    if not str(data.get("name", "")).strip():
+        raise HTTPException(400, "이름이 필요합니다")
+    kid = kids.upsert(data)
+    await dialogue.notify_config_changed()
+    return JSONResponse(kid.model_dump())
+
+
+@app.delete("/api/kids/{kid_id}")
+async def api_kid_delete(kid_id: str):
+    if not kids.remove(kid_id):
+        raise HTTPException(404, "없는 아이")
+    await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/config")
+async def api_config_get():
+    return JSONResponse(store.config.model_dump())
+
+
+@app.put("/api/config/ribbon")
+async def api_config_ribbon(data: dict = Body(...)):
+    rc = store.update_ribbon(data)
+    configure_tts(tts, rc.voice, rc.speed, rc.steps)
+    await dialogue.notify_config_changed()
+    return JSONResponse(rc.model_dump())
+
+
+@app.post("/api/tts/preview")
+async def api_tts_preview(data: dict = Body(...)):
+    """관리자 페이지 '미리 듣기'. 저장하지 않고 지정한 목소리로 한 문장을 합성한다."""
+    text = str(data.get("text") or f"안녕, 나는 {store.config.ribbon.name}이야. 오늘은 무슨 그림을 그렸어?")
+    kwargs = {}
+    if data.get("voice"):
+        kwargs["voice"] = data["voice"]
+    if data.get("speed"):
+        kwargs["speed"] = float(data["speed"])
+    try:
+        wav = await tts.synthesize(text, **kwargs) if kwargs else await tts.synthesize(text)
+    except TypeError:
+        wav = await tts.synthesize(text)
+    if not wav:
+        raise HTTPException(400, "이 TTS 제공자는 서버 합성을 지원하지 않습니다 (browser 모드)")
+    return Response(content=wav, media_type="audio/wav")
+
+
+@app.get("/api/assets")
+async def api_assets_list():
+    d = settings.assets_path()
+    files = sorted(p.name for p in d.glob("*") if p.is_file()) if d.exists() else []
+    return JSONResponse([{"name": n, "url": f"/uploads/{n}"} for n in files])
+
+
+@app.post("/api/assets")
+async def api_assets_upload(file: UploadFile = File(...)):
+    """PNG 스프라이트 업로드. 아바타/리본이 sprite_url 로 쓴다."""
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "이미지 파일만 올릴 수 있습니다")
+    d = settings.assets_path()
+    d.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", file.filename or "sprite.png")
+    name = f"{uuid.uuid4().hex[:8]}_{safe}"
+    (d / name).write_bytes(await file.read())
+    return JSONResponse({"name": name, "url": f"/uploads/{name}"})
+
+
+@app.delete("/api/assets/{name}")
+async def api_assets_delete(name: str):
+    p = settings.assets_path() / re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    if not p.exists():
+        raise HTTPException(404, "없는 파일")
+    p.unlink()
+    return JSONResponse({"ok": True})
 
 
 _tasks: Set[asyncio.Task] = set()
@@ -171,6 +258,10 @@ async def ws_endpoint(ws: WebSocket):
     finally:
         hub.clients.pop(ws, None)
 
+
+assets_dir = settings.assets_path()
+assets_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(assets_dir)), name="uploads")  # /assets 는 Vite 번들이 쓴다
 
 dist = settings.client_dist_path()
 if dist.exists():

@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 from ..protocol import KidInfo
 
-SYSTEM_PROMPT = """너는 '리본'이야. 미술학원 교실 TV 안에 사는 다정한 친구 캐릭터야.
+SYSTEM_PROMPT = """너는 '{name}'이야. 미술학원 교실 TV 안에 사는 다정한 친구 캐릭터야.
 대화 상대는 5살에서 10살 사이 어린이야. 선생님이 항상 옆에 있어.
 
 말하는 방식
@@ -21,13 +21,23 @@ SYSTEM_PROMPT = """너는 '리본'이야. 미술학원 교실 TV 안에 사는 �
 - 무섭거나 폭력적이거나 어른용 주제는 다루지 않는다. 아이가 꺼내면 부드럽게 다른 이야기로 넘긴다.
 - 개인정보(집 주소, 전화번호 등)를 묻지 않는다.
 - 아이 대신 그림을 그려주거나 답을 다 알려주지 않는다. 스스로 해보게 돕는다.
-- 리본이는 인공지능이라는 설명을 길게 하지 않는다. 물어보면 "나는 TV 안에 사는 리본이야" 정도로 답한다.
+- 인공지능이라는 설명을 길게 하지 않는다. 물어보면 "나는 TV 안에 사는 {name}이야" 정도로 답한다.
 """
 
 
-def build_messages(kid: Optional[KidInfo], history: List[Dict[str, str]], text: str) -> List[Dict[str, str]]:
+def system_prompt(name: str = "리본", extra: str = "", max_sentences: int = 3) -> str:
+    base = SYSTEM_PROMPT.replace("{name}", name)
+    if max_sentences != 3:
+        base = base.replace("한 번에 두세 문장만.", f"한 번에 최대 {max_sentences}문장만.")
+    if extra.strip():
+        base += "\n추가 지시\n" + extra.strip() + "\n"
+    return base
+
+
+def build_messages(kid: Optional[KidInfo], history: List[Dict[str, str]], text: str,
+                   name: str = "리본", extra: str = "", max_sentences: int = 3) -> List[Dict[str, str]]:
     who = f"지금 말하는 아이: {kid.name}" + (f" ({kid.age}살)" if kid and kid.age else "") if kid else "지금 말하는 아이: 이름 모름 (친구라고 부른다)"
-    messages: List[Dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT + "\n" + who}]
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt(name, extra, max_sentences) + "\n" + who}]
     messages.extend(history[-8:])
     messages.append({"role": "user", "content": text})
     return messages

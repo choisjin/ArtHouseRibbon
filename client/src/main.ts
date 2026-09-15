@@ -7,6 +7,7 @@ import type { ClientRole } from "./protocol";
  *   /?mode=entrance  출입구 폰. 카메라로 아이를 알아보고 인사
  *   /?mode=camera    TV 위 폰. 얼굴 위치를 서버로 보내 리본이 시선에 쓴다
  *   /?mode=debug     TV 화면 + 디버그 패널 자동 표시
+ *   /?mode=admin     관리자 페이지. 아이 아바타와 리본이 설정
  */
 const params = new URLSearchParams(location.search);
 const mode = (params.get("mode") ?? "tv") as ClientRole;
@@ -23,6 +24,11 @@ async function boot(): Promise<void> {
     case "camera": {
       const { startCamera } = await import("./camera/index");
       await startCamera(socket);
+      break;
+    }
+    case "admin": {
+      const { startAdmin } = await import("./admin/index");
+      await startAdmin(socket);
       break;
     }
     default: {

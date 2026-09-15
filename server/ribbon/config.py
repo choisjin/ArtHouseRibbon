@@ -46,10 +46,18 @@ class Settings(BaseSettings):
     turn_idle_timeout_s: float = 10.0   # 리본이가 "말해봐"를 끝낸 뒤부터 잰다
 
     kids_file: str = "../data/kids.json"
+    settings_file: str = "../data/settings.json"
+    assets_dir: str = "../data/assets"
     client_dist: str = "../client/dist"
 
     def kids_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.kids_file).resolve()
+
+    def settings_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.settings_file).resolve()
+
+    def assets_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.assets_dir).resolve()
 
     def client_dist_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.client_dist).resolve()

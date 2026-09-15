@@ -9,7 +9,10 @@ server/.env
 client/node_modules/
 client/dist/
 
-# 데이터 (얼굴 벡터, 녹음, 작품 사진은 커밋하지 않음)
+# 데이터 (운영 중 바뀌는 파일은 커밋하지 않음. 예제는 data/kids.example.json)
+data/kids.json
+data/settings.json
+data/assets/
 data/faces/
 data/recordings/
 data/artworks/

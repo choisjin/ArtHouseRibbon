@@ -2,7 +2,7 @@
 
 export type RibbonState = "idle" | "listening" | "thinking" | "speaking";
 export type TurnState = "waiting" | "active" | "done" | "cancelled" | "expired";
-export type ClientRole = "tv" | "entrance" | "camera" | "debug";
+export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin";
 
 export interface KidInfo {
   id: string;
@@ -23,12 +23,31 @@ export interface TurnInfo {
   position: number;
 }
 
+export interface RibbonColors { body: string; wing: string; bow: string; cheek: string }
+
+export interface RibbonConfig {
+  name: string;
+  voice: string;
+  speed: number;
+  steps: number;
+  max_sentences: number;
+  persona_extra: string;
+  colors: RibbonColors;
+  sprite_url: string | null;
+}
+
+export interface AppConfig {
+  ribbon: RibbonConfig;
+  avatar_options: { hair: string[] };
+}
+
 export interface StateMsg {
   type: "state";
   kids: KidInfo[];
   queue: TurnInfo[];
   ribbon: RibbonState;
   target_kid: string | null;
+  config?: Partial<AppConfig>;
 }
 
 export interface SpeakMsg {
