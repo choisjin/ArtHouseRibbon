@@ -95,14 +95,15 @@ export class Speaker {
 
   private async playWav(b64: string): Promise<void> {
     const ctx = this.audioContext();
-    if (ctx.state !== "running") {
+    const running = () => (ctx.state as string) === "running";
+    if (!running()) {
       try { await ctx.resume(); } catch { /* 사용자 동작 전 */ }
     }
-    if (ctx.state !== "running") {
+    if (!running()) {
       // 아직 잠겨 있으면 안내를 띄우고 최대 4초 기다린 뒤, 그래도 안 풀리면 이 문장은 건너뛴다
       this.showUnlockHint();
-      for (let i = 0; i < 40 && ctx.state !== "running"; i++) await new Promise((r) => setTimeout(r, 100));
-      if (ctx.state !== "running") { console.warn("audio locked; skipped"); return; }
+      for (let i = 0; i < 40 && !running(); i++) await new Promise((r) => setTimeout(r, 100));
+      if (!running()) { console.warn("audio locked; skipped"); return; }
     }
     this.hideUnlockHint();
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
