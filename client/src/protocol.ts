@@ -40,6 +40,7 @@ export interface RibbonConfig {
 export interface AppConfig {
   ribbon: RibbonConfig;
   avatar_options: { hair: string[] };
+  room?: import("./tv/room/spec").RoomSpec;
 }
 
 export interface StateMsg {

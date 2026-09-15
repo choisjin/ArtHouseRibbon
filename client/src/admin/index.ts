@@ -57,6 +57,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
           <label>머리 색 <input name="hair_color" type="color" /></label>
           <label>피부 색 <input name="skin" type="color" /></label>
           <label>옷 색 <input name="top" type="color" /></label>
+          <label>스프라이트 세트 (client/public/characters/ 폴더 이름, 예: kid_jiwoo) <input name="sprite_set" placeholder="비우면 조립식 도트 아바타" /></label>
           <label>직접 그린 스프라이트 (PNG, 세로 24px 권장)
             <input name="sprite_file" type="file" accept="image/png,image/gif,image/webp" />
           </label>
@@ -89,6 +90,10 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       </section>
     </div>
     <p id="admin-msg" class="msg"></p>
+    <section class="card" id="room-card">
+      <h2>방 꾸미기</h2>
+      <div id="room-editor"></div>
+    </section>
   </div>`;
 
   const $ = <T extends HTMLElement>(sel: string) => root.querySelector(sel) as T;
@@ -118,7 +123,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       age: s("age") ? Number(s("age")) : null,
       mic_channel: s("mic_channel") === "" ? null : Number(s("mic_channel")),
       seat: Number(s("seat")),
-      avatar: { hair: s("hair"), hair_color: s("hair_color"), skin: s("skin"), top: s("top"), sprite_url: selected?.avatar?.sprite_url ?? "" },
+      avatar: { hair: s("hair"), hair_color: s("hair_color"), skin: s("skin"), top: s("top"), sprite_url: selected?.avatar?.sprite_url ?? "", sprite_set: s("sprite_set").trim() },
     };
   }
 
@@ -165,6 +170,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     set("hair_color", k?.avatar?.hair_color ?? "#3b2a1a");
     set("skin", k?.avatar?.skin ?? "#f2c9a0");
     set("top", k?.avatar?.top ?? "#e74c3c");
+    set("sprite_set", k?.avatar?.sprite_set ?? "");
     $("#sprite-current").textContent = k?.avatar?.sprite_url ? `스프라이트: ${k.avatar.sprite_url}` : "스프라이트 없음";
     (f.elements.namedItem("sprite_file") as HTMLInputElement).value = "";
     $("#kid-delete").hidden = !k;
@@ -253,6 +259,10 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     } catch (err) { msg(String(err), true); previewRibbon.setState("idle"); }
   };
 
+  // ---- 방 꾸미기 ----
+  const { mountRoomEditor } = await import("./room");
+  const roomEditor = await mountRoomEditor($("#room-editor"), { api, getKids: () => kids, onMessage: msg });
+
   // ---- 서버 상태 반영 ----
   socket.on((m: ServerMsg) => {
     if (m.type !== "state") return;
@@ -263,6 +273,8 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       config = cfg;
       if (first) { fillHairOptions(); fillRibbonForm(cfg.ribbon); }
     }
+    if (cfg?.room) roomEditor.setSpec(cfg.room);
+    roomEditor.setKids(kids);
     if (selected) selected = kids.find((k) => k.id === selected!.id) ?? selected;
     renderKidList();
   });

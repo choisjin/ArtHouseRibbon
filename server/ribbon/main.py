@@ -27,7 +27,9 @@ from .kids.registry import KidRegistry
 from .providers.llm import make_llm
 from .providers.stt import make_stt
 from .providers.tts import configure_tts, make_tts
+from .room_store import RoomStore
 from .settings_store import ConfigStore
+from pydantic import ValidationError
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("ribbon.main")
@@ -56,12 +58,13 @@ class Hub:
 hub = Hub()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
+room = RoomStore(settings.room_path())
 llm = make_llm(settings)
 stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store)
+dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, room)
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
@@ -133,6 +136,29 @@ async def api_config_ribbon(data: dict = Body(...)):
              rc.voice, rc.speed, rc.steps, rc.pitch, rc.name, settings.tts_provider)
     await dialogue.notify_config_changed()
     return JSONResponse(rc.model_dump())
+
+
+@app.get("/api/room")
+async def api_room_get():
+    return JSONResponse(room.spec.model_dump())
+
+
+@app.put("/api/room")
+async def api_room_put(data: dict = Body(...)):
+    try:
+        spec = room.replace(data)
+    except ValidationError as e:
+        raise HTTPException(400, f"방 설정 형식 오류: {e.errors()[:3]}")
+    await dialogue.notify_config_changed()
+    log.info("room saved: %d layers", len(spec.layers))
+    return JSONResponse(spec.model_dump())
+
+
+@app.post("/api/room/reset")
+async def api_room_reset():
+    spec = room.reset()
+    await dialogue.notify_config_changed()
+    return JSONResponse(spec.model_dump())
 
 
 @app.post("/api/tts/preview")

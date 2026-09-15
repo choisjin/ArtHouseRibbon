@@ -24,3 +24,5 @@ mic_test.wav
 
 # Playwright 스크린샷
 .playwright-mcp/
+
+data/room.json

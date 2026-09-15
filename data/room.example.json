@@ -1,0 +1,135 @@
+{
+  "version": 2,
+  "view": {
+    "w": 640,
+    "h": 360
+  },
+  "perspective": {
+    "vp": {
+      "x": 320,
+      "y": 150
+    },
+    "back": {
+      "x0": 172,
+      "y0": 60,
+      "x1": 470,
+      "y1": 228
+    }
+  },
+  "layers": [
+    {
+      "id": "bg",
+      "file": "/room/bg.png",
+      "x": 0,
+      "y": 0,
+      "layer": "back",
+      "label": "방 배경"
+    },
+    {
+      "id": "rug",
+      "file": "/room/rug.png",
+      "x": 150,
+      "y": 268,
+      "layer": "floor",
+      "label": "러그"
+    },
+    {
+      "id": "shelf",
+      "file": "/room/shelf.png",
+      "x": 8,
+      "y": 178,
+      "layer": "world",
+      "sortY": 328,
+      "label": "물감 선반"
+    },
+    {
+      "id": "easel",
+      "file": "/room/easel.png",
+      "x": 118,
+      "y": 116,
+      "layer": "world",
+      "sortY": 244,
+      "label": "이젤 1"
+    },
+    {
+      "id": "easel2",
+      "file": "/room/easel2.png",
+      "x": 476,
+      "y": 116,
+      "layer": "world",
+      "sortY": 244,
+      "label": "이젤 2"
+    },
+    {
+      "id": "table",
+      "file": "/room/table.png",
+      "x": 208,
+      "y": 196,
+      "layer": "world",
+      "sortY": 284,
+      "label": "테이블",
+      "scale": 0.85
+    },
+    {
+      "id": "plant",
+      "file": "/room/plant.png",
+      "x": 578,
+      "y": 246,
+      "layer": "world",
+      "sortY": 330,
+      "label": "화분"
+    }
+  ],
+  "anchors": {
+    "seats": [
+      {
+        "bx": 212,
+        "t": 0.24
+      },
+      {
+        "bx": 268,
+        "t": 0.24
+      },
+      {
+        "bx": 328,
+        "t": 0.24
+      },
+      {
+        "bx": 386,
+        "t": 0.24
+      }
+    ],
+    "door": {
+      "bx": 405,
+      "t": 0.02
+    },
+    "ribbon": {
+      "bx": 445,
+      "t": 0.66
+    }
+  },
+  "frameSlots": [
+    {
+      "x": 199,
+      "y": 105,
+      "w": 34,
+      "h": 50
+    },
+    {
+      "x": 257,
+      "y": 101,
+      "w": 34,
+      "h": 58
+    },
+    {
+      "x": 315,
+      "y": 105,
+      "w": 34,
+      "h": 50
+    }
+  ],
+  "scale": {
+    "avatar": 1.1,
+    "ribbon": 0.62
+  }
+}

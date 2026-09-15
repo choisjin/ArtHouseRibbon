@@ -19,7 +19,7 @@
 
 | type | 필드 | 설명 |
 |---|---|---|
-| `state` | `kids[]`, `queue[]`, `ribbon`, `target_kid` | 전체 스냅샷. 변화가 있을 때마다 |
+| `state` | `kids[]`, `queue[]`, `ribbon`, `target_kid`, `config` | 전체 스냅샷. 변화가 있을 때마다. `config.ribbon` 은 관리자 설정, `config.room` 은 방 배치(RoomSpec) |
 | `ribbon.state` | `state`: idle/listening/thinking/speaking, `target_kid` | 표정과 시선 |
 | `speak` | `utterance_id`, `text`, `kid_id`, `audio_b64` (wav 또는 null), `final` | 읽을 문장. `audio_b64` 가 null 이면 클라이언트가 speechSynthesis 로 읽는다 |
 | `transcript` | `kid_id`, `channel`, `text`, `final` | 아이가 한 말 (자막용) |

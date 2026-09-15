@@ -20,6 +20,7 @@ from .protocol import (KidInfo, RibbonState, RibbonStateMessage, SessionSnapshot
 from .providers.llm import LLM
 from .providers.tts import TTS
 from .queue import Turn, TurnQueue
+from .room_store import RoomStore
 from .settings_store import ConfigStore
 
 log = logging.getLogger("ribbon.dialogue")
@@ -30,13 +31,14 @@ _SENTENCE_END = re.compile(r"(?<=[.!?。！？])\s+|(?<=[다요네까지야어])
 
 class DialogueManager:
     def __init__(self, settings: Settings, kids: KidRegistry, llm: LLM, tts: TTS, broadcast: Broadcast,
-                 store: Optional[ConfigStore] = None):
+                 store: Optional[ConfigStore] = None, room: Optional["RoomStore"] = None):
         self.settings = settings
         self.kids = kids
         self.llm = llm
         self.tts = tts
         self.broadcast = broadcast
         self.store = store
+        self.room = room
         self.queue = TurnQueue()
         self.ribbon_state: RibbonState = "idle"
         self.target_kid: Optional[str] = None
@@ -49,6 +51,8 @@ class DialogueManager:
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
         config = self.store.config.model_dump() if self.store else {}
+        if self.room:
+            config["room"] = self.room.spec.model_dump()
         return SessionSnapshot(kids=self.kids.all(), queue=self.queue.snapshot(),
                                ribbon=self.ribbon_state, target_kid=self.target_kid, config=config)
 

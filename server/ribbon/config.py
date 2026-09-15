@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     kids_file: str = "../data/kids.json"
     settings_file: str = "../data/settings.json"
+    room_file: str = "../data/room.json"
     assets_dir: str = "../data/assets"
     client_dist: str = "../client/dist"
 
@@ -55,6 +56,9 @@ class Settings(BaseSettings):
 
     def settings_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.settings_file).resolve()
+
+    def room_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.room_file).resolve()
 
     def assets_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.assets_dir).resolve()

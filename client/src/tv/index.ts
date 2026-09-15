@@ -4,7 +4,8 @@ import { Speaker } from "../speech/browserTts";
 import { AvatarSprite } from "./avatar";
 import { Hud } from "./hud";
 import { RibbonSprite } from "./ribbon";
-import { RoomScene, VIEW_H, VIEW_W, floorPoint, roomProjector } from "./scene";
+import { RoomScene } from "./scene";
+import type { RoomSpec } from "./room/spec";
 
 export interface TvOptions { debug: boolean; demo: boolean }
 
@@ -16,10 +17,14 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const speaker = new Speaker(socket);
 
   const ribbon = new RibbonSprite();
-  const rp = floorPoint(scene.ribbonSpot);
-  ribbon.x = Math.round(rp.x); ribbon.y = Math.round(rp.y);
-  ribbon.scale.set(rp.s * scene.ribbonBase);
+  (ribbon as unknown as { _noSort?: boolean })._noSort = false;
   scene.world.addChild(ribbon);
+  function placeRibbon(): void {
+    const rp = scene.projector.toScreen(scene.ribbonSpot);
+    ribbon.x = Math.round(rp.x); ribbon.y = Math.round(rp.y);
+    ribbon.scale.set(rp.s * scene.ribbonBase);
+  }
+  placeRibbon();
 
   const avatars = new Map<string, AvatarSprite>();
   let kids: KidInfo[] = [];
@@ -30,13 +35,15 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   speaker.onLevel = (v) => ribbon.setMouthLevel(v);
   speaker.onStart = (m) => { hud.showCaption(m.text, 2000 + m.text.length * 250); };
 
+  const seatOf = (kid: KidInfo) => scene.seats[(kid.seat ?? 0) % Math.max(1, scene.seats.length)];
+
   function ensureAvatar(kid: KidInfo): AvatarSprite {
     let a = avatars.get(kid.id);
     if (!a) {
-      a = new AvatarSprite(kid, scene.door, roomProjector, scene.avatarBase);
+      a = new AvatarSprite(kid, scene.door, scene.projector, scene.avatarBase);
       avatars.set(kid.id, a);
       scene.world.addChild(a);
-      a.walkTo(scene.seats[(kid.seat ?? avatars.size - 1) % scene.seats.length]);
+      a.walkTo(seatOf(kid));
     }
     return a;
   }
@@ -47,15 +54,25 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     a.walkTo(scene.door, () => { scene.world.removeChild(a); avatars.delete(id); });
   }
 
+  function applyRoom(room: RoomSpec | undefined): void {
+    if (!room) return;
+    void scene.setRoom(room).then((changed) => {
+      if (!changed) return;
+      placeRibbon();
+      for (const a of avatars.values()) a.walkTo(seatOf(a.kid));
+    });
+  }
+
   function applyState(s: StateMsg): void {
     kids = s.kids;
+    applyRoom(s.config?.room);
     for (const k of kids) {
       if (k.present) {
         const a = ensureAvatar(k);
         if (JSON.stringify(a.kid) !== JSON.stringify(k)) a.setKid(k);
       } else if (avatars.has(k.id)) removeAvatar(k.id);
     }
-    for (const id of [...avatars.keys()]) if (!kids.some((k) => k.id === id)) removeAvatar(id); // 삭제된 아이
+    for (const id of [...avatars.keys()]) if (!kids.some((k) => k.id === id)) removeAvatar(id);
     ribbon.setColors(s.config?.ribbon?.colors);
     const active = s.queue.find((t) => t.state === "active");
     for (const a of avatars.values()) {
@@ -88,8 +105,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     const now = performance.now();
     const target = targetKid ? avatars.get(targetKid) : undefined;
     if (target) {
-      const p = target.worldPos;
-      ribbon.lookAt((p.x - ribbon.x) / (VIEW_W / 2), (p.y - 20 - ribbon.y) / (VIEW_H / 2));
+      ribbon.lookAt((target.x - ribbon.x) / (scene.viewW / 2), (target.headY - (ribbon.y - 50 * ribbon.scale.y)) / (scene.viewH / 2));
     } else if (faces.length && now - facesAt < 1500) {
       const f = faces.reduce((a, b) => (Math.abs(a.x - 0.5) < Math.abs(b.x - 0.5) ? a : b));
       ribbon.lookAt((f.x - 0.5) * 2, (f.y - 0.5) * 1.2);
@@ -107,7 +123,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     (window as unknown as { __ribbon: unknown }).__ribbon = { scene, avatars, ribbon, speaker, kids: () => kids };
   }
   if (opts.demo) {
-    // 등원 연출 확인용: 접속 후 아이들을 차례로 입장시킨다
     setTimeout(() => {
       kids.filter((k) => !k.present).forEach((k, i) => setTimeout(() => socket.sendJson({ type: "kid.enter", kid_id: k.id }), i * 4000));
     }, 1500);

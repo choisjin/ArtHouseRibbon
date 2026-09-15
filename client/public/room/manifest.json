@@ -1,0 +1,138 @@
+{
+  "generated_with": "PixelLab v2 (https://api.pixellab.ai), 2026-09-16",
+  "style": "16-bit pixel art, warm art classroom, Stardew Valley style",
+  "room": {
+    "bg.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        640,
+        360
+      ],
+      "seed": 11,
+      "note": "alpha holes filled with floor color (252,203,140)"
+    },
+    "table.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        260,
+        110
+      ],
+      "seed": 31,
+      "style_image": "bg.png"
+    },
+    "rug.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        320,
+        90
+      ],
+      "seed": 35,
+      "style_image": "bg.png"
+    },
+    "shelf.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        130,
+        150
+      ],
+      "seed": 32,
+      "variant": "shelf_02"
+    },
+    "easel.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        84,
+        128
+      ],
+      "seed": 33,
+      "variant": "easel_00"
+    },
+    "easel2.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        84,
+        128
+      ],
+      "seed": 33,
+      "variant": "easel_01"
+    },
+    "plant.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        52,
+        84
+      ],
+      "seed": 34,
+      "variant": "plant_00"
+    },
+    "plant2.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        52,
+        84
+      ],
+      "seed": 34,
+      "variant": "plant_03"
+    },
+    "poster.png": {
+      "endpoint": "generate-image-v2",
+      "size": [
+        44,
+        60
+      ],
+      "seed": 36,
+      "variant": "poster_03"
+    }
+  },
+  "characters": {
+    "ribbon.png": {
+      "endpoint": "create-image-pixen",
+      "size": [
+        96,
+        96
+      ],
+      "seed": 44,
+      "note": "eyes/mouth erased in post; face drawn by code"
+    },
+    "kid_jiwoo": {
+      "endpoint": "create-character-v3",
+      "character_id": "ba51dbc2-fd18-4419-b69f-40f9f66e7c6a",
+      "size": [
+        64,
+        64
+      ],
+      "seed": 101,
+      "view": "side"
+    },
+    "kid_minsu": {
+      "endpoint": "create-character-v3",
+      "character_id": "a2a27a93-5754-4e0e-982b-84483ec9b59b",
+      "size": [
+        64,
+        64
+      ],
+      "seed": 102,
+      "view": "side"
+    },
+    "kid_seoyeon": {
+      "endpoint": "create-character-v3",
+      "character_id": "43c2618d-31aa-4f78-892c-34760f1dd55a",
+      "size": [
+        64,
+        64
+      ],
+      "seed": 103,
+      "view": "side"
+    },
+    "kid_hajun": {
+      "endpoint": "create-character-v3",
+      "character_id": "3289f02b-19d8-415b-9aeb-efea9d85f188",
+      "size": [
+        64,
+        64
+      ],
+      "seed": 104,
+      "view": "side"
+    }
+  }
+}

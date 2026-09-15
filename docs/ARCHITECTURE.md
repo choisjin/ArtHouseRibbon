@@ -50,6 +50,7 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `ribbon/providers/*` | STT / LLM / TTS 제공자 |
 | `ribbon/persona/ribbon.py` | 시스템 프롬프트와 고정 멘트 |
 | `ribbon/kids/registry.py` | 아이 명단, 채널 배정, 출석 |
+| `ribbon/room_store.py` | 방 배치 저장소 (data/room.json), /api/room |
 | `ribbon/vision/faces.py` | 얼굴 식별 인터페이스 (3단계) |
 | `ribbon/main.py` | FastAPI, WS 허브, 정적 서빙 |
 
@@ -61,9 +62,12 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `src/ws.ts` | 재접속 WebSocket, 오디오 바이너리 전송 |
 | `src/audio/capture.ts` + `public/pcm-worklet.js` | 마이크 → 채널별 16k PCM |
 | `src/speech/browserTts.ts` | speak 재생 (브라우저 음성 또는 wav), 입 모양 레벨, tts.done |
-| `src/tv/scene.ts` | 아이소메트릭 픽셀 룸 (320x180 정수 배율) |
-| `src/tv/ribbon.ts` | 리본이 도트 얼굴, 상태 표정, 시선 |
-| `src/tv/avatar.ts` | 조립식 도트 아바타, 걷기, 손들기, 말풍선 |
+| `src/tv/scene.ts` | Pixi Application + RoomView + 정수 배율 (내부 640x360) |
+| `src/tv/room/spec.ts` | 방 구성 데이터 타입 (PNG 레이어, 앵커, 투시) |
+| `src/tv/room/projection.ts` | 일점 투시 투영·역투영 (캐릭터 깊이 배율) |
+| `src/tv/room/view.ts` | RoomSpec → 스프라이트 레이어 렌더링 (TV·관리자 공용) |
+| `src/tv/ribbon.ts` | 리본이 픽셀아트 몸 + 코드가 그리는 눈·입(표정·시선·립싱크), 색조 필터 |
+| `src/tv/avatar.ts` | 아이 아바타: 8방향 스프라이트 세트(걷기 애니메이션) 또는 조립식 도트, 손들기, 말풍선 |
 | `src/tv/hud.ts` | 대기 순서 칩, 자막 |
 | `src/tv/index.ts` | 서버 메시지 → 화면 상태 |
 | `src/debug/panel.ts` | 호출/발화/취소/등원 흉내, 마이크 장치 선택 |
@@ -78,6 +82,10 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 - `complete_active()`: 끝내고 다음 승격. 다음 턴에 이미 텍스트가 있으면 바로 응답.
 - `expire(now, timeout)`: 텍스트 없이 오래 기다린 대기 턴 제거.
 - 활성 턴이 텍스트 없이 `turn_idle_timeout_s` 지나면 끝내고 다음으로.
+
+## 그림 에셋
+
+방 배경·가구·캐릭터는 PixelLab 으로 생성한 픽셀아트 PNG (`client/public/room`, `client/public/characters`). 배치는 `data/room.json`. 자세한 규격과 수정 방법은 `docs/ASSETS.md`.
 
 ## 리본이 시선 우선순위 (tv/index.ts)
 
