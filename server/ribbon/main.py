@@ -72,8 +72,8 @@ async def _ticker() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("kids=%d stt=%s llm=%s tts=%s wakeword=%s", len(kids.all()), settings.stt_provider,
-             settings.llm_provider, settings.tts_provider, settings.wakeword_provider)
+    log.info("kids=%d stt=%s llm=%s:%s tts=%s wakeword=%s", len(kids.all()), settings.stt_provider,
+             settings.llm_provider, settings.llm_model, settings.tts_provider, settings.wakeword_provider)
     task = asyncio.create_task(_ticker())
     yield
     task.cancel()
