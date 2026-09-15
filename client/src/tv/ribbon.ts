@@ -66,7 +66,7 @@ export class RibbonSprite extends Container {
     const c = this.colors;
     g.clear();
     const bob = this.state === "idle" ? Math.round(Math.sin(this.t / 600) * 1) : 0;
-    const y0 = -30 + bob;
+    const y0 = -25 + bob; // 몸통 아래가 y=0(바닥)에 닿도록
 
     // 몸통 (둥근 리본 매듭 모양)
     g.rect(-12, y0, 24, 22).fill(c.body);
@@ -109,6 +109,6 @@ export class RibbonSprite extends Container {
     g.rect(-11, y0 + 13, 2, 1).fill(c.cheek);
     g.rect(9, y0 + 13, 2, 1).fill(c.cheek);
     // 그림자
-    g.rect(-10, 0, 20, 2).fill({ color: 0x000000, alpha: 0.25 });
+    g.ellipse(0, 1, 13, 2.5).fill({ color: 0x000000, alpha: 0.22 });
   }
 }

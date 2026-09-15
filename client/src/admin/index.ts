@@ -126,7 +126,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     const data = kidFromForm();
     const kid: KidInfo = { id: data.id ?? "preview", name: data.name || "?", avatar: data.avatar, present: true, seat: data.seat, mic_channel: data.mic_channel, age: data.age };
     if (previewAvatar) { kidApp.stage.removeChild(previewAvatar); previewAvatar.destroy(); }
-    previewAvatar = new AvatarSprite(kid, { x: 20, y: 34 });
+    previewAvatar = new AvatarSprite(kid, { bx: 20, t: 34 }, { toScreen: (p) => ({ x: p.bx, y: p.t, s: 1 }) });
     kidApp.stage.addChild(previewAvatar);
   }
 

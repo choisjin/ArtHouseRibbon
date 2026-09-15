@@ -4,7 +4,7 @@ import { Speaker } from "../speech/browserTts";
 import { AvatarSprite } from "./avatar";
 import { Hud } from "./hud";
 import { RibbonSprite } from "./ribbon";
-import { RoomScene, VIEW_H, VIEW_W } from "./scene";
+import { RoomScene, VIEW_H, VIEW_W, floorPoint, roomProjector } from "./scene";
 
 export interface TvOptions { debug: boolean; demo: boolean }
 
@@ -16,7 +16,9 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const speaker = new Speaker(socket);
 
   const ribbon = new RibbonSprite();
-  ribbon.x = scene.ribbonSpot.x; ribbon.y = scene.ribbonSpot.y;
+  const rp = floorPoint(scene.ribbonSpot);
+  ribbon.x = Math.round(rp.x); ribbon.y = Math.round(rp.y);
+  ribbon.scale.set(rp.s * scene.ribbonBase);
   scene.world.addChild(ribbon);
 
   const avatars = new Map<string, AvatarSprite>();
@@ -31,7 +33,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   function ensureAvatar(kid: KidInfo): AvatarSprite {
     let a = avatars.get(kid.id);
     if (!a) {
-      a = new AvatarSprite(kid, scene.door);
+      a = new AvatarSprite(kid, scene.door, roomProjector, scene.avatarBase);
       avatars.set(kid.id, a);
       scene.world.addChild(a);
       a.walkTo(scene.seats[(kid.seat ?? avatars.size - 1) % scene.seats.length]);
@@ -87,7 +89,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     const target = targetKid ? avatars.get(targetKid) : undefined;
     if (target) {
       const p = target.worldPos;
-      ribbon.lookAt((p.x - ribbon.x) / (VIEW_W / 2), (p.y - 12 - ribbon.y) / (VIEW_H / 2));
+      ribbon.lookAt((p.x - ribbon.x) / (VIEW_W / 2), (p.y - 20 - ribbon.y) / (VIEW_H / 2));
     } else if (faces.length && now - facesAt < 1500) {
       const f = faces.reduce((a, b) => (Math.abs(a.x - 0.5) < Math.abs(b.x - 0.5) ? a : b));
       ribbon.lookAt((f.x - 0.5) * 2, (f.y - 0.5) * 1.2);
