@@ -50,6 +50,9 @@ export class Speaker {
     void this.drain();
   }
 
+  /** ?mute=1 이면 소리를 내지 않고 글자 수에 비례한 시간만 흘려보낸다 (자동 테스트용) */
+  private muted = new URLSearchParams(location.search).has("mute");
+
   private async drain(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
@@ -57,7 +60,8 @@ export class Speaker {
       const msg = this.queue.shift()!;
       this.onStart?.(msg);
       try {
-        if (msg.audio_b64) await this.playWav(msg.audio_b64);
+        if (this.muted) await new Promise((r) => setTimeout(r, 300 + msg.text.length * 60));
+        else if (msg.audio_b64) await this.playWav(msg.audio_b64);
         else await this.speakBrowser(msg.text);
       } catch (e) { console.warn("tts failed", e); }
       this.onEnd?.(msg);
