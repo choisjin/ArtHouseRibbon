@@ -30,6 +30,7 @@ export interface RibbonConfig {
   voice: string;
   speed: number;
   steps: number;
+  pitch: number;
   max_sentences: number;
   persona_extra: string;
   colors: RibbonColors;

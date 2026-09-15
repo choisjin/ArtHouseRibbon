@@ -52,7 +52,7 @@ cd server && pytest
 ## 실제 모델 연결 (맥미니)
 
 1. Ollama 설치 후 `ollama pull gemma3:27b` (생각 모드가 없어 바로 답함)
-2. `pip install mlx-whisper supertonic` (호출어까지 쓰려면 `pip install -r requirements-models.txt`)
+2. `pip install mlx-whisper supertonic librosa` (호출어까지 쓰려면 `pip install -r requirements-models.txt`)
 3. `.env` 에서
    ```
    RIBBON_LLM_PROVIDER=ollama

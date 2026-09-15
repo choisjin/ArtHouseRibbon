@@ -72,7 +72,7 @@ Supertonic(수퍼톤, 온디바이스 ONNX)을 쓴다. 맥 내장 `say` 보다 �
 ```bash
 cd ~/ArtHouseRibbon/server
 source .venv/bin/activate
-pip install supertonic
+pip install supertonic librosa
 python -c "from supertonic import TTS; t=TTS(auto_download=True); s=t.get_voice_style(voice_name='F1'); w,_=t.synthesize('안녕, 나는 리본이야', voice_style=s, lang='ko'); t.save_audio(w, '/tmp/ribbon.wav')" && afplay /tmp/ribbon.wav
 ```
 

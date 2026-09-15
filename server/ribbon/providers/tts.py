@@ -7,11 +7,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import tempfile
 from pathlib import Path
 from typing import Optional, Protocol
 
+import numpy as np
+
 from ..config import Settings
+
+log = logging.getLogger("ribbon.tts")
 
 
 class TTS(Protocol):
@@ -20,11 +25,26 @@ class TTS(Protocol):
         ...
 
 
-def configure_tts(tts: object, voice: Optional[str], speed: Optional[float], steps: Optional[int]) -> None:
+def configure_tts(tts: object, voice: Optional[str], speed: Optional[float], steps: Optional[int],
+                  pitch: Optional[float] = None) -> None:
     """제공자가 configure 를 지원하면 적용 (browser/mac_say 는 무시)."""
     fn = getattr(tts, "configure", None)
     if callable(fn):
-        fn(voice=voice, speed=speed, steps=steps)
+        fn(voice=voice, speed=speed, steps=steps, pitch=pitch)
+
+
+def pitch_shift(wav: "np.ndarray", sample_rate: int, semitones: float) -> "np.ndarray":
+    """길이를 유지한 채 음높이만 바꾼다 (librosa). 0 이면 그대로."""
+    if not semitones:
+        return wav
+    try:
+        import librosa  # 지연 임포트: 없으면 피치만 건너뛴다
+    except ImportError:
+        log.warning("librosa 가 없어 피치 조절을 건너뜁니다 (pip install librosa)")
+        return wav
+    mono = wav[0] if wav.ndim == 2 else wav
+    shifted = librosa.effects.pitch_shift(mono.astype("float32"), sr=sample_rate, n_steps=float(semitones))
+    return shifted[None, :] if wav.ndim == 2 else shifted
 
 
 class BrowserTTS:
@@ -65,10 +85,22 @@ class SupertonicTTS:
         self._style = self._tts.get_voice_style(voice_name=self._voice)
         self._speed = settings.tts_speed
         self._steps = settings.tts_steps
+        self._pitch = 0.0
         self._lang = "ko"
+        self._sample_rate = int(getattr(self._tts, "sample_rate", 44100))
+        # librosa 피치 변환은 첫 호출에 JIT 컴파일로 10초 넘게 걸린다. 서버 시작 때 뒤에서 미리 예열한다.
+        import threading
+        threading.Thread(target=self._warmup_pitch, daemon=True).start()
 
-    def configure(self, voice: Optional[str] = None, speed: Optional[float] = None, steps: Optional[int] = None) -> None:
-        """관리자 페이지에서 목소리/속도/품질을 바꿀 때. 서버 재시작 없이 적용."""
+    def _warmup_pitch(self) -> None:
+        try:
+            pitch_shift(np.zeros((1, self._sample_rate // 2), dtype="float32"), self._sample_rate, 1.0)
+        except Exception as e:  # noqa: BLE001
+            log.warning("피치 예열 실패: %s", e)
+
+    def configure(self, voice: Optional[str] = None, speed: Optional[float] = None, steps: Optional[int] = None,
+                  pitch: Optional[float] = None) -> None:
+        """관리자 페이지에서 목소리/속도/품질/피치를 바꿀 때. 서버 재시작 없이 적용."""
         if voice and voice != self._voice:
             self._style = self._tts.get_voice_style(voice_name=voice)
             self._voice = voice
@@ -76,16 +108,21 @@ class SupertonicTTS:
             self._speed = max(0.7, min(2.0, float(speed)))
         if steps:
             self._steps = max(5, min(12, int(steps)))
+        if pitch is not None:
+            self._pitch = max(-8.0, min(10.0, float(pitch)))
 
-    async def synthesize(self, text: str, voice: Optional[str] = None, speed: Optional[float] = None) -> Optional[bytes]:
+    async def synthesize(self, text: str, voice: Optional[str] = None, speed: Optional[float] = None,
+                         steps: Optional[int] = None, pitch: Optional[float] = None) -> Optional[bytes]:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run, text, voice, speed)
+        return await loop.run_in_executor(None, self._run, text, voice, speed, steps, pitch)
 
-    def _run(self, text: str, voice: Optional[str] = None, speed: Optional[float] = None) -> Optional[bytes]:
+    def _run(self, text: str, voice: Optional[str] = None, speed: Optional[float] = None,
+             steps: Optional[int] = None, pitch: Optional[float] = None) -> Optional[bytes]:
         style = self._tts.get_voice_style(voice_name=voice) if voice and voice != self._voice else self._style
         wav, _duration = self._tts.synthesize(
-            text=text, voice_style=style, total_steps=self._steps, speed=speed or self._speed,
+            text=text, voice_style=style, total_steps=int(steps or self._steps), speed=float(speed or self._speed),
             lang=self._lang, verbose=False)
+        wav = pitch_shift(wav, self._sample_rate, self._pitch if pitch is None else float(pitch))
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.wav"
             self._tts.save_audio(wav, str(path))

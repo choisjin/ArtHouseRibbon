@@ -59,7 +59,8 @@ store = ConfigStore(settings.settings_path())
 llm = make_llm(settings)
 stt = make_stt(settings)
 tts = make_tts(settings)
-configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps)
+configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
+              store.config.ribbon.pitch)
 dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store)
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
@@ -127,7 +128,7 @@ async def api_config_get():
 @app.put("/api/config/ribbon")
 async def api_config_ribbon(data: dict = Body(...)):
     rc = store.update_ribbon(data)
-    configure_tts(tts, rc.voice, rc.speed, rc.steps)
+    configure_tts(tts, rc.voice, rc.speed, rc.steps, rc.pitch)
     await dialogue.notify_config_changed()
     return JSONResponse(rc.model_dump())
 
@@ -138,12 +139,16 @@ async def api_tts_preview(data: dict = Body(...)):
     text = str(data.get("text") or f"안녕, 나는 {store.config.ribbon.name}이야. 오늘은 무슨 그림을 그렸어?")
     kwargs = {}
     if data.get("voice"):
-        kwargs["voice"] = data["voice"]
+        kwargs["voice"] = str(data["voice"])
     if data.get("speed"):
         kwargs["speed"] = float(data["speed"])
+    if data.get("steps"):
+        kwargs["steps"] = int(data["steps"])
+    if data.get("pitch") is not None:
+        kwargs["pitch"] = float(data["pitch"])
     try:
         wav = await tts.synthesize(text, **kwargs) if kwargs else await tts.synthesize(text)
-    except TypeError:
+    except TypeError:  # browser/mac_say 제공자는 인자를 받지 않는다
         wav = await tts.synthesize(text)
     if not wav:
         raise HTTPException(400, "이 TTS 제공자는 서버 합성을 지원하지 않습니다 (browser 모드)")

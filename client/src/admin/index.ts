@@ -72,6 +72,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
             <label>목소리 <select name="voice"></select></label>
             <label>속도 <input name="speed" type="range" min="0.7" max="2" step="0.05" /> <output id="speed-out"></output></label>
             <label>품질 <input name="steps" type="range" min="5" max="12" step="1" /> <output id="steps-out"></output></label>
+            <label>피치 (반음, 어린아이 느낌은 +3 ~ +5) <input name="pitch" type="range" min="-6" max="8" step="0.5" /> <output id="pitch-out"></output></label>
             <label>한 번에 최대 문장 수 <input name="max_sentences" type="number" min="1" max="6" /></label>
             <label>성격 추가 지시문 <textarea name="persona_extra" rows="4" placeholder="예: 그림 이야기를 할 때 색 이름을 영어로도 한 번 말해준다."></textarea></label>
             <div class="colors">
@@ -208,9 +209,11 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   function fillRibbonForm(rc: RibbonConfig): void {
     const set = (n: string, v: string) => { (rf.elements.namedItem(n) as HTMLInputElement).value = v; };
     set("name", rc.name); set("voice", rc.voice); set("speed", String(rc.speed)); set("steps", String(rc.steps));
+    set("pitch", String(rc.pitch ?? 0));
     set("max_sentences", String(rc.max_sentences)); set("persona_extra", rc.persona_extra ?? "");
     set("body", rc.colors.body); set("wing", rc.colors.wing); set("bow", rc.colors.bow); set("cheek", rc.colors.cheek);
     $("#speed-out").textContent = String(rc.speed); $("#steps-out").textContent = String(rc.steps);
+    $("#pitch-out").textContent = String(rc.pitch ?? 0);
     previewRibbon.setColors(rc.colors);
   }
 
@@ -219,6 +222,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     const s = (k: string) => String(d.get(k) ?? "");
     return {
       name: s("name").trim() || "리본", voice: s("voice"), speed: Number(s("speed")), steps: Number(s("steps")),
+      pitch: Number(s("pitch")) || 0,
       max_sentences: Number(s("max_sentences")) || 3, persona_extra: s("persona_extra"),
       colors: { body: s("body"), wing: s("wing"), bow: s("bow"), cheek: s("cheek") },
     };
@@ -227,6 +231,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   rf.oninput = () => {
     const rc = ribbonFromForm();
     $("#speed-out").textContent = String(rc.speed); $("#steps-out").textContent = String(rc.steps);
+    $("#pitch-out").textContent = String(rc.pitch);
     previewRibbon.setColors(rc.colors);
   };
   rf.onsubmit = async (e) => {
@@ -239,7 +244,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     const text = (rf.elements.namedItem("preview_text") as HTMLInputElement).value;
     msg("합성 중...");
     try {
-      const blob = await api<Blob>("POST", "/api/tts/preview", { text, voice: rc.voice, speed: rc.speed });
+      const blob = await api<Blob>("POST", "/api/tts/preview", { text, voice: rc.voice, speed: rc.speed, steps: rc.steps, pitch: rc.pitch });
       const audio = new Audio(URL.createObjectURL(blob));
       previewRibbon.setState("speaking");
       audio.onended = () => previewRibbon.setState("idle");

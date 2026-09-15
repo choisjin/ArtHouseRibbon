@@ -24,6 +24,7 @@ class RibbonConfig(BaseModel):
     voice: str = "F1"            # supertonic M1~M5, F1~F5
     speed: float = 1.05          # 0.7 ~ 2.0
     steps: int = 8               # 5 ~ 12
+    pitch: float = 0.0           # 반음 단위 -6 ~ +8. 어린아이 느낌은 +3 ~ +5
     max_sentences: int = 3
     persona_extra: str = ""      # 시스템 프롬프트 뒤에 붙는 추가 지시문
     colors: RibbonColors = Field(default_factory=RibbonColors)
