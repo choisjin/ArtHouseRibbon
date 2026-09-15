@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen3:30b-a3b"
     llm_api_key: str = "ollama"
-    llm_max_tokens: int = 200
+    llm_max_tokens: int = 400
+    llm_no_think: bool = True           # qwen3 계열의 생각(thinking) 모드 끄기
 
     stt_model: str = "large-v3-turbo"
     stt_language: str = "ko"
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     follow_up_window_s: float = 6.0
 
     waiting_timeout_s: float = 20.0
-    turn_idle_timeout_s: float = 8.0
+    turn_idle_timeout_s: float = 10.0   # 리본이가 "말해봐"를 끝낸 뒤부터 잰다
 
     kids_file: str = "../data/kids.json"
     client_dist: str = "../client/dist"

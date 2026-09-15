@@ -41,6 +41,7 @@ class DialogueManager:
         self._responding = False
         self._spoken: Dict[str, asyncio.Event] = {}
         self._speak_lock = asyncio.Lock()
+        self._last_spoken_at = 0.0
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
@@ -122,8 +123,9 @@ class DialogueManager:
             await self._say(persona.expired_notice(kid.name), kid.id, final=True)
             await self._broadcast_state()
         active = self.queue.active()
-        if (active and not active.text and not self._responding
-                and active.activated_at and now - active.activated_at > self.settings.turn_idle_timeout_s):
+        idle_since = max(active.activated_at or 0.0, self._last_spoken_at) if active else 0.0
+        if (active and not active.text and not self._responding and not self._speak_lock.locked()
+                and idle_since and now - idle_since > self.settings.turn_idle_timeout_s):
             kid = self._kid_for_channel(active.channel)
             self.queue.complete_active(now)
             await self._say(persona.expired_notice(kid.name), kid.id, final=True)
@@ -164,6 +166,8 @@ class DialogueManager:
                     pending = parts[-1]
             if pending.strip():
                 sentences.append(pending.strip())
+            if not sentences:
+                log.warning("LLM 이 빈 답을 돌려줌 (생각 모드에 토큰을 다 썼거나 모델 오류). 입력: %s", text)
             await self._say(sentences[-1] if sentences else "음, 다시 한 번 말해줄래?", kid.id, final=True)
 
             history.append({"role": "user", "content": text})
@@ -214,6 +218,7 @@ class DialogueManager:
                 pass
             finally:
                 self._spoken.pop(utt_id, None)
+                self._last_spoken_at = time.time()
 
     async def _set_ribbon(self, state: RibbonState, target_kid: Optional[str]) -> None:
         self.ribbon_state = state

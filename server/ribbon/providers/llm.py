@@ -33,9 +33,13 @@ class OpenAICompatLLM:
         self.model = settings.llm_model
         self.api_key = settings.llm_api_key
         self.max_tokens = settings.llm_max_tokens
+        self.no_think = settings.llm_no_think
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0))
 
     async def stream(self, messages: List[Message]) -> AsyncIterator[str]:
+        if self.no_think and messages and messages[-1]["role"] == "user":
+            # Qwen3 소프트 스위치: 마지막 사용자 메시지에 /no_think 를 붙이면 생각 없이 바로 답한다
+            messages = messages[:-1] + [{"role": "user", "content": messages[-1]["content"] + " /no_think"}]
         payload = {
             "model": self.model,
             "messages": messages,
@@ -43,6 +47,8 @@ class OpenAICompatLLM:
             "max_tokens": self.max_tokens,
             "temperature": 0.7,
         }
+        if self.no_think:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}  # vLLM / mlx-lm 용, Ollama 는 무시
         headers = {"Authorization": f"Bearer {self.api_key}"}
         in_think = False  # qwen3 계열의 <think> 블록은 아이에게 읽어주지 않는다
         async with self._client.stream("POST", f"{self.base_url}/chat/completions",
@@ -55,9 +61,10 @@ class OpenAICompatLLM:
                 if data == "[DONE]":
                     break
                 try:
-                    delta = json.loads(data)["choices"][0]["delta"].get("content") or ""
+                    d = json.loads(data)["choices"][0]["delta"]
                 except (KeyError, IndexError, json.JSONDecodeError):
                     continue
+                delta = d.get("content") or ""  # reasoning / reasoning_content 필드는 읽어주지 않는다
                 if not delta:
                     continue
                 if "<think>" in delta:
