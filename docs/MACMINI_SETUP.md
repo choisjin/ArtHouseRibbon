@@ -2,25 +2,18 @@
 
 각 단계 끝의 "확인" 이 보이면 다음으로 넘어간다. 막히면 그 단계의 오류 메시지를 그대로 가져오면 된다.
 
-## 0. 코드 옮기기 (Windows 에서)
+## 0. 코드 위치
 
-GitHub 비공개 저장소를 하나 만들고 올린다. `gh` CLI 가 있으면:
+저장소: https://github.com/choisjin/ArtHouseRibbon (브랜치 `main`). Windows 작업 폴더 `E:/Project/kids_helper` 에서 푸시하고, 맥미니에서는 `~/ArtHouseRibbon` 으로 받는다.
 
-```bash
-cd E:/Project/kids_helper
-git commit -m "리본 1단계 골격"
-gh repo create kids_helper --private --source=. --push
-```
-
-`gh` 가 없으면 github.com 에서 빈 비공개 저장소 `kids_helper` 를 만든 뒤:
+이후 Windows 에서 고친 것을 맥미니에 반영할 때:
 
 ```bash
-git commit -m "리본 1단계 골격"
-git remote add origin https://github.com/<계정>/kids_helper.git
-git push -u origin master
+# Windows
+cd E:/Project/kids_helper && git add -A && git commit -m "메시지" && git push
+# 맥미니
+cd ~/ArtHouseRibbon && git pull && (cd client && npm run build)
 ```
-
-확인: github.com 에서 파일이 보인다.
 
 ## 1. 기본 도구 (맥미니 터미널)
 
@@ -51,8 +44,8 @@ curl -s http://localhost:11434/v1/models
 
 ```bash
 cd ~
-git clone https://github.com/<계정>/kids_helper.git
-cd kids_helper/server
+git clone https://github.com/choisjin/ArtHouseRibbon.git
+cd ArtHouseRibbon/server
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -65,7 +58,7 @@ pytest
 ## 4. 클라이언트 빌드
 
 ```bash
-cd ~/kids_helper/client
+cd ~/ArtHouseRibbon/client
 npm install
 npm run build
 ```
@@ -89,7 +82,7 @@ say -v Yuna "안녕, 나는 리본이야"
 ## 6. 설정 파일
 
 ```bash
-cd ~/kids_helper/server
+cd ~/ArtHouseRibbon/server
 cp .env.example .env
 ```
 
@@ -114,7 +107,7 @@ python -c "import mlx_whisper, numpy as np; print(mlx_whisper.transcribe(np.zero
 ## 7. 서버 실행과 맥 안에서 확인
 
 ```bash
-cd ~/kids_helper/server
+cd ~/ArtHouseRibbon/server
 source .venv/bin/activate
 uvicorn ribbon.main:app --host 0.0.0.0 --port 8765
 ```
