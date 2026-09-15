@@ -73,6 +73,7 @@ class DialogueManager:
         if not text:
             return
         kid = self._kid_for_channel(channel)
+        log.info("%s> %s", kid.name, text)
         await self.broadcast(TranscriptMessage(kid_id=kid.id, channel=channel, text=text).model_dump())
 
         if self._is_cancel(text):
@@ -194,6 +195,7 @@ class DialogueManager:
     async def _say(self, text: str, kid_id: Optional[str], final: bool) -> None:
         async with self._speak_lock:
             utt_id = f"u{next(_utt_ids)}"
+            log.info("리본> %s", text)
             await self._set_ribbon("speaking", kid_id)
             audio = await self.tts.synthesize(text)
             audio_b64 = None
