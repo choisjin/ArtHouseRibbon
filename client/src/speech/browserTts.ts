@@ -8,11 +8,42 @@ import type { RibbonSocket } from "../ws";
 export class Speaker {
   private queue: SpeakMsg[] = [];
   private busy = false;
+  private ctx: AudioContext | null = null;
   onStart?: (msg: SpeakMsg) => void;
   onEnd?: (msg: SpeakMsg) => void;
   onLevel?: (level: number) => void; // 0~1, 입 모양 애니메이션용
 
-  constructor(private socket: RibbonSocket) {}
+  constructor(private socket: RibbonSocket) {
+    // 브라우저는 사용자 동작 전에는 오디오 재생을 막는다. 첫 클릭/터치/키 입력에서 풀어 둔다.
+    const unlock = () => { void this.audioContext().resume(); this.hideUnlockHint(); };
+    for (const ev of ["pointerdown", "touchstart", "keydown"]) window.addEventListener(ev, unlock, { passive: true });
+  }
+
+  /** 오디오 컨텍스트 하나를 공유한다 (매번 만들면 자동재생 차단에 걸린다). */
+  private audioContext(): AudioContext {
+    if (!this.ctx) this.ctx = new AudioContext();
+    return this.ctx;
+  }
+
+  get unlocked(): boolean { return !!this.ctx && this.ctx.state === "running"; }
+
+  private showUnlockHint(): void {
+    let el = document.getElementById("unlock");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "unlock";
+      el.className = "overlay";
+      el.style.cssText = "left:50%;top:14vh;transform:translateX(-50%);background:#ffd54a;color:#222;padding:12px 20px;border-radius:12px;font-size:20px;cursor:pointer";
+      el.textContent = "🔊 소리를 켜려면 화면을 한 번 클릭하세요";
+      document.body.appendChild(el);
+    }
+    el.style.display = "block";
+  }
+
+  private hideUnlockHint(): void {
+    const el = document.getElementById("unlock");
+    if (el) el.style.display = "none";
+  }
 
   enqueue(msg: SpeakMsg): void {
     this.queue.push(msg);
@@ -63,9 +94,19 @@ export class Speaker {
   }
 
   private async playWav(b64: string): Promise<void> {
+    const ctx = this.audioContext();
+    if (ctx.state !== "running") {
+      try { await ctx.resume(); } catch { /* 사용자 동작 전 */ }
+    }
+    if (ctx.state !== "running") {
+      // 아직 잠겨 있으면 안내를 띄우고 최대 4초 기다린 뒤, 그래도 안 풀리면 이 문장은 건너뛴다
+      this.showUnlockHint();
+      for (let i = 0; i < 40 && ctx.state !== "running"; i++) await new Promise((r) => setTimeout(r, 100));
+      if (ctx.state !== "running") { console.warn("audio locked; skipped"); return; }
+    }
+    this.hideUnlockHint();
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const ctx = new AudioContext();
-    const buffer = await ctx.decodeAudioData(bytes.buffer);
+    const buffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
     const src = ctx.createBufferSource();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
@@ -82,6 +123,7 @@ export class Speaker {
     await new Promise<void>((resolve) => { src.onended = () => resolve(); src.start(); });
     clearInterval(ticker);
     this.onLevel?.(0);
-    await ctx.close();
+    src.disconnect();
+    analyser.disconnect();
   }
 }
