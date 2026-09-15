@@ -15,11 +15,14 @@ class Settings(BaseSettings):
 
     stt_provider: str = "mock"          # mock | faster_whisper | mlx_whisper
     llm_provider: str = "mock"          # mock | ollama | openai(OpenAI 호환: mlx-lm, vLLM 등)
-    tts_provider: str = "browser"       # browser | mac_say
+    tts_provider: str = "browser"       # browser | mac_say | supertonic
+    tts_voice: str = "F1"               # supertonic 내장 음성: M1~M5, F1~F5
+    tts_speed: float = 1.05             # supertonic 0.7 ~ 2.0
+    tts_steps: int = 8                  # supertonic 품질 5(낮음) ~ 12(높음)
     wakeword_provider: str = "mock"     # mock | openwakeword
 
     llm_base_url: str = "http://localhost:11434/v1"
-    llm_model: str = "qwen3:30b-a3b"
+    llm_model: str = "gemma3:27b"       # 생각(thinking) 모드가 없어 아이 대화에 적합
     llm_api_key: str = "ollama"
     llm_max_tokens: int = 400
     llm_no_think: bool = True           # qwen3 계열의 생각(thinking) 모드 끄기

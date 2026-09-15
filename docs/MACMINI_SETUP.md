@@ -30,8 +30,8 @@ python3.12 --version && node --version
 ```bash
 brew install ollama
 brew services start ollama
-ollama pull qwen3:30b-a3b        # 약 19GB, 시간이 걸림
-ollama run qwen3:30b-a3b "안녕, 한 문장으로 인사해줘"
+ollama pull gemma3:27b            # 약 17GB, 시간이 걸림
+ollama run gemma3:27b "안녕, 한 문장으로 인사해줘"
 ```
 
 확인: 한국어 답이 나온다. 그리고 아래가 모델 목록을 돌려준다.
@@ -67,17 +67,20 @@ npm run build
 
 ## 5. 한국어 음성 (TTS)
 
-```bash
-say -v '?' | grep ko_KR
-```
-
-`Yuna` 가 보이면 통과. 안 보이면 시스템 설정 → 손쉬운 사용 → 콘텐츠 말하기 → 시스템 음성 → 음성 관리 → 한국어 → Yuna 다운로드.
+Supertonic(수퍼톤, 온디바이스 ONNX)을 쓴다. 맥 내장 `say` 보다 훨씬 자연스럽고 빠르다.
 
 ```bash
-say -v Yuna "안녕, 나는 리본이야"
+cd ~/ArtHouseRibbon/server
+source .venv/bin/activate
+pip install supertonic
+python -c "from supertonic import TTS; t=TTS(auto_download=True); s=t.get_voice_style(voice_name='F1'); w,_=t.synthesize('안녕, 나는 리본이야', voice_style=s, lang='ko'); t.save_audio(w, '/tmp/ribbon.wav')" && afplay /tmp/ribbon.wav
 ```
 
-확인: 스피커에서 한국어가 나온다.
+첫 실행에 모델(수백 MB)을 내려받는다. 확인: 스피커에서 한국어가 나온다.
+
+목소리는 `M1~M5`(남성), `F1~F5`(여성) 열 가지다. 위 명령의 `F1` 을 바꿔 가며 들어보고 마음에 드는 것을 6단계 `.env` 의 `RIBBON_TTS_VOICE` 에 넣는다.
+
+(대안) Supertonic 이 안 되면 맥 내장 음성: `say -v Yuna "안녕"` 이 들리면 `.env` 에서 `RIBBON_TTS_PROVIDER=mac_say`.
 
 ## 6. 설정 파일
 
@@ -86,13 +89,14 @@ cd ~/ArtHouseRibbon/server
 cp .env.example .env
 ```
 
-`.env` 에서 아래 네 줄만 바꾼다.
+`.env` 에서 아래 줄들을 바꾼다.
 
 ```
 RIBBON_STT_PROVIDER=mlx_whisper
 RIBBON_LLM_PROVIDER=ollama
-RIBBON_TTS_PROVIDER=mac_say
-RIBBON_LLM_MODEL=qwen3:30b-a3b
+RIBBON_LLM_MODEL=gemma3:27b
+RIBBON_TTS_PROVIDER=supertonic
+RIBBON_TTS_VOICE=F1
 ```
 
 STT 모델을 미리 내려받아 둔다 (약 1.6GB, 처음 한 번).
@@ -112,11 +116,11 @@ source .venv/bin/activate
 uvicorn ribbon.main:app --host 0.0.0.0 --port 8765
 ```
 
-시작 로그에 `stt=mlx_whisper llm=ollama tts=mac_say` 가 보여야 한다.
+시작 로그에 `stt=mlx_whisper llm=ollama:gemma3:27b tts=supertonic` 가 보여야 한다.
 
 맥미니 브라우저(Safari 또는 Chrome)에서 `http://localhost:8765/?mode=debug&demo=1` 을 연다.
 
-1. 아이들이 입장하고 리본이가 Yuna 목소리로 인사한다.
+1. 아이들이 입장하고 리본이가 목소리로 인사한다.
 2. 채널 0 → `호출` → 입력창에 `내 그림에 고양이 그렸어` → `말하기`
 3. 확인: 몇 초 안에 리본이가 실제 LLM 답을 두세 문장으로 말한다. 첫 답은 모델 로딩 때문에 느릴 수 있다.
 
@@ -158,6 +162,6 @@ sudo pmset -a sleep 0 disksleep 0 displaysleep 10
 ## 자주 나는 문제
 
 - `pip install mlx-whisper` 실패: Python 이 3.12 인지, 맥이 Apple Silicon 인지 확인. Intel 맥이면 `faster-whisper` 로 바꾼다.
-- Ollama 응답이 너무 느림: `ollama ps` 로 모델이 GPU 에 올라갔는지 본다. 64GB 면 `qwen3:30b-a3b` 는 전부 올라간다.
+- Ollama 응답이 너무 느림: `ollama ps` 로 모델이 GPU 에 올라갔는지 본다. 64GB 면 `gemma3:27b` 는 전부 올라간다.
 - 리본이 답에 `<think>` 같은 생각 과정이 섞임: 서버가 걸러내지만, 그래도 나오면 `.env` 의 모델을 `gemma3:27b` 로 바꿔 본다.
 - `say` 가 영어로 읽음: Yuna 가 설치되지 않은 것. 5단계 다시.

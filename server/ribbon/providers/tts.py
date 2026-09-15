@@ -43,7 +43,39 @@ class MacSayTTS:
             return wav.read_bytes() if wav.exists() else None
 
 
+class SupertonicTTS:
+    """수퍼톤 Supertonic (ONNX, 온디바이스). pip install supertonic. 첫 실행 때 모델을 내려받는다.
+
+    내장 음성 M1~M5, F1~F5. 한국어는 lang="ko". 44.1kHz 16bit wav 를 돌려준다.
+    합성은 스레드 풀에서 돌려 이벤트 루프를 막지 않는다.
+    """
+
+    def __init__(self, settings: Settings):
+        from supertonic import TTS as _TTS  # 지연 임포트
+
+        self._tts = _TTS(auto_download=True)
+        self._style = self._tts.get_voice_style(voice_name=settings.tts_voice)
+        self._speed = settings.tts_speed
+        self._steps = settings.tts_steps
+        self._lang = "ko"
+
+    async def synthesize(self, text: str) -> Optional[bytes]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._run, text)
+
+    def _run(self, text: str) -> Optional[bytes]:
+        wav, _duration = self._tts.synthesize(
+            text=text, voice_style=self._style, total_steps=self._steps, speed=self._speed,
+            lang=self._lang, verbose=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.wav"
+            self._tts.save_audio(wav, str(path))
+            return path.read_bytes() if path.exists() else None
+
+
 def make_tts(settings: Settings) -> TTS:
     if settings.tts_provider == "mac_say":
         return MacSayTTS()
+    if settings.tts_provider == "supertonic":
+        return SupertonicTTS(settings)
     return BrowserTTS()

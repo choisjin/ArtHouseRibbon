@@ -51,13 +51,13 @@ cd server && pytest
 
 ## 실제 모델 연결 (맥미니)
 
-1. Ollama 설치 후 `ollama pull qwen3:30b-a3b` (또는 `gemma3:27b`)
-2. `pip install mlx-whisper` (호출어까지 쓰려면 `pip install -r requirements-models.txt`)
+1. Ollama 설치 후 `ollama pull gemma3:27b` (생각 모드가 없어 바로 답함)
+2. `pip install mlx-whisper supertonic` (호출어까지 쓰려면 `pip install -r requirements-models.txt`)
 3. `.env` 에서
    ```
    RIBBON_LLM_PROVIDER=ollama
    RIBBON_STT_PROVIDER=mlx_whisper
-   RIBBON_TTS_PROVIDER=mac_say
+   RIBBON_TTS_PROVIDER=supertonic
    ```
    자세한 순서는 `docs/MACMINI_SETUP.md`.
 4. 호출어 모델("리본아")은 openwakeword 로 별도 학습 후 `RIBBON_WAKEWORD_PROVIDER=openwakeword`, 경로 지정. 학습 전에는 디버그 패널의 `호출` 버튼으로 대신한다.

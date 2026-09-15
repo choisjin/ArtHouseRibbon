@@ -10,3 +10,5 @@ openwakeword>=0.6
 # insightface>=0.7
 # onnxruntime>=1.17
 # opencv-python>=4.9
+# TTS: Supertonic (on-device ONNX, Korean)
+supertonic>=1.3
