@@ -18,6 +18,8 @@ export class AudioCapture {
   readonly levels: number[] = [0, 0, 0, 0];
   /** 장치별로 브라우저가 실제로 준 채널 수 (모노로 열렸는지 확인용) */
   readonly opened: { label: string; channelCount: number; channelOffset: number }[] = [];
+  /** 워크릿이 실제 채널 수를 알려줄 때 호출 */
+  onInfo?: (channelOffset: number, channels: number) => void;
 
   constructor(private socket: RibbonSocket) {}
 
@@ -51,6 +53,12 @@ export class AudioCapture {
         processorOptions: { channelOffset: dev.channelOffset },
       });
       node.port.onmessage = (ev) => {
+        if (ev.data.info) {
+          const o = this.opened.find((x) => x.channelOffset === ev.data.channelOffset);
+          if (o) o.channelCount = ev.data.channels as number;
+          this.onInfo?.(ev.data.channelOffset as number, ev.data.channels as number);
+          return;
+        }
         const pcm = ev.data.pcm as Int16Array;
         const ch = ev.data.channel as number;
         let sum = 0;

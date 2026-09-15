@@ -14,6 +14,11 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
   process(inputs) {
     const input = inputs[0];
     if (!input || input.length === 0) return true;
+    if (!this.reported) {
+      // 실제로 들어오는 채널 수 (브라우저 설정값은 macOS 에서 비어 있을 수 있다)
+      this.reported = true;
+      this.port.postMessage({ info: true, channels: input.length, channelOffset: this.channelOffset });
+    }
     for (let c = 0; c < input.length; c++) {
       const src = input[c];
       if (!src) continue;

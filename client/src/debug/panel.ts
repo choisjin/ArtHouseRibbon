@@ -93,10 +93,11 @@ export function mountDebugPanel(socket: RibbonSocket, getKids: () => KidInfo[]):
       await capture.start(devices);
     } catch (e) { append("마이크 열기 실패: " + String(e)); return; }
     $("dbg-mic").textContent = "마이크 중지";
-    for (const o of capture.opened) {
-      append(`열림: ${o.label} → 채널 ${o.channelOffset}-${o.channelOffset + 1}, 브라우저가 준 채널 수 = ${o.channelCount || "?"}` +
-        (o.channelCount === 1 ? "  ⚠ 모노로 열림: 좌우가 합쳐집니다" : ""));
-    }
+    for (const o of capture.opened) append(`열림: ${o.label} → 채널 ${o.channelOffset}-${o.channelOffset + 1}`);
+  };
+  capture.onInfo = (offset, channels) => {
+    append(`채널 ${offset}-${offset + 1} 장치에서 실제로 들어오는 채널 수 = ${channels}` +
+      (channels === 1 ? "  ⚠ 모노: 좌우가 합쳐져 한 사람으로 잡힙니다" : channels >= 2 ? "  ✓ 스테레오" : ""));
   };
   // 채널별 음량 막대 (좌우 분리 확인용)
   setInterval(() => {
