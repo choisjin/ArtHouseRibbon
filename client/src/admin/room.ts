@@ -19,7 +19,7 @@ interface EditorOpts {
 
 const LAYER_LABEL: Record<string, string> = { back: "뒷벽/붙박이", floor: "바닥(러그)", world: "가구(앞뒤 정렬)", front: "카메라 앞" };
 
-export async function mountRoomEditor(root: HTMLElement, opts: EditorOpts): Promise<{ setSpec(spec: RoomSpec): void }> {
+export async function mountRoomEditor(root: HTMLElement, opts: EditorOpts): Promise<{ setSpec(spec: RoomSpec): void; setKids(kids: KidInfo[]): void }> {
   root.innerHTML = `
     <div class="room-editor">
       <div class="room-side">
