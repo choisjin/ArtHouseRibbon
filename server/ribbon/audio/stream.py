@@ -28,6 +28,9 @@ class ChannelProcessor:
             settings.vad_silence_ms, settings.max_utterance_s)
         self.state = "idle"
         self._listen_until = 0.0
+        # 대기 중에도 최근 프레임을 기억해, 깨어나는 순간 호출 전에 말한 앞부분을 잃지 않는다 (에너지 호출용)
+        self._idle_buf: List[np.ndarray] = []
+        self._idle_keep = max(1, int(800 / 20))  # 20ms 프레임 × 0.8초
 
     def start_listening(self, now: Optional[float] = None, window_s: Optional[float] = None) -> None:
         now = time.time() if now is None else now
@@ -44,11 +47,16 @@ class ChannelProcessor:
         now = time.time() if now is None else now
         events: List[Event] = []
         if self.state == "idle":
+            self._idle_buf.append(pcm)
+            if len(self._idle_buf) > self._idle_keep:
+                self._idle_buf.pop(0)
             if self.wakeword.process(pcm):
                 self.start_listening(now)
                 events.append(("wake", None))
-                # 에너지 호출은 말하는 도중에 깨어나므로, 지금 프레임부터 발화로 이어 붙인다
-                self.segmenter.push(pcm)
+                # 깨어나기 전 0.8초(예: "사과가")를 발화 앞에 붙인다. 호출어 모델이면 호출어 자체가 섞이지만 STT 가 걸러낸다
+                for f in self._idle_buf:
+                    self.segmenter.push(f)
+                self._idle_buf = []
             return events
 
         utterance = self.segmenter.push(pcm)

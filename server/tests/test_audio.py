@@ -39,6 +39,32 @@ class _AlwaysWake:
         return False
 
 
+class _WakeAfter:
+    """n번째 프레임에서 깨어나는 호출어 흉내 (에너지 호출처럼 말하는 도중 깨어남)"""
+    def __init__(self, n):
+        self.n = n; self.i = 0; self.fired = False
+    def process(self, pcm):
+        self.i += 1
+        if not self.fired and self.i >= self.n:
+            self.fired = True
+            return True
+        return False
+
+
+def test_speech_before_wake_is_kept():
+    s = Settings(vad_silence_ms=300, follow_up_window_s=1.0)
+    proc = ChannelProcessor(0, s, _WakeAfter(18))  # 소리 시작 후 ~360ms 뒤에 깨어남
+    audio = np.concatenate([_tone(0.8), _silence(1.0)])
+    utts = []
+    now = 0.0
+    for f in _frames(audio):
+        for kind, payload in proc.feed(f, now=now):
+            if kind == "utterance": utts.append(payload)
+        now += 0.02
+    assert len(utts) == 1
+    assert utts[0].size >= int(0.75 * 16000)  # 깨어나기 전 소리까지 거의 전부 포함
+
+
 def test_channel_processor_wake_then_utterance_then_sleep():
     s = Settings(vad_silence_ms=300, follow_up_window_s=1.0)
     proc = ChannelProcessor(0, s, _AlwaysWake())
