@@ -129,6 +129,8 @@ async def api_config_get():
 async def api_config_ribbon(data: dict = Body(...)):
     rc = store.update_ribbon(data)
     configure_tts(tts, rc.voice, rc.speed, rc.steps, rc.pitch)
+    log.info("ribbon config saved: voice=%s speed=%s steps=%s pitch=%s name=%s (tts=%s)",
+             rc.voice, rc.speed, rc.steps, rc.pitch, rc.name, settings.tts_provider)
     await dialogue.notify_config_changed()
     return JSONResponse(rc.model_dump())
 
@@ -137,6 +139,12 @@ async def api_config_ribbon(data: dict = Body(...)):
 async def api_tts_preview(data: dict = Body(...)):
     """관리자 페이지 '미리 듣기'. 저장하지 않고 지정한 목소리로 한 문장을 합성한다."""
     text = str(data.get("text") or f"안녕, 나는 {store.config.ribbon.name}이야. 오늘은 무슨 그림을 그렸어?")
+    if not hasattr(tts, "configure"):
+        raise HTTPException(
+            400, f"현재 TTS 제공자({settings.tts_provider})는 목소리·속도·피치 선택을 지원하지 않습니다. "
+                 ".env 에서 RIBBON_TTS_PROVIDER=supertonic 으로 바꾸고 서버를 재시작하세요.")
+    log.info("tts preview voice=%s speed=%s steps=%s pitch=%s", data.get("voice"), data.get("speed"),
+             data.get("steps"), data.get("pitch"))
     kwargs = {}
     if data.get("voice"):
         kwargs["voice"] = str(data["voice"])
