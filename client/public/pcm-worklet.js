@@ -19,6 +19,20 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
       this.reported = true;
       this.port.postMessage({ info: true, channels: input.length, channelOffset: this.channelOffset });
     }
+    // 좌우 유사도: 두 채널이 같은 소리(모노 믹스)인지 확인. 0.5초마다 보고
+    if (input.length >= 2) {
+      const L = input[0], R = input[1];
+      let ll = 0, rr = 0, lr = 0;
+      for (let i = 0; i < L.length; i++) { ll += L[i] * L[i]; rr += R[i] * R[i]; lr += L[i] * R[i]; }
+      this.simAcc = (this.simAcc || 0) + lr; this.llAcc = (this.llAcc || 0) + ll; this.rrAcc = (this.rrAcc || 0) + rr;
+      this.simBlocks = (this.simBlocks || 0) + 1;
+      if (this.simBlocks >= Math.round(sampleRate / 128 / 2)) {
+        const corr = this.llAcc > 1e-6 && this.rrAcc > 1e-6 ? this.simAcc / Math.sqrt(this.llAcc * this.rrAcc) : 0;
+        const ratio = this.llAcc > 1e-9 ? Math.sqrt(this.rrAcc / this.llAcc) : 0;
+        this.port.postMessage({ similarity: true, channelOffset: this.channelOffset, corr, ratio, loud: this.llAcc > 1e-3 || this.rrAcc > 1e-3 });
+        this.simAcc = this.llAcc = this.rrAcc = 0; this.simBlocks = 0;
+      }
+    }
     for (let c = 0; c < input.length; c++) {
       const src = input[c];
       if (!src) continue;

@@ -95,6 +95,16 @@ export function mountDebugPanel(socket: RibbonSocket, getKids: () => KidInfo[]):
     $("dbg-mic").textContent = "마이크 중지";
     for (const o of capture.opened) append(`열림: ${o.label} → 채널 ${o.channelOffset}-${o.channelOffset + 1}`);
   };
+  let lastSim = 0;
+  capture.onSimilarity = (offset, corr, ratio) => {
+    const now = performance.now();
+    if (now - lastSim < 1500) return;
+    lastSim = now;
+    const verdict = corr > 0.97 && ratio > 0.8 && ratio < 1.25 ? "같은 소리 (모노 믹스)"
+      : corr > 0.97 ? `같은 소리, 한쪽만 작음 (세이프티 트랙 Ms 모드?)`
+      : "좌우 다름 (분리 정상)";
+    append(`좌우 유사도 ch${offset}/${offset + 1}: 상관 ${corr.toFixed(2)}, R/L 음량비 ${ratio.toFixed(2)} → ${verdict}`);
+  };
   capture.onInfo = (offset, channels) => {
     append(`채널 ${offset}-${offset + 1} 장치에서 실제로 들어오는 채널 수 = ${channels}` +
       (channels === 1 ? "  ⚠ 모노: 좌우가 합쳐져 한 사람으로 잡힙니다" : channels >= 2 ? "  ✓ 스테레오" : ""));

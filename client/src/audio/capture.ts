@@ -20,6 +20,8 @@ export class AudioCapture {
   readonly opened: { label: string; channelCount: number; channelOffset: number }[] = [];
   /** 워크릿이 실제 채널 수를 알려줄 때 호출 */
   onInfo?: (channelOffset: number, channels: number) => void;
+  /** 소리가 날 때 좌우 유사도(상관계수 -1~1)와 R/L 음량비를 0.5초마다 알림 */
+  onSimilarity?: (channelOffset: number, corr: number, ratio: number) => void;
 
   constructor(private socket: RibbonSocket) {}
 
@@ -57,6 +59,10 @@ export class AudioCapture {
           const o = this.opened.find((x) => x.channelOffset === ev.data.channelOffset);
           if (o) o.channelCount = ev.data.channels as number;
           this.onInfo?.(ev.data.channelOffset as number, ev.data.channels as number);
+          return;
+        }
+        if (ev.data.similarity) {
+          if (ev.data.loud) this.onSimilarity?.(ev.data.channelOffset as number, ev.data.corr as number, ev.data.ratio as number);
           return;
         }
         const pcm = ev.data.pcm as Int16Array;
