@@ -1,0 +1,12 @@
+# Optional model packages for the Mac mini. ASCII only (see requirements.txt).
+# STT: on the Mac mini use mlx-whisper (RIBBON_STT_PROVIDER=mlx_whisper). faster-whisper is for CPU/CUDA machines.
+mlx-whisper>=0.4
+# faster-whisper>=1.0
+# Wake word ("Ribbon-a" custom model, see docs/ARCHITECTURE.md)
+openwakeword>=0.6
+# VAD (needs torch)
+# silero-vad>=5.0
+# Faces (phase 3)
+# insightface>=0.7
+# onnxruntime>=1.17
+# opencv-python>=4.9

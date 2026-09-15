@@ -1,0 +1,23 @@
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+server/.env
+
+# Node
+client/node_modules/
+client/dist/
+
+# 데이터 (얼굴 벡터, 녹음, 작품 사진은 커밋하지 않음)
+data/faces/
+data/recordings/
+data/artworks/
+mic_test.wav
+
+# OS/IDE
+.DS_Store
+.vscode/
+
+# Playwright 스크린샷
+.playwright-mcp/

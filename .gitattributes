@@ -1,0 +1,5 @@
+# Windows 에서 작성하고 맥미니에서 실행하므로 저장소는 LF 로 통일
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.wav binary
