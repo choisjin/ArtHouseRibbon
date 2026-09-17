@@ -1,93 +1,78 @@
+import * as THREE from "three";
 import type { FacePosition, KidInfo, ServerMsg, StateMsg } from "../protocol";
 import type { RibbonSocket } from "../ws";
 import { Speaker } from "../speech/browserTts";
-import { AvatarSprite } from "./avatar";
+import { RibbonBrain } from "./brain";
 import { Hud } from "./hud";
-import { RibbonSprite } from "./ribbon";
-import { RoomScene } from "./scene";
-import type { RoomSpec } from "./room/spec";
+import { Ribbon3D } from "./ribbon3d";
+import { fetchCatalog, Stage } from "./stage";
 
 export interface TvOptions { debug: boolean; demo: boolean }
 
-/** TV 모드: 방 + 리본이 + 아바타 + 자막. 서버 메시지를 화면 상태로 바꾼다. */
+/**
+ * TV 모드: 3D 방 + 리본이 + 대기 순서 + 자막.
+ * 아이들은 화면에 그리지 않는다. 리본이는 맵을 돌아다니다가 부르면(ribbon.state) 반응한다.
+ */
 export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<void> {
-  const scene = new RoomScene();
-  await scene.init(document.getElementById("app")!);
+  const stage = new Stage(document.getElementById("app")!, await fetchCatalog());
   const hud = new Hud();
   const speaker = new Speaker(socket);
+  const ribbon = new Ribbon3D();
+  const brain = new RibbonBrain(ribbon);
+  stage.scene.add(ribbon.root);
+  const bubble = document.getElementById("bubble")!;
 
-  const ribbon = new RibbonSprite();
-  (ribbon as unknown as { _noSort?: boolean })._noSort = false;
-  scene.world.addChild(ribbon);
-  function placeRibbon(): void {
-    const rp = scene.projector.toScreen(scene.ribbonSpot);
-    ribbon.x = Math.round(rp.x); ribbon.y = Math.round(rp.y);
-    ribbon.scale.set(rp.s * scene.ribbonBase);
-  }
-  placeRibbon();
-
-  const avatars = new Map<string, AvatarSprite>();
   let kids: KidInfo[] = [];
-  let targetKid: string | null = null;
   let faces: FacePosition[] = [];
   let facesAt = 0;
+  let placed = false;
+  let walkSpeed = 1;
 
   speaker.onLevel = (v) => ribbon.setMouthLevel(v);
   speaker.onStart = (m) => { hud.showCaption(m.text, 2000 + m.text.length * 250); };
 
-  const seatOf = (kid: KidInfo) => scene.seats[(kid.seat ?? 0) % Math.max(1, scene.seats.length)];
+  // 걷는 속도는 인형 키에 비례 (키 2.4 → 초당 약 0.9 단위 ≈ 0.4m)
+  const applySpeed = () => { ribbon.speed = Math.max(0.6, ribbon.height * 0.38) * walkSpeed; };
 
-  function ensureAvatar(kid: KidInfo): AvatarSprite {
-    let a = avatars.get(kid.id);
-    if (!a) {
-      a = new AvatarSprite(kid, scene.door, scene.projector, scene.avatarBase);
-      avatars.set(kid.id, a);
-      scene.world.addChild(a);
-      a.walkTo(seatOf(kid));
-    }
-    return a;
+  async function rebuildNav(): Promise<void> {
+    await ribbon.loaded;
+    applySpeed();
+    brain.nav = stage.buildNav(ribbon.radius, ribbon.height);
+    brain.arts = stage.room.artSpots;
+    const spot = stage.room.layout?.doll_spot;
+    if (spot) brain.home = { x: spot.x, y: spot.y };
+    brain.reset(!placed);
+    placed = true;
   }
 
-  function removeAvatar(id: string): void {
-    const a = avatars.get(id);
-    if (!a) return;
-    a.walkTo(scene.door, () => { scene.world.removeChild(a); avatars.delete(id); });
+  let applying = Promise.resolve();
+  function applyWorld(s: StateMsg): void {
+    const w = s.config?.world;
+    if (!w) return;
+    applying = applying.then(async () => {
+      if (await stage.setLayout(w.room, w.layout)) await rebuildNav();
+    }).catch((e) => console.error("맵 적용 실패", e));
   }
-
-  function applyRoom(room: RoomSpec | undefined): void {
-    if (!room) return;
-    void scene.setRoom(room).then((changed) => {
-      if (!changed) return;
-      placeRibbon();
-      for (const a of avatars.values()) a.walkTo(seatOf(a.kid));
-    });
-  }
+  window.addEventListener("resize", () => { if (placed) void rebuildNav(); });
 
   function applyState(s: StateMsg): void {
     kids = s.kids;
-    applyRoom(s.config?.room);
-    for (const k of kids) {
-      if (k.present) {
-        const a = ensureAvatar(k);
-        if (JSON.stringify(a.kid) !== JSON.stringify(k)) a.setKid(k);
-      } else if (avatars.has(k.id)) removeAvatar(k.id);
-    }
-    for (const id of [...avatars.keys()]) if (!kids.some((k) => k.id === id)) removeAvatar(id);
-    ribbon.setColors(s.config?.ribbon?.colors);
-    const active = s.queue.find((t) => t.state === "active");
-    for (const a of avatars.values()) {
-      a.handRaised = s.queue.some((t) => t.kid_id === a.kid.id && t.state === "waiting");
-      a.talking = !!active && active.kid_id === a.kid.id && s.ribbon === "listening";
+    applyWorld(s);
+    const rc = s.config?.ribbon;
+    if (rc) {
+      ribbon.setLook(rc.look);
+      brain.opts = { wander: rc.wander ?? true, returnAfterS: rc.return_after_s ?? 8 };
+      walkSpeed = rc.walk_speed ?? 1;
+      applySpeed();
     }
     hud.setQueue(s.queue, kids);
-    ribbon.setState(s.ribbon);
-    targetKid = s.target_kid;
+    brain.setState(s.ribbon);
   }
 
   socket.on((msg: ServerMsg) => {
     switch (msg.type) {
       case "state": applyState(msg); break;
-      case "ribbon.state": ribbon.setState(msg.state); targetKid = msg.target_kid; break;
+      case "ribbon.state": brain.setState(msg.state); break;
       case "speak": speaker.enqueue(msg); break;
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
@@ -99,28 +84,45 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     }
   });
 
-  // 시선: 말하는 아이 아바타 > 카메라가 본 얼굴 > 두리번
-  scene.app.ticker.add((t) => {
-    const dt = t.deltaMS;
-    const now = performance.now();
-    const target = targetKid ? avatars.get(targetKid) : undefined;
-    if (target) {
-      ribbon.lookAt((target.x - ribbon.x) / (scene.viewW / 2), (target.headY - (ribbon.y - 50 * ribbon.scale.y)) / (scene.viewH / 2));
-    } else if (faces.length && now - facesAt < 1500) {
-      const f = faces.reduce((a, b) => (Math.abs(a.x - 0.5) < Math.abs(b.x - 0.5) ? a : b));
-      ribbon.lookAt((f.x - 0.5) * 2, (f.y - 0.5) * 1.2);
-      scene.setParallax((f.x - 0.5) * 2);
+  // 카메라 폰이 본 얼굴 → TV 앞 공간의 한 점 (화면 왼쪽 얼굴이면 카메라 왼쪽)
+  const right = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  function faceTarget(): THREE.Vector3 | null {
+    if (!faces.length || performance.now() - facesAt > 1500) return null;
+    const f = faces.reduce((a, b) => (Math.abs(a.x - 0.5) < Math.abs(b.x - 0.5) ? a : b));
+    stage.camera.matrixWorld.extractBasis(right, up, new THREE.Vector3());
+    const span = stage.room.U * 1.5;
+    return stage.camera.position.clone().addScaledVector(right, (f.x - 0.5) * span).addScaledVector(up, (0.5 - f.y) * span * 0.6);
+  }
+
+  const clock = new THREE.Clock();
+  const head = new THREE.Vector3();
+  function frame(): void {
+    const dt = Math.min(clock.getDelta(), 0.1);
+    brain.viewer.copy(stage.camera.position);
+    brain.faceTarget = faceTarget();
+    if (placed) brain.update(dt);
+    stage.render();
+    // 말풍선: 듣는 중 / 생각 중
+    const s = ribbon.state;
+    const text = s === "listening" ? "👂" : s === "thinking" ? "💭" : "";
+    if (text && placed) {
+      const p = stage.toScreen(ribbon.headTop(head));
+      bubble.textContent = text;
+      bubble.style.display = p.visible ? "block" : "none";
+      bubble.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px) translate(-50%, -110%)`;
+      bubble.classList.toggle("thinking", s === "thinking");
     } else {
-      ribbon.lookAround(now);
+      bubble.style.display = "none";
     }
-    ribbon.update(dt);
-    for (const a of avatars.values()) a.update(dt);
-  });
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 
   if (opts.debug) {
     const { mountDebugPanel } = await import("../debug/panel");
     mountDebugPanel(socket, () => kids);
-    (window as unknown as { __ribbon: unknown }).__ribbon = { scene, avatars, ribbon, speaker, kids: () => kids };
+    (window as unknown as { __ribbon: unknown }).__ribbon = { stage, ribbon, brain, speaker, kids: () => kids, THREE };
   }
   if (opts.demo) {
     setTimeout(() => {

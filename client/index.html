@@ -8,12 +8,15 @@
     <style>
       html, body { margin: 0; padding: 0; background: #0e0b16; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
       #app { position: fixed; inset: 0; }
-      canvas { display: block; image-rendering: pixelated; }
+      canvas { display: block; }
       .overlay { position: fixed; z-index: 10; font-size: 14px; }
       #hud { left: 16px; top: 16px; display: flex; flex-direction: column; gap: 6px; }
       .chip { background: rgba(0,0,0,.55); border: 1px solid #444; border-radius: 8px; padding: 6px 10px; }
       .chip.active { border-color: #ffd54a; }
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
+      #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
+      #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      @keyframes bob { 50% { margin-top: -8px; } }
       #debug { right: 16px; top: 16px; width: 320px; background: rgba(0,0,0,.75); border: 1px solid #555; border-radius: 10px; padding: 12px; display: none; }
       #debug label { display: block; margin: 6px 0 2px; color: #aaa; font-size: 12px; }
       #debug input, #debug select, #debug button { width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px; background: #1b1626; color: #eee; border: 1px solid #555; border-radius: 6px; }
@@ -32,7 +35,7 @@
       #admin ul#kid-list li { padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
       #admin ul#kid-list li:hover { background: #2a2238; }
       #admin ul#kid-list li.sel { border-color: #ffd54a; background: #2a2238; }
-      #admin .preview canvas { image-rendering: pixelated; border-radius: 10px; border: 1px solid #3a2f4f; }
+      #admin .preview canvas { border-radius: 10px; border: 1px solid #3a2f4f; }
       #admin form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; flex: 1; min-width: 260px; }
       #admin form[hidden] { display: none; }
       #admin label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #bbb; }
@@ -44,34 +47,19 @@
       #admin button { padding: 8px 14px; border-radius: 8px; border: 1px solid #666; background: #2a2238; color: #eee; cursor: pointer; font-size: 14px; }
       #admin button[type=submit] { background: #ffd54a; color: #222; border-color: #ffd54a; font-weight: 600; }
       #admin button.danger { border-color: #c0392b; color: #f5a1a1; }
-      #admin .sprite-row { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #aaa; }
       #admin .msg { margin-top: 16px; min-height: 1.2em; }
-      #room-card { margin-top: 20px; }
-      .room-editor { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
-      .room-side { width: 260px; display: flex; flex-direction: column; gap: 8px; }
       #admin label.inline { flex-direction: row; align-items: center; gap: 6px; }
       #admin label.inline input { width: auto; }
-      .room-add { flex-direction: column; align-items: stretch; }
-      .room-add button { white-space: nowrap; }
-      .room-side h3 { margin: 8px 0 0; font-size: 14px; color: #aaa; }
-      .room-toolbar { display: flex; gap: 6px; }
-      .room-toolbar .primary { background: #ffd54a; color: #222; border-color: #ffd54a; font-weight: 600; }
-      #rm-layers { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; border: 1px solid #3a2f4f; border-radius: 8px; }
-      #rm-layers li { padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid #2a2238; }
-      #rm-layers li small { color: #888; }
-      #rm-layers li.sel { background: #2a2238; outline: 1px solid #ffd54a; }
-      .room-add { display: flex; gap: 6px; align-items: center; }
-      .room-add input { flex: 1; }
-      .room-stage canvas { image-rendering: pixelated; border: 1px solid #3a2f4f; border-radius: 8px; max-width: 100%; }
-      .room-stage .hint { color: #888; font-size: 12px; max-width: 960px; }
-      #rm-form .row2 { display: flex; gap: 8px; }
-      #rm-form .row2 label { flex: 1; }
+      #admin fieldset { border: 1px solid #3a2f4f; border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
+      #admin a.button { display: inline-block; padding: 8px 14px; border-radius: 8px; background: #ffd54a; color: #222; font-weight: 600; text-decoration: none; }
+      #admin .hint { color: #888; font-size: 12px; }
     </style>
   </head>
   <body>
     <div id="app"></div>
     <div id="hud" class="overlay"></div>
     <div id="caption" class="overlay"></div>
+    <div id="bubble" class="overlay"></div>
     <div id="debug" class="overlay"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

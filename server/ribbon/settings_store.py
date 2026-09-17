@@ -1,22 +1,24 @@
 """관리자 페이지에서 바꾸는 런타임 설정. data/settings.json 에 저장된다.
 
 .env(Settings) 는 서버 기동 설정(포트, 제공자 종류)이고,
-여기(RibbonConfig) 는 운영 중 바꾸는 값(목소리, 성격, 색)이다.
+여기(RibbonConfig) 는 운영 중 바꾸는 값(목소리, 성격, 겉모습, 돌아다니기)이다.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 from pydantic import BaseModel, Field
 
 
-class RibbonColors(BaseModel):
-    body: str = "#ff7aa8"
-    wing: str = "#ff9ec4"
-    bow: str = "#ffd54a"
-    cheek: str = "#ff4d88"
+class RibbonLook(BaseModel):
+    """3D 인형(client/public/world/doll.glb) 겉모습. 색은 재질 기본색을 바꾼다"""
+    outfit: str = "onepiece"     # onepiece | twopiece
+    hair: str = "#f48a9e"
+    bow: str = "#de2834"
+    dress: str = "#80d6be"       # 원피스 / 주름치마
+    blouse: str = "#ffe896"      # 투피스 블라우스
 
 
 class RibbonConfig(BaseModel):
@@ -31,17 +33,15 @@ class RibbonConfig(BaseModel):
     filler_enabled: bool = True  # 답이 늦으면 "음..." 추임새
     filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
     filler_interval_s: float = 4.0  # 그 뒤 추임새 간격
-    colors: RibbonColors = Field(default_factory=RibbonColors)
-    sprite_url: str | None = None
-
-
-class AvatarOptions(BaseModel):
-    hair: List[str] = ["short", "bowl", "twin", "spiky", "long", "curly", "bun"]
+    look: RibbonLook = Field(default_factory=RibbonLook)
+    # 맵에서 돌아다니기
+    wander: bool = True          # 끄면 "부르면 오는 자리"에 서 있는다
+    walk_speed: float = 1.0      # 배율 (1 = 초속 약 0.5m)
+    return_after_s: float = 8.0  # 대화가 끝나고 이만큼 지나면 다시 돌아다닌다
 
 
 class AppConfig(BaseModel):
     ribbon: RibbonConfig = Field(default_factory=RibbonConfig)
-    avatar_options: AvatarOptions = Field(default_factory=AvatarOptions)
 
 
 class ConfigStore:

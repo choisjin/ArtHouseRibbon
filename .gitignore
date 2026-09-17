@@ -12,7 +12,6 @@ client/dist/
 # 데이터 (운영 중 바뀌는 파일은 커밋하지 않음. 예제는 data/kids.example.json)
 data/kids.json
 data/settings.json
-data/assets/
 data/faces/
 data/recordings/
 data/artworks/
@@ -22,7 +21,10 @@ mic_test.wav
 .DS_Store
 .vscode/
 
+
 # Playwright 스크린샷
 .playwright-mcp/
 
-data/room.json
+
+# 3D 맵 배치와 올린 그림 (편집기가 씀)
+data/world/

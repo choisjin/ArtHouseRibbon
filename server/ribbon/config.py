@@ -48,8 +48,9 @@ class Settings(BaseSettings):
 
     kids_file: str = "../data/kids.json"
     settings_file: str = "../data/settings.json"
-    room_file: str = "../data/room.json"
-    assets_dir: str = "../data/assets"
+    world_dir: str = "../data/world"          # 방별 가구 배치 (world_store.py)
+    artworks_dir: str = "../data/artworks"    # 벽에 거는 그림
+    world_catalog: str = "../client/public/world/catalog.json"   # tools/sync_world.py 가 가져온 카탈로그
     client_dist: str = "../client/dist"
 
     def kids_path(self) -> Path:
@@ -58,11 +59,14 @@ class Settings(BaseSettings):
     def settings_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.settings_file).resolve()
 
-    def room_path(self) -> Path:
-        return (Path(__file__).resolve().parent.parent / self.room_file).resolve()
+    def world_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.world_dir).resolve()
 
-    def assets_path(self) -> Path:
-        return (Path(__file__).resolve().parent.parent / self.assets_dir).resolve()
+    def artworks_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.artworks_dir).resolve()
+
+    def world_catalog_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.world_catalog).resolve()
 
     def client_dist_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.client_dist).resolve()

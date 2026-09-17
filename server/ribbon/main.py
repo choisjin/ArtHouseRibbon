@@ -9,13 +9,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
-import uuid
 from contextlib import asynccontextmanager
 from typing import Dict, List, Set
 
 import numpy as np
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -27,9 +25,8 @@ from .kids.registry import KidRegistry
 from .providers.llm import make_llm
 from .providers.stt import make_stt
 from .providers.tts import configure_tts, make_tts
-from .room_store import RoomStore
 from .settings_store import ConfigStore
-from pydantic import ValidationError
+from .world_store import WorldStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("ribbon.main")
@@ -58,13 +55,13 @@ class Hub:
 hub = Hub()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
-room = RoomStore(settings.room_path())
+world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 llm = make_llm(settings)
 stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, room)
+dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world)
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
@@ -138,27 +135,74 @@ async def api_config_ribbon(data: dict = Body(...)):
     return JSONResponse(rc.model_dump())
 
 
-@app.get("/api/room")
-async def api_room_get():
-    return JSONResponse(room.spec.model_dump())
+# ---------- 3D 맵 (방 배치 · 그림). 편집기: /?mode=editor ----------
 
-
-@app.put("/api/room")
-async def api_room_put(data: dict = Body(...)):
+def _room_param(room: str | None) -> str:
     try:
-        spec = room.replace(data)
-    except ValidationError as e:
-        raise HTTPException(400, f"방 설정 형식 오류: {e.errors()[:3]}")
-    await dialogue.notify_config_changed()
-    log.info("room saved: %d layers", len(spec.layers))
-    return JSONResponse(spec.model_dump())
+        return world.check_room(room or world.active)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
-@app.post("/api/room/reset")
-async def api_room_reset():
-    spec = room.reset()
+@app.get("/api/world")
+async def api_world_get(room: str | None = None):
+    r = _room_param(room)
+    return JSONResponse({"room": r, "active": world.active, "layout": world.layout(r), "catalog": world.catalog,
+                         "has_layout_file": world.has_layout(r), "artworks": world.artworks()})
+
+
+@app.put("/api/world/layout")
+async def api_world_layout_put(room: str, data: dict = Body(...)):
+    r = _room_param(room)
+    try:
+        world.save_layout(r, data)
+    except (ValueError, TypeError, KeyError) as e:
+        raise HTTPException(400, str(e))
+    if r == world.active:
+        await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/world/reset")
+async def api_world_reset(room: str):
+    r = _room_param(room)
+    world.reset_layout(r)
+    if r == world.active:
+        await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "layout": world.layout(r)})
+
+
+@app.put("/api/world/active")
+async def api_world_active(data: dict = Body(...)):
+    r = _room_param(str(data.get("room") or ""))
+    world.set_active(r)
+    log.info("TV room -> %s", r)
     await dialogue.notify_config_changed()
-    return JSONResponse(spec.model_dump())
+    return JSONResponse({"ok": True, "active": r})
+
+
+@app.get("/api/artworks")
+async def api_artworks():
+    return JSONResponse({"artworks": world.artworks()})
+
+
+@app.post("/api/artworks")
+async def api_artwork_upload(data: dict = Body(...)):
+    """{"name", "data": dataURL, "width", "height"} → data/artworks/"""
+    try:
+        entry, new = world.add_artwork(data)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True, "artwork": entry, "new": new})
+
+
+@app.post("/api/artworks/delete")
+async def api_artwork_delete(data: dict = Body(...)):
+    try:
+        world.delete_artwork(str(data.get("file", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/tts/preview")
@@ -187,35 +231,6 @@ async def api_tts_preview(data: dict = Body(...)):
     if not wav:
         raise HTTPException(400, "이 TTS 제공자는 서버 합성을 지원하지 않습니다 (browser 모드)")
     return Response(content=wav, media_type="audio/wav")
-
-
-@app.get("/api/assets")
-async def api_assets_list():
-    d = settings.assets_path()
-    files = sorted(p.name for p in d.glob("*") if p.is_file()) if d.exists() else []
-    return JSONResponse([{"name": n, "url": f"/uploads/{n}"} for n in files])
-
-
-@app.post("/api/assets")
-async def api_assets_upload(file: UploadFile = File(...)):
-    """PNG 스프라이트 업로드. 아바타/리본이 sprite_url 로 쓴다."""
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(400, "이미지 파일만 올릴 수 있습니다")
-    d = settings.assets_path()
-    d.mkdir(parents=True, exist_ok=True)
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", file.filename or "sprite.png")
-    name = f"{uuid.uuid4().hex[:8]}_{safe}"
-    (d / name).write_bytes(await file.read())
-    return JSONResponse({"name": name, "url": f"/uploads/{name}"})
-
-
-@app.delete("/api/assets/{name}")
-async def api_assets_delete(name: str):
-    p = settings.assets_path() / re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
-    if not p.exists():
-        raise HTTPException(404, "없는 파일")
-    p.unlink()
-    return JSONResponse({"ok": True})
 
 
 _tasks: Set[asyncio.Task] = set()
@@ -302,9 +317,9 @@ async def ws_endpoint(ws: WebSocket):
         hub.clients.pop(ws, None)
 
 
-assets_dir = settings.assets_path()
-assets_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(assets_dir)), name="uploads")  # /assets 는 Vite 번들이 쓴다
+art_dir = settings.artworks_path()
+art_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/artworks", StaticFiles(directory=str(art_dir)), name="artworks")  # 배치의 image = "artworks/<파일>"
 
 dist = settings.client_dist_path()
 if dist.exists():

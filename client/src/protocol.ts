@@ -2,7 +2,7 @@
 
 export type RibbonState = "idle" | "listening" | "thinking" | "speaking";
 export type TurnState = "waiting" | "active" | "done" | "cancelled" | "expired";
-export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin";
+export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin" | "editor";
 
 export interface KidInfo {
   id: string;
@@ -23,8 +23,6 @@ export interface TurnInfo {
   position: number;
 }
 
-export interface RibbonColors { body: string; wing: string; bow: string; cheek: string }
-
 export interface RibbonConfig {
   name: string;
   voice: string;
@@ -37,14 +35,17 @@ export interface RibbonConfig {
   filler_enabled?: boolean;
   filler_delay_s?: number;
   filler_interval_s?: number;
-  colors: RibbonColors;
-  sprite_url: string | null;
+  look?: Partial<import("./world/doll").RibbonLook>;
+  /** 맵에서 돌아다니기 (끄면 "부르면 오는 자리"에 서 있다) */
+  wander?: boolean;
+  walk_speed?: number;
+  return_after_s?: number;
 }
 
 export interface AppConfig {
   ribbon: RibbonConfig;
-  avatar_options: { hair: string[] };
-  room?: import("./tv/room/spec").RoomSpec;
+  /** TV 에 보여줄 방과 그 배치 (서버 world_store.tv_view) */
+  world?: import("./world/types").WorldView;
 }
 
 export interface StateMsg {

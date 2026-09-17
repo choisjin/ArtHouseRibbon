@@ -1,0 +1,52 @@
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { WORLD_BASE } from "./types";
+
+/** 관리자 페이지에서 고르는 리본이 겉모습 (서버 settings_store.RibbonLook) */
+export interface RibbonLook {
+  outfit: "onepiece" | "twopiece";
+  hair: string;
+  bow: string;
+  dress: string;
+  blouse: string;
+}
+
+export const DEFAULT_LOOK: RibbonLook = { outfit: "onepiece", hair: "#f48a9e", bow: "#de2834", dress: "#80d6be", blouse: "#ffe896" };
+
+/** 옷은 부품 이름 앞머리로 나뉜다 (Character_Creator doll.py: OP_ 원피스, TP_ 투피스) */
+const OUTFIT_PREFIX = { onepiece: "OP_", twopiece: "TP_" } as const;
+/** 색을 바꾸는 재질 (glb 재질 이름 → look 키) */
+const TINT: Record<string, keyof RibbonLook> = { Hair_Game: "hair", Bow_Game: "bow", Dress_Game: "dress", Blouse_Game: "blouse" };
+
+export interface DollAsset { scene: THREE.Group; animations: THREE.AnimationClip[] }
+
+let cached: Promise<DollAsset> | null = null;
+
+/** doll.glb 를 읽어 새 복제본을 준다 (재질은 복제본마다 따로 둬서 색을 바꿀 수 있게) */
+export async function loadDoll(): Promise<DollAsset> {
+  cached ??= new GLTFLoader().loadAsync(`${WORLD_BASE}doll.glb`).then((g) => ({ scene: g.scene, animations: g.animations }));
+  const src = await cached;
+  const scene = src.scene.clone(true);
+  const mats = new Map<THREE.Material, THREE.Material>();
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || Array.isArray(m.material)) return;
+    let c = mats.get(m.material);
+    if (!c) { c = m.material.clone(); mats.set(m.material, c); }
+    m.material = c;
+  });
+  return { scene, animations: src.animations };
+}
+
+export function applyLook(root: THREE.Object3D, look: Partial<RibbonLook> | undefined): void {
+  const l = { ...DEFAULT_LOOK, ...(look ?? {}) };
+  const hide = l.outfit === "twopiece" ? OUTFIT_PREFIX.onepiece : OUTFIT_PREFIX.twopiece;
+  root.traverse((o) => {
+    if (/^(OP|TP)_/.test(o.name)) o.visible = !o.name.startsWith(hide);
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || Array.isArray(m.material)) return;
+    const key = TINT[m.material.name];
+    const mat = m.material as THREE.MeshStandardMaterial;
+    if (key && mat.color) mat.color.set(l[key] as string);
+  });
+}

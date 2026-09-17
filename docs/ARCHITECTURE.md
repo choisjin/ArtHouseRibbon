@@ -50,7 +50,7 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `ribbon/providers/*` | STT / LLM / TTS 제공자 |
 | `ribbon/persona/ribbon.py` | 시스템 프롬프트와 고정 멘트 |
 | `ribbon/kids/registry.py` | 아이 명단, 채널 배정, 출석 |
-| `ribbon/room_store.py` | 방 배치 저장소 (data/room.json), /api/room |
+| `ribbon/world_store.py` | 3D 맵 배치(data/world/<방>.json)·TV 방·그림(data/artworks) 저장소, /api/world, /api/artworks |
 | `ribbon/vision/faces.py` | 얼굴 식별 인터페이스 (3단계) |
 | `ribbon/main.py` | FastAPI, WS 허브, 정적 서빙 |
 
@@ -62,14 +62,17 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `src/ws.ts` | 재접속 WebSocket, 오디오 바이너리 전송 |
 | `src/audio/capture.ts` + `public/pcm-worklet.js` | 마이크 → 채널별 16k PCM |
 | `src/speech/browserTts.ts` | speak 재생 (브라우저 음성 또는 wav), 입 모양 레벨, tts.done |
-| `src/tv/scene.ts` | Pixi Application + RoomView + 정수 배율 (내부 640x360) |
-| `src/tv/room/spec.ts` | 방 구성 데이터 타입 (PNG 레이어, 앵커, 투시) |
-| `src/tv/room/projection.ts` | 일점 투시 투영·역투영 (캐릭터 깊이 배율) |
-| `src/tv/room/view.ts` | RoomSpec → 스프라이트 레이어 렌더링 (TV·관리자 공용) |
-| `src/tv/ribbon.ts` | 리본이 픽셀아트 몸 + 코드가 그리는 눈·입(표정·시선·립싱크), 색조 필터 |
-| `src/tv/avatar.ts` | 아이 아바타: 8방향 스프라이트 세트(걷기 애니메이션) 또는 조립식 도트, 손들기, 말풍선 |
+| `src/world/types.ts` | 카탈로그·배치 형식 (Character_Creator 와 같음), 좌표 변환 |
+| `src/world/room.ts` | 방 껍데기 + 가구 glb + 걸린 그림으로 3D 방 짓기 |
+| `src/world/nav.ts` | 걸을 수 있는 바닥 격자, A* 길찾기 |
+| `src/world/doll.ts` | doll.glb 읽기, 옷·색 적용 (TV·관리자·편집기 공용) |
+| `src/tv/stage.ts` | three.js 렌더러·조명·TV 카메라, 화면 안에 보이는 바닥 판정 |
+| `src/tv/ribbon3d.ts` | 리본이 몸: 걷기/인사 액션, 경로 따라 걷기, 고개·숨쉬기·말할 때 끄덕임 |
+| `src/tv/brain.ts` | 리본이 행동: 돌아다니기·그림 구경, 부르면 멈춰 인사 후 "부르면 오는 자리"로 |
 | `src/tv/hud.ts` | 대기 순서 칩, 자막 |
-| `src/tv/index.ts` | 서버 메시지 → 화면 상태 |
+| `src/tv/index.ts` | 서버 메시지 → 화면 상태, 듣는 중/생각 중 말풍선 |
+| `src/admin/index.ts` | 관리자 페이지 |
+| `src/editor/` | 맵 편집기 (Character_Creator 배치 편집기 이식본) |
 | `src/debug/panel.ts` | 호출/발화/취소/등원 흉내, 마이크 장치 선택 |
 | `src/entrance/index.ts` | 출입구 폰 골격 |
 | `src/camera/index.ts` | TV 위 폰 골격 |
@@ -85,13 +88,14 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 
 ## 그림 에셋
 
-방 배경·가구·캐릭터는 PixelLab 으로 생성한 픽셀아트 PNG (`client/public/room`, `client/public/characters`). 배치는 `data/room.json`. 자세한 규격과 수정 방법은 `docs/ASSETS.md`.
+방·가구·리본이는 Character_Creator(블렌더)가 만든 glb (`client/public/world`, `tools/sync_world.py` 로 가져옴). 배치는 `data/world/<방>.json`. 자세한 내용은 `docs/WORLD.md`.
 
-## 리본이 시선 우선순위 (tv/index.ts)
+## 리본이 시선 (tv/brain.ts)
 
-1. 지금 상대하는 아이(`target_kid`)의 아바타 위치
-2. TV 위 카메라가 본 얼굴 중 화면 가운데에 가까운 얼굴 (`face.positions`)
-3. 아무도 없으면 천천히 두리번
+아이들은 화면에 없고 TV 앞에 있으므로, 대화 중에는 TV 카메라 쪽을 본다.
+
+1. 불려서 대화 중: TV 위 카메라가 본 얼굴 중 화면 가운데에 가까운 얼굴 (`face.positions`), 없으면 TV 카메라
+2. 평소: TV 쪽 / 정면 / 주변을 번갈아 두리번, 그림 앞에서는 그림
 
 ## 호출어 "리본아"
 

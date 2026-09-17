@@ -6,13 +6,7 @@
       "age": 7,
       "mic_channel": 0,
       "seat": 0,
-      "avatar": {
-        "hair": "short",
-        "hair_color": "#3b2a1a",
-        "skin": "#f2c9a0",
-        "top": "#e74c3c",
-        "sprite_set": "kid_jiwoo"
-      }
+      "avatar": {}
     },
     {
       "id": "kid_minsu",
@@ -20,13 +14,7 @@
       "age": 8,
       "mic_channel": 1,
       "seat": 1,
-      "avatar": {
-        "hair": "bowl",
-        "hair_color": "#1a1a1a",
-        "skin": "#f7d7b5",
-        "top": "#3498db",
-        "sprite_set": "kid_minsu"
-      }
+      "avatar": {}
     },
     {
       "id": "kid_seoyeon",
@@ -34,13 +22,7 @@
       "age": 6,
       "mic_channel": 2,
       "seat": 2,
-      "avatar": {
-        "hair": "twin",
-        "hair_color": "#5a3b1e",
-        "skin": "#f2c9a0",
-        "top": "#f1c40f",
-        "sprite_set": "kid_seoyeon"
-      }
+      "avatar": {}
     },
     {
       "id": "kid_hajun",
@@ -48,13 +30,7 @@
       "age": 9,
       "mic_channel": 3,
       "seat": 3,
-      "avatar": {
-        "hair": "spiky",
-        "hair_color": "#222222",
-        "skin": "#e8b98a",
-        "top": "#2ecc71",
-        "sprite_set": "kid_hajun"
-      }
+      "avatar": {}
     }
   ]
 }

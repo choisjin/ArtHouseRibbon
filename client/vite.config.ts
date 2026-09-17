@@ -9,5 +9,5 @@ export default defineConfig({
       "/api": { target: "http://localhost:8765" },
     },
   },
-  build: { target: "es2022" },
+  build: { target: "es2022", chunkSizeWarningLimit: 900 },  // three.js 가 한 덩어리로 700KB 쯤
 });
