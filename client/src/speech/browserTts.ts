@@ -13,10 +13,29 @@ export class Speaker {
   onEnd?: (msg: SpeakMsg) => void;
   onLevel?: (level: number) => void; // 0~1, 입 모양 애니메이션용
 
-  constructor(private socket: RibbonSocket) {
+  constructor(private socket: RibbonSocket, opts: { showLock?: boolean } = {}) {
     // 브라우저는 사용자 동작 전에는 오디오 재생을 막는다. 첫 클릭/터치/키 입력에서 풀어 둔다.
-    const unlock = () => { void this.audioContext().resume(); this.hideUnlockHint(); };
+    const unlock = () => {
+      void this.audioContext().resume().then(() => { if (this.unlocked) { this.hideUnlockHint(); this.report("소리 잠금 풀림"); } });
+    };
     for (const ev of ["pointerdown", "touchstart", "keydown"]) window.addEventListener(ev, unlock, { passive: true });
+    if (opts.showLock && !this.muted) {
+      // TV: 열자마자 잠겨 있는지 보고, 잠겨 있으면 풀릴 때까지 안내를 띄워 둔다 (대사 소리가 건너뛰어지지 않게)
+      const ctx = this.audioContext();
+      void ctx.resume().catch(() => undefined).finally(() => {
+        window.setTimeout(() => {
+          if (this.unlocked) return;
+          this.showUnlockHint();
+          this.report("소리가 잠겨 있음 (TV 화면을 한 번 클릭해야 함)");
+        }, 300);
+      });
+      ctx.addEventListener("statechange", () => { if (this.unlocked) this.hideUnlockHint(); });
+    }
+  }
+
+  /** 서버 창에 남기기 (원격에서 원인 찾기용) */
+  private report(text: string): void {
+    this.socket.sendJson({ type: "client.log", text });
   }
 
   /** 오디오 컨텍스트 하나를 공유한다 (매번 만들면 자동재생 차단에 걸린다). */
@@ -33,8 +52,8 @@ export class Speaker {
       el = document.createElement("div");
       el.id = "unlock";
       el.className = "overlay";
-      el.style.cssText = "left:50%;top:14vh;transform:translateX(-50%);background:#ffd54a;color:#222;padding:12px 20px;border-radius:12px;font-size:20px;cursor:pointer";
-      el.textContent = "🔊 소리를 켜려면 화면을 한 번 클릭하세요";
+      el.style.cssText = "left:50%;top:14vh;transform:translateX(-50%);background:#ffd54a;color:#222;padding:14px 24px;border-radius:14px;font-size:24px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.35)";
+      el.textContent = "🔊 소리 켜기 (화면을 한 번 클릭하세요)";
       document.body.appendChild(el);
     }
     el.style.display = "block";
@@ -63,7 +82,10 @@ export class Speaker {
         if (this.muted) await new Promise((r) => setTimeout(r, 300 + msg.text.length * 60));
         else if (msg.audio_b64) await this.playWav(msg.audio_b64);
         else await this.speakBrowser(msg.text);
-      } catch (e) { console.warn("tts failed", e); }
+      } catch (e) {
+        console.warn("tts failed", e);
+        this.report(`대사 소리 재생 실패: ${e}`);
+      }
       this.onEnd?.(msg);
       this.socket.sendJson({ type: "tts.done", utterance_id: msg.utterance_id });
     }
@@ -107,7 +129,11 @@ export class Speaker {
       // 아직 잠겨 있으면 안내를 띄우고 최대 4초 기다린 뒤, 그래도 안 풀리면 이 문장은 건너뛴다
       this.showUnlockHint();
       for (let i = 0; i < 40 && !running(); i++) await new Promise((r) => setTimeout(r, 100));
-      if (!running()) { console.warn("audio locked; skipped"); return; }
+      if (!running()) {
+        console.warn("audio locked; skipped");
+        this.report("소리가 잠겨 있어 대사 한 문장을 건너뜀 (TV 화면을 한 번 클릭)");
+        return;
+      }
     }
     this.hideUnlockHint();
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));

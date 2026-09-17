@@ -178,6 +178,13 @@ hostname
 1. Chrome 주소창에 `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
 2. 입력란에 `http://<hostname>.local:8765` 를 넣고 Enabled → Chrome 재시작
 
+**TV 소리**: 브라우저는 사용자가 한 번 클릭하기 전에는 페이지 소리를 막는다. TV 화면을 열면 가운데 위에 "🔊 소리 켜기" 가 뜨니 한 번 클릭한다
+(서버 창에 `소리가 잠겨 있음` / `소리 잠금 풀림` 이 찍힌다). 매번 누르기 싫으면 TV 노트북의 Chrome 을 아래처럼 켠다.
+
+```
+chrome.exe --autoplay-policy=no-user-gesture-required --kiosk http://<hostname>.local:8765/?mode=tv
+```
+
 폰 카메라도 같은 이유로 같은 설정이 필요하다 (Android Chrome 은 같은 플래그, iPhone Safari 는 이 방법이 없어 나중에 HTTPS 를 붙인다).
 
 ## 10. 상시 운영 준비

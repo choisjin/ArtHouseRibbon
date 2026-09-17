@@ -315,6 +315,9 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         ch = int(msg.get("channel", 0))
         processors[ch].start_listening()
         _spawn(dialogue.on_wake(ch))
+    elif t == "client.log":
+        log.warning("[%s %s] %s", hub.clients.get(ws, "?"), ws.client.host if ws.client else "?",
+                    str(msg.get("text", ""))[:300])
     elif t == "debug.utterance":
         _spawn(dialogue.on_utterance(int(msg.get("channel", 0)), str(msg.get("text", ""))))
     elif t == "kid.enter":

@@ -16,7 +16,7 @@ export interface TvOptions { debug: boolean; demo: boolean; mic: boolean }
 export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<void> {
   const stage = new Stage(document.getElementById("app")!, await fetchCatalog());
   const hud = new Hud();
-  const speaker = new Speaker(socket);
+  const speaker = new Speaker(socket, { showLock: true });
   const ribbon = new Ribbon3D();
   const brain = new RibbonBrain(ribbon);
   ribbon.root.visible = false;      // 길찾기가 준비되고 자리에 세울 때까지
