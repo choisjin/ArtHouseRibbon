@@ -33,6 +33,7 @@ cd server && .venv\Scripts\activate && uvicorn ribbon.main:app --host 0.0.0.0 --
 - WS 수신 루프 안에서 대화 이벤트를 `await` 하면 교착 → `main.py` `_spawn`.
 - 클라이언트 `RibbonSocket.on()` 은 늦게 등록된 핸들러에 마지막 `state` 를 재전달.
 - 브라우저 오디오는 첫 클릭 전까지 잠김 → 화면 안내 표시.
+- doll.blend 의 뼈대는 DollSpot(방 속 위치) → DollMover(옆걸음) 아래에 있다. 내보낼 때 조상을 모두 원점으로 (`export_doll.py`). 안 그러면 몸이 발밑 그림자에서 떨어져 가구를 통과해 보인다.
 - GLTFLoader 는 노드 이름의 점을 지운다: 블렌더 `arm.R` → three.js `armR` (트랙 이름도 `armR.quaternion`).
 - 맥미니에 블렌더 설치 필요 (`brew install --cask blender`). 없으면 TV 는 실시간 3D 로 대신한다.
 - doll.glb 액션은 모든 뼈를 키로 가진다 → 코드 움직임(고개 등)은 매 프레임 뼈를 쉬는 자세로 되돌리고 mixer.update 뒤에 얹는다 (`ribbon3d.ts`).

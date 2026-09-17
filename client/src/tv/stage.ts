@@ -33,6 +33,7 @@ export class Stage {
   private bgKey = "";
   private renderBg: THREE.Texture | null = null;
   private envKey = "";
+  private renderEnv: THREE.Texture | null = null;
   private view = { x: 0, y: 0, w: 1, h: 1 };
 
   constructor(parent: HTMLElement, catalog: Catalog) {
@@ -40,17 +41,19 @@ export class Stage {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.VSMShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     const canvas = this.renderer.domElement;
     canvas.style.position = "absolute";
     parent.appendChild(canvas);
     this.scene.background = new THREE.Color(0x0e0b16);
     this.sun.position.set(6, 20, 12);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.radius = 12;
-    this.sun.shadow.blurSamples = 16;
-    this.sun.shadow.bias = -0.0005;
+    // 그림자는 리본이 주변만 (followShadow): 좁은 범위라 선명하고, 어느 GPU 에서도 같은 모양
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.bias = -0.001;
+    this.sun.shadow.normalBias = 0.02;
+    const sc = this.sun.shadow.camera;
+    sc.left = -3; sc.right = 3; sc.top = 3; sc.bottom = -3; sc.near = 1; sc.far = 40;
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.28 }));
     this.shadowFloor.rotation.x = -Math.PI / 2;
@@ -88,51 +91,56 @@ export class Stage {
     this.camera.position.copy(toThree(t.x, t.y, t.z));
     this.camera.lookAt(toThree(t.x, t.y + 10, t.z));
     this.camera.updateProjectionMatrix();
-    // 그림자 카메라가 방 전체를 덮게
-    const s = this.sun.shadow.camera;
-    const half = Math.max(room.width, room.depth) / 2 + 1;
-    s.left = -half; s.right = half; s.top = half; s.bottom = -half;
-    s.near = 1; s.far = 60;
-    s.updateProjectionMatrix();
-    this.sun.position.set(2, 24, 6);
+    this.sun.shadow.camera.updateProjectionMatrix();
     this.shadowFloor.scale.set(room.width, room.depth, 1);
+  }
+
+  /** 그림자 빛을 리본이 머리 위(조금 앞)에 둔다. 방 천장 조명처럼 거의 바로 아래로 떨어짐 */
+  followShadow(p: THREE.Vector3): void {
+    this.sun.target.position.copy(p);
+    this.sun.position.set(p.x + 0.8, p.y + 14, p.z + 2.5);
   }
 
   /**
    * 방을 맞춘다. 렌더가 있으면 렌더에 쓴 배치로 가림막을 짓고 배경을 바꾼다.
-   * 방 모양(가림막·길찾기)이 바뀌었으면 true
+   * 배경·조명·가구를 모두 읽은 뒤 한 번에 바꾼다 (배경만 먼저 바뀌어 옛 방 길로 걷는 일이 없게).
+   * 방 모양(가림막·길찾기)이 바뀌었으면 changed, 다른 방이 됐으면 roomChanged
    */
-  async setWorld(roomId: string, layout: Layout | null, render: WorldRender | null | undefined): Promise<boolean> {
+  async setWorld(roomId: string, layout: Layout | null, render: WorldRender | null | undefined): Promise<{ changed: boolean; roomChanged: boolean }> {
     const useRender = !!render?.bg;
     const lay = useRender ? render!.layout ?? layout : layout;
+    const roomChanged = !!this.room.roomId && roomId !== this.room.roomId;
+    const [bg, env] = useRender
+      ? await Promise.all([this.loadBackground(render!.bg), this.loadEnvironment(render!.env)])
+      : [null, null];
+    const changed = await this.room.setLayout(roomId, lay);
     const modeChanged = (useRender ? "render" : "live") !== this.mode;
     if (useRender) {
-      await Promise.all([this.setBackground(render!.bg), this.setEnvironment(render!.env)]);
+      if (bg !== this.renderBg) { this.renderBg?.dispose(); this.renderBg = bg; }
+      if (env !== this.renderEnv) { this.renderEnv?.dispose(); this.renderEnv = env; }
     }
-    const changed = await this.room.setLayout(roomId, lay);
-    if (changed || modeChanged) {
+    if (changed || modeChanged || useRender) {
       this.mode = useRender ? "render" : "live";
       this.applyMode();
+    }
+    if (changed || modeChanged) {
       if (this.room.room) this.fitCamera(this.room.room);
       this.resize();
     }
-    return changed || modeChanged;
+    return { changed: changed || modeChanged, roomChanged };
   }
 
-  private async setBackground(url: string): Promise<void> {
-    if (url === this.bgKey) return;
+  private async loadBackground(url: string): Promise<THREE.Texture> {
+    if (url === this.bgKey && this.renderBg) return this.renderBg;
     const tex = await new THREE.TextureLoader().loadAsync(url);
     tex.colorSpace = THREE.SRGBColorSpace;
     this.bgKey = url;
-    this.renderBg?.dispose();
-    this.renderBg = tex;
-    if (this.mode === "render") this.scene.background = tex;
+    return tex;
   }
 
-  private async setEnvironment(url: string | null): Promise<void> {
-    if ((url ?? "") === this.envKey) return;
-    this.envKey = url ?? "";
-    if (!url) { this.scene.environment = null; return; }
+  private async loadEnvironment(url: string | null): Promise<THREE.Texture | null> {
+    if (!url) return null;
+    if (url === this.envKey && this.renderEnv) return this.renderEnv;
     try {
       const hdr = await new RGBELoader().loadAsync(url);
       hdr.mapping = THREE.EquirectangularReflectionMapping;
@@ -140,10 +148,11 @@ export class Stage {
       const env = pmrem.fromEquirectangular(hdr).texture;
       pmrem.dispose();
       hdr.dispose();
-      this.scene.environment = env;
+      this.envKey = url;
+      return env;
     } catch (e) {
       console.warn("환경 HDR 을 못 읽음", url, e);
-      this.scene.environment = null;
+      return null;
     }
   }
 
@@ -153,7 +162,7 @@ export class Stage {
     r.toneMapping = render ? THREE.AgXToneMapping : THREE.NeutralToneMapping;   // 블렌더 AgX 와 맞춤
     r.toneMappingExposure = 1;
     this.scene.background = render && this.renderBg ? this.renderBg : new THREE.Color(0x0e0b16);
-    if (!render) this.scene.environment = null;
+    this.scene.environment = render ? this.renderEnv : null;
     this.hemi.intensity = render ? 0.25 : 2.4;
     this.sun.intensity = render ? 0.6 : 1.6;
     this.shadowFloor.visible = render;

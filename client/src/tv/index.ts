@@ -19,6 +19,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const speaker = new Speaker(socket);
   const ribbon = new Ribbon3D();
   const brain = new RibbonBrain(ribbon);
+  ribbon.root.visible = false;      // 길찾기가 준비되고 자리에 세울 때까지
   stage.scene.add(ribbon.root);
   const bubble = document.getElementById("bubble")!;
 
@@ -34,15 +35,17 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   // 걷는 속도는 인형 키에 비례 (키 2.4 → 초당 약 0.9 단위 ≈ 0.4m)
   const applySpeed = () => { ribbon.speed = Math.max(0.6, ribbon.height * 0.38) * walkSpeed; };
 
-  async function rebuildNav(): Promise<void> {
+  /** 길찾기 격자를 다시 만든다. toHome 이면 "부르면 오는 자리"에 다시 세운다 (처음, 방이 바뀔 때) */
+  async function rebuildNav(toHome: boolean): Promise<void> {
     await ribbon.loaded;
     applySpeed();
     brain.nav = stage.buildNav(ribbon.radius, ribbon.height);
     brain.arts = stage.room.artSpots;
     const spot = stage.room.layout?.doll_spot;
     if (spot) brain.home = { x: spot.x, y: spot.y };
-    brain.reset(!placed);
+    brain.reset(toHome || !placed);
     placed = true;
+    ribbon.root.visible = true;
   }
 
   let applying = Promise.resolve();
@@ -50,10 +53,21 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     const w = s.config?.world;
     if (!w) return;
     applying = applying.then(async () => {
-      if (await stage.setWorld(w.room, w.layout, w.render)) await rebuildNav();
-    }).catch((e) => console.error("맵 적용 실패", e));
+      if (placed && w.room !== stage.room.roomId) {
+        // 다른 방으로: 새 방을 다 읽을 때까지 리본이를 멈추고 숨긴다 (옛 방 길로 걷지 않게)
+        placed = false;
+        ribbon.stop();
+        ribbon.root.visible = false;
+      }
+      const { changed, roomChanged } = await stage.setWorld(w.room, w.layout, w.render);
+      if (changed || !placed) await rebuildNav(roomChanged || !placed);
+    }).catch((e) => { console.error("맵 적용 실패", e); placed = true; ribbon.root.visible = true; });
   }
-  window.addEventListener("resize", () => { if (placed) void rebuildNav(); });
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => { if (placed) void rebuildNav(false); }, 300);
+  });
 
   function applyState(s: StateMsg): void {
     kids = s.kids;
@@ -102,6 +116,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     brain.viewer.copy(stage.camera.position);
     brain.faceTarget = faceTarget();
     if (placed) brain.update(dt);
+    stage.followShadow(ribbon.root.position);
     stage.render();
     // 말풍선: 듣는 중 / 생각 중
     const s = ribbon.state;

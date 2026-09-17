@@ -38,12 +38,12 @@ export class RibbonBrain {
 
   constructor(private body: Ribbon3D) {}
 
-  /** 방이 바뀌었을 때: 갈 수 있는 곳에 다시 세운다 */
-  reset(firstTime: boolean): void {
+  /** 길찾기 격자가 바뀌었을 때. toHome 이면 "부르면 오는 자리"에, 아니면 막힌 곳에 있을 때만 가까운 빈 곳으로 */
+  reset(toHome: boolean): void {
     if (!this.nav) return;
-    const here = firstTime ? this.home : this.body.pos;
+    const here = toHome ? this.home : this.body.pos;
     const p = this.nav.nearestFree(here) ?? here;
-    if (firstTime || !this.nav.isFree(here)) this.body.place(p, 0);
+    if (toHome || !this.nav.isFree(here)) this.body.place(p, 0);
     this.body.stop();
     this.mode = this.called ? { kind: "called" } : { kind: "idle", until: this.clock + 1 };
     if (this.called) this.comeHome();

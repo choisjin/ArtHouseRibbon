@@ -47,6 +47,8 @@ export async function loadDoll(): Promise<DollAsset> {
   cached ??= new GLTFLoader().loadAsync(`${WORLD_BASE}doll.glb`).then((g) => ({ scene: g.scene, animations: g.animations }));
   const src = await cached;
   const scene = src.scene.clone(true);
+  // 인형은 발밑 원점 기준이어야 한다. 내보낼 때 방 속 위치가 남아 있어도 수평 위치는 지운다
+  for (const c of scene.children) c.position.set(0, c.position.y, 0);
   const mats = new Map<THREE.Material, THREE.Material>();
   scene.traverse((o) => {
     const m = o as THREE.Mesh;

@@ -38,13 +38,19 @@ for pb in rig.pose.bones:
     pb.rotation_quaternion = (1, 0, 0, 0)
     pb.rotation_euler = (0, 0, 0)
     pb.scale = (1, 1, 1)
-spot = rig.parent
-if spot is not None:
-    spot.animation_data_clear()
-    spot.location = (0, 0, 0)
-    spot.rotation_euler = (0, 0, 0)
+# 뼈대의 조상(DollSpot → DollMover)은 방 장면 속 위치·옆걸음 이동이다. 게임용은 원점 기준이므로 모두 치운다
+p = rig.parent
+while p is not None:
+    p.animation_data_clear()
+    p.location = (0, 0, 0)
+    p.rotation_euler = (0, 0, 0)
+    p = p.parent
 bpy.context.view_layer.update()
 
+bpy.context.view_layer.update()
+off = rig.matrix_world.translation
+if off.length > 1e-4:
+    raise SystemExit(f"[doll] 뼈대가 원점이 아닙니다: {tuple(off)}")
 n, tris = game_export.export_game([rig] + parts, OUT, None, animations=True)
 if ad:
     ad.action = saved
