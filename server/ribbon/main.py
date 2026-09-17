@@ -26,6 +26,7 @@ from .providers.llm import make_llm
 from .providers.stt import make_stt
 from .providers.tts import configure_tts, make_tts
 from .settings_store import ConfigStore
+from .world_render import WorldRenderer
 from .world_store import WorldStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -62,6 +63,10 @@ tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
 dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world)
+renderer = WorldRenderer(world, settings.blender_exe, settings.render_pct, settings.render_samples,
+                         on_change=dialogue.notify_config_changed)
+world.render_info = renderer.info
+world.render_busy = lambda: renderer.running
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
@@ -80,6 +85,13 @@ async def _ticker() -> None:
 async def lifespan(app: FastAPI):
     log.info("kids=%d stt=%s llm=%s:%s tts=%s wakeword=%s", len(kids.all()), settings.stt_provider,
              settings.llm_provider, settings.llm_model, settings.tts_provider, settings.wakeword_provider)
+    log.info("blender=%s (배경 자동 렌더 %s)", renderer.blender or "없음", "켬" if settings.render_auto else "끔")
+    if renderer.available and settings.render_auto:
+        # 렌더가 없거나 배치가 바뀐 방은 켜질 때 한 번 렌더
+        for r in world.rooms():
+            info = renderer.info(r)
+            if info is None or info["stale"]:
+                renderer.request(r)
     task = asyncio.create_task(_ticker())
     yield
     task.cancel()
@@ -148,7 +160,8 @@ def _room_param(room: str | None) -> str:
 async def api_world_get(room: str | None = None):
     r = _room_param(room)
     return JSONResponse({"room": r, "active": world.active, "layout": world.layout(r), "catalog": world.catalog,
-                         "has_layout_file": world.has_layout(r), "artworks": world.artworks()})
+                         "has_layout_file": world.has_layout(r), "artworks": world.artworks(),
+                         "render": renderer.status()})
 
 
 @app.put("/api/world/layout")
@@ -158,18 +171,35 @@ async def api_world_layout_put(room: str, data: dict = Body(...)):
         world.save_layout(r, data)
     except (ValueError, TypeError, KeyError) as e:
         raise HTTPException(400, str(e))
+    rendering = settings.render_auto and renderer.request(r)
     if r == world.active:
         await dialogue.notify_config_changed()
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "rendering": rendering})
 
 
 @app.post("/api/world/reset")
 async def api_world_reset(room: str):
     r = _room_param(room)
     world.reset_layout(r)
+    if settings.render_auto:
+        renderer.request(r)
     if r == world.active:
         await dialogue.notify_config_changed()
     return JSONResponse({"ok": True, "layout": world.layout(r)})
+
+
+@app.get("/api/world/render")
+async def api_world_render_status():
+    return JSONResponse({"render": renderer.status(), "log": renderer.log_tail()})
+
+
+@app.post("/api/world/render")
+async def api_world_render(room: str):
+    """TV 배경 다시 렌더 (편집기의 '배경 렌더' 버튼)"""
+    r = _room_param(room)
+    if not renderer.request(r):
+        raise HTTPException(400, "블렌더를 찾지 못했습니다. 맥미니에 Blender 를 설치하거나 .env 에 RIBBON_BLENDER_EXE 를 지정하세요")
+    return JSONResponse({"ok": True, "render": renderer.status()})
 
 
 @app.put("/api/world/active")
@@ -320,6 +350,9 @@ async def ws_endpoint(ws: WebSocket):
 art_dir = settings.artworks_path()
 art_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/artworks", StaticFiles(directory=str(art_dir)), name="artworks")  # 배치의 image = "artworks/<파일>"
+render_dir = renderer.dir
+render_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/world-render", StaticFiles(directory=str(render_dir)), name="world-render")   # TV 배경 렌더
 
 dist = settings.client_dist_path()
 if dist.exists():

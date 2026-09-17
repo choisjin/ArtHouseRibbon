@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     world_dir: str = "../data/world"          # 방별 가구 배치 (world_store.py)
     artworks_dir: str = "../data/artworks"    # 벽에 거는 그림
     world_catalog: str = "../client/public/world/catalog.json"   # tools/sync_world.py 가 가져온 카탈로그
+    blender_exe: str = ""               # 비우면 PATH / /Applications/Blender.app 에서 찾음
+    render_auto: bool = True            # 편집기 저장 뒤 TV 배경 자동 렌더
+    render_pct: int = 50                # 3840x2160 의 % (50 = 1920x1080)
+    render_samples: int = 96
     client_dist: str = "../client/dist"
 
     def kids_path(self) -> Path:

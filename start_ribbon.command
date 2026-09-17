@@ -60,6 +60,10 @@ fi
 cd "$ROOT/server" || fail "server 폴더가 없습니다"
 [ -x .venv/bin/python ] || fail "server/.venv 가 없습니다. docs/MACMINI_SETUP.md 3단계대로 설치하세요"
 [ -f .env ] || echo "server/.env 가 없어 모델 없이(mock) 켭니다. 실제 대화는 docs/MACMINI_SETUP.md 6단계."
+BLENDER="$(env_value BLENDER_EXE "")"
+if [ -z "$BLENDER" ] && [ ! -x /Applications/Blender.app/Contents/MacOS/Blender ] && ! command -v blender >/dev/null; then
+  echo "주의: 블렌더가 없어 TV 가 렌더 배경 대신 실시간 3D 로 나옵니다. brew install --cask blender (docs/MACMINI_SETUP.md 5-1단계)"
+fi
 if [ ! -f "$ROOT/client/public/world/catalog.json" ]; then
   echo "주의: 3D 맵 파일(client/public/world)이 없습니다. Windows 에서 python tools/sync_world.py 후 커밋하세요."
 fi

@@ -50,7 +50,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     const w = s.config?.world;
     if (!w) return;
     applying = applying.then(async () => {
-      if (await stage.setLayout(w.room, w.layout)) await rebuildNav();
+      if (await stage.setWorld(w.room, w.layout, w.render)) await rebuildNav();
     }).catch((e) => console.error("맵 적용 실패", e));
   }
   window.addEventListener("resize", () => { if (placed) void rebuildNav(); });

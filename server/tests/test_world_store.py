@@ -64,3 +64,28 @@ def test_artwork_upload_usage_and_delete(store):
     assert store.artworks() == []
     with pytest.raises(ValueError):
         store.add_artwork({"data": "data:text/plain;base64,AAAA", "width": 1, "height": 1})
+
+
+def test_renderer_info_and_stale(store, tmp_path):
+    import asyncio
+
+    from ribbon.world_render import WorldRenderer
+
+    r = WorldRenderer(store, blender=str(tmp_path / "no-blender"))
+    store.render_info = r.info
+    assert r.info("classroom") is None
+    assert store.tv_view()["render"] is None
+    lay = store.layout("classroom")
+    r.dir.mkdir(parents=True)
+    (r.dir / "classroom.png").write_bytes(b"png")
+    (r.dir / "classroom.json").write_text(json.dumps({"layout": lay, "rendered_at": 5}), encoding="utf-8")
+    info = store.tv_view()["render"]
+    assert info["bg"] == "/world-render/classroom.png?v=5" and info["env"] is None and not info["stale"]
+    store.save_layout("classroom", {"items": [], "arts": []})
+    assert r.info("classroom")["stale"]
+    if r.blender is None:   # 블렌더가 없으면 요청을 받지 않는다
+        assert asyncio.run(_request(r)) is False
+
+
+async def _request(r):
+    return r.request("classroom")

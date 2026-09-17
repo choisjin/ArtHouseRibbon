@@ -18,7 +18,7 @@ import os
 import shutil
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 log = logging.getLogger("ribbon.world")
 
@@ -49,6 +49,9 @@ class WorldStore:
         self._lock = threading.Lock()
         self._catalog: Optional[Dict[str, Any]] = None
         self._catalog_mtime = 0.0
+        # 배경 렌더 정보 (world_render.WorldRenderer 가 넣어 준다): room -> dict | None
+        self.render_info: Callable[[str], Optional[Dict[str, Any]]] = lambda room: None
+        self.render_busy: Callable[[], Optional[str]] = lambda: None
 
     # ---------- 카탈로그 / 방 ----------
     @property
@@ -157,9 +160,10 @@ class WorldStore:
             path.unlink()
 
     def tv_view(self) -> Dict[str, Any]:
-        """state 브로드캐스트에 실리는 값: TV 가 그릴 방과 배치"""
+        """state 브로드캐스트에 실리는 값: TV 가 그릴 방과 배치, 배경 렌더(있으면)"""
         room = self.active
-        return {"room": room, "layout": self.layout(room)}
+        return {"room": room, "layout": self.layout(room), "render": self.render_info(room),
+                "rendering": self.render_busy()}
 
     # ---------- 그림 ----------
     def _art_file(self, rel: str) -> Optional[Path]:

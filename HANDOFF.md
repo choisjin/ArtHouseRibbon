@@ -7,6 +7,8 @@
   리본이는 방을 돌아다니다가 부르면 멈춰 인사하고 "부르면 오는 자리"로 옴. 자세한 것은 `docs/WORLD.md`.
 - 관리자 페이지(`?mode=admin`): 아이(이름·나이·마이크), 리본이 목소리·겉모습(3D 미리보기)·돌아다니기, TV 에 보여줄 방.
 - 맵 편집기(`?mode=editor`): Character_Creator 배치 편집기 이식. 서버 `/api/world`, `/api/artworks`, 저장하면 TV 즉시 반영.
+- TV 배경은 블렌더 렌더 사진 (저장하면 맥미니 블렌더가 자동 렌더, `/api/world/render`). 리본이만 실시간, 가구 모델은 가림막.
+  리본이 모델은 고화질(doll.blend 에서 메시당 24000면) + 천 재질 + 렌더와 같이 만든 HDR 조명. 인사는 오른손만.
 
 ## 실행
 
@@ -15,7 +17,7 @@ cd server && .venv\Scripts\activate && uvicorn ribbon.main:app --host 0.0.0.0 --
 브라우저: http://localhost:8765/?mode=debug&demo=1   /   ?mode=admin
 ```
 
-테스트: `cd server && pytest` (26개). 빌드: `cd client && npm run build`.
+테스트: `cd server && pytest` (27개). 빌드: `cd client && npm run build`.
 
 ## 다음 할 일
 
@@ -31,6 +33,8 @@ cd server && .venv\Scripts\activate && uvicorn ribbon.main:app --host 0.0.0.0 --
 - WS 수신 루프 안에서 대화 이벤트를 `await` 하면 교착 → `main.py` `_spawn`.
 - 클라이언트 `RibbonSocket.on()` 은 늦게 등록된 핸들러에 마지막 `state` 를 재전달.
 - 브라우저 오디오는 첫 클릭 전까지 잠김 → 화면 안내 표시.
+- GLTFLoader 는 노드 이름의 점을 지운다: 블렌더 `arm.R` → three.js `armR` (트랙 이름도 `armR.quaternion`).
+- 맥미니에 블렌더 설치 필요 (`brew install --cask blender`). 없으면 TV 는 실시간 3D 로 대신한다.
 - doll.glb 액션은 모든 뼈를 키로 가진다 → 코드 움직임(고개 등)은 매 프레임 뼈를 쉬는 자세로 되돌리고 mixer.update 뒤에 얹는다 (`ribbon3d.ts`).
 - 가구 모델은 캐시 복제본이라 기하·재질을 공유 → 다시 지을 때 가구는 dispose 하지 말 것 (`room.ts`).
 - PixelLab 캐릭터 zip 은 두 번째 애니메이션 묶음이 `walking-<hash>/` 폴더로 들어옴 (glob `walking*`).

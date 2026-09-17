@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { AppConfig, KidInfo, RibbonConfig, ServerMsg } from "../protocol";
 import type { RibbonSocket } from "../ws";
 import { Ribbon3D } from "../tv/ribbon3d";
@@ -29,13 +30,16 @@ function mountRibbonPreview(el: HTMLElement): Ribbon3D {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(W, H);
-  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMapping = THREE.AgXToneMapping;
   el.innerHTML = "";
   el.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1b1626);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xcdbba8, 2.4));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xcdbba8, 0.4));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.0);
   sun.position.set(3, 8, 6);
   scene.add(sun);
   const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 50);
@@ -135,8 +139,10 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
         <h2>맵</h2>
         <form id="world-form">
           <label>TV 에 보여줄 방 <select name="room"></select></label>
+          <p id="render-info" class="hint"></p>
           <div class="actions"><a class="button" id="editor-link" href="/?mode=editor" target="_blank">🪑 맵 편집기 열기</a></div>
-          <p class="hint">맵 편집기에서 가구를 옮기고, 그림을 벽·가벽·이젤에 걸고, 리본이가 "부르면 오는 자리"를 정합니다. 저장하면 TV 에 바로 반영됩니다.</p>
+          <p class="hint">맵 편집기에서 가구를 옮기고, 그림을 벽·가벽·이젤에 걸고, 리본이가 "부르면 오는 자리"를 정합니다.
+            저장하면 이 맥의 블렌더가 TV 배경을 다시 렌더하고(몇 분), 끝나면 TV 가 새 배경으로 바뀝니다. 블렌더가 없으면 TV 는 실시간 3D 화면입니다.</p>
           <p class="hint">가구·방·인형 모델은 Character_Creator(블렌더)에서 만들고 <code>python tools/sync_world.py</code> 로 가져옵니다.</p>
         </form>
       </section>
@@ -323,6 +329,13 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       config = cfg;
     }
     if (cfg?.world && document.activeElement !== roomSel) { roomSel.value = cfg.world.room; syncLink(); }
+    if (cfg?.world) {
+      const w = cfg.world, r = w.render;
+      $("#render-info").textContent =
+        (w.rendering ? `⏳ 배경 렌더 중 (${w.rendering}) · ` : "") +
+        (r ? `TV 배경: 블렌더 렌더 ${new Date(r.rendered_at * 1000).toLocaleString()}${r.stale ? " (배치가 바뀌어 다시 렌더 필요)" : ""}`
+           : "TV 배경: 렌더 없음 → 실시간 3D");
+    }
     if (selected) selected = kids.find((k) => k.id === selected!.id) ?? selected;
     renderKidList();
   });

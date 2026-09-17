@@ -35,6 +35,7 @@ button:disabled { opacity: .45; cursor: default; }
 button.on { background: var(--accent-soft); border-color: var(--accent); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.danger { color: var(--warn); }
+#renderStatus { color: var(--muted); }
 #dirty { color: var(--accent); font-weight: 600; min-width: 60px; }
 main { flex: 1; display: flex; min-height: 0; }
 aside {

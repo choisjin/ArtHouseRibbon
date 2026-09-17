@@ -7,7 +7,10 @@ import { toThree } from "../world/types";
 /** 제자리 걷기 액션이 timeScale 1 일 때 한 걸음이 나아가는 속도 (doll.py WALK_SPEED × 24fps) */
 const ANIM_WALK_SPEED = 0.547;
 const TURN_RATE = 5;              // rad/s
-const BONES = ["pelvis", "spine", "head", "arm.L", "arm.R", "leg.L", "leg.R"] as const;
+/** 뼈 노드 이름. GLTFLoader 가 이름의 점을 지우므로 블렌더의 arm.R 은 armR */
+const BONES = ["pelvis", "spine", "head", "armL", "armR", "legL", "legR"] as const;
+/** 인사는 오른팔만 (원래 액션의 고개 갸웃·몸 흔들기·통통 튀기는 빼고) */
+const GREET_TRACKS = /^armR\./;
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (cur: number, target: number, k: number) => cur + (target - cur) * k;
@@ -49,10 +52,10 @@ export class Ribbon3D {
   constructor() {
     this.root.add(this.body);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({
-      map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.45,
+      map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.3,
     }));
     shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.01;
+    shadow.position.y = 0.008;
     shadow.name = "shadow";
     this.root.add(shadow);
     this.loaded = this.load();
@@ -64,6 +67,7 @@ export class Ribbon3D {
     applyLook(scene, this.look);
     this.body.add(scene);
     scene.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.castShadow = true;
       if ((BONES as readonly string[]).includes(o.name)) {
         this.bones.set(o.name, { node: o, rest: o.quaternion.clone(), restPos: o.position.clone() });
       }
@@ -83,7 +87,8 @@ export class Ribbon3D {
       this.walk.setEffectiveWeight(0).play();
     }
     if (greet) {
-      this.greetAction = this.mixer.clipAction(greet);
+      const wave = new THREE.AnimationClip("Wave", greet.duration, greet.tracks.filter((t) => GREET_TRACKS.test(t.name)));
+      this.greetAction = this.mixer.clipAction(wave);
       this.greetAction.setLoop(THREE.LoopOnce, 1);
       this.mixer.addEventListener("finished", (e) => {
         if (e.action !== this.greetAction) return;

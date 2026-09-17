@@ -1,9 +1,11 @@
 """Character_Creator(블렌더) 산출물을 리본 프로젝트로 가져온다.
 
-    python tools/sync_world.py [--src E:/Project/Character_Creator] [--layouts] [--artworks]
+    python tools/sync_world.py [--src E:/Project/Character_Creator] [--doll] [--layouts] [--artworks]
 
 가져오는 것
-  - export/doll.glb, room_shell*.glb, catalog/*.glb, catalog.json  → client/public/world/
+  - export/room_shell*.glb, catalog/*.glb, catalog.json  → client/public/world/
+  - room_map.py, game_export.py  → tools/blender/ (맥미니가 TV 배경을 렌더할 때 씀)
+  - --doll    : doll.blend 를 고화질로 다시 내보내 client/public/world/doll.glb (블렌더 필요)
   - --layouts : layout.json / layout_gallery.json → data/world/ (이미 있으면 덮어쓰기 전에 history 로 보관)
   - --artworks: artworks/*  → data/artworks/ (index.json 은 합친다)
 
@@ -16,6 +18,8 @@ import datetime
 import json
 import os
 import shutil
+import subprocess
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_SRC = os.environ.get("CHARACTER_CREATOR", "E:/Project/Character_Creator")
@@ -37,11 +41,22 @@ def sync_models(src):
     if not os.path.exists(cat):
         raise SystemExit(f"{cat} 가 없습니다. Character_Creator 에서 카탈로그를 먼저 만드세요")
     catalog = json.load(open(cat, encoding="utf-8"))
-    files = {"doll.glb"} | {r["shell"] for r in catalog["rooms"].values()} | {t["file"] for t in catalog["types"]}
+    files = {r["shell"] for r in catalog["rooms"].values()} | {t["file"] for t in catalog["types"]}
     print("모델:")
     for f in sorted(files):
         copy(os.path.join(exp, f), os.path.join(PUBLIC, f))
     copy(cat, os.path.join(PUBLIC, "catalog.json"))
+    print("블렌더 스크립트:")
+    for f in ("room_map.py", "game_export.py"):
+        copy(os.path.join(src, f), os.path.join(ROOT, "tools", "blender", f))
+
+
+def export_doll(src, blender):
+    print("인형 (고화질 내보내기):")
+    out = os.path.join(PUBLIC, "doll.glb")
+    subprocess.run([blender, "-b", os.path.join(src, "doll.blend"), "--factory-startup",
+                    "-P", os.path.join(ROOT, "tools", "blender", "export_doll.py"), "--", out], check=True)
+    print("  ", os.path.relpath(out, ROOT))
 
 
 def sync_layouts(src):
@@ -81,8 +96,17 @@ def main():
     ap.add_argument("--src", default=DEFAULT_SRC)
     ap.add_argument("--layouts", action="store_true", help="배치 파일도 가져오기")
     ap.add_argument("--artworks", action="store_true", help="올린 그림도 가져오기")
+    ap.add_argument("--doll", action="store_true", help="doll.blend 를 고화질로 다시 내보내기")
+    ap.add_argument("--blender", default=os.environ.get("BLENDER_EXE", ""), help="블렌더 실행 파일")
     args = ap.parse_args()
     sync_models(args.src)
+    if args.doll:
+        sys.path.insert(0, os.path.join(ROOT, "server"))
+        from ribbon.world_render import find_blender
+        blender = find_blender(args.blender)
+        if not blender:
+            raise SystemExit("블렌더를 찾지 못했습니다 (--blender 로 지정)")
+        export_doll(args.src, blender)
     if args.layouts:
         sync_layouts(args.src)
     if args.artworks:

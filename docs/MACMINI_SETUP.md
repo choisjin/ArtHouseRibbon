@@ -81,6 +81,20 @@ python -c "from supertonic import TTS; t=TTS(auto_download=True); s=t.get_voice_
 
 (대안) Supertonic 이 안 되면 맥 내장 음성: `say -v Yuna "안녕"` 이 들리면 `.env` 에서 `RIBBON_TTS_PROVIDER=mac_say`.
 
+## 5-1. 블렌더 (TV 배경 렌더)
+
+TV 배경은 블렌더로 렌더한 사진이다. 맵 편집기에서 배치를 저장하면 맥미니가 알아서 다시 렌더한다.
+
+```bash
+brew install --cask blender
+/Applications/Blender.app/Contents/MacOS/Blender --version
+```
+
+확인: `Blender 5.x` 가 출력된다. 서버를 켜면 로그에 `blender=/Applications/Blender.app/...` 가 보이고,
+렌더가 없는 방은 켜질 때 한 번 렌더한다 (방마다 몇 분, 진행 상황은 맵 편집기 위쪽 "🎬 배경 렌더" 옆).
+느리면 `.env` 에서 `RIBBON_RENDER_SAMPLES=48`, 더 선명하게 하려면 `RIBBON_RENDER_PCT=100` (4K).
+블렌더가 없으면 TV 는 예전처럼 실시간 3D 화면으로 나온다.
+
 ## 6. 설정 파일
 
 ```bash

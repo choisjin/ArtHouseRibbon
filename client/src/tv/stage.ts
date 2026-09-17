@@ -1,7 +1,8 @@
 import * as THREE from "three";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { NavGrid, type P2 } from "../world/nav";
 import { RoomModel } from "../world/room";
-import { rad, toThree, WORLD_BASE, type Catalog, type Layout, type RoomInfo } from "../world/types";
+import { FLOOR_LAYER, rad, toThree, WORLD_BASE, type Catalog, type Layout, type RoomInfo, type WorldRender } from "../world/types";
 
 export async function fetchCatalog(): Promise<Catalog> {
   const res = await fetch(`${WORLD_BASE}catalog.json`);
@@ -9,52 +10,184 @@ export async function fetchCatalog(): Promise<Catalog> {
   return res.json();
 }
 
+/** 가림막: 색은 안 칠하고 깊이만 남겨서 리본이가 가구 뒤로 가면 가려지게 */
+const OCCLUDER = new THREE.MeshBasicMaterial({ colorWrite: false });
+
 /**
- * TV 3D 화면: 렌더러, 조명, TV 카메라(블렌더 map 의 tv_camera 와 같은 시점), 방.
- * 창 비율이 16:9 가 아니면 세로 화각을 유지하고 좌우를 더 보이거나 자른다.
+ * TV 3D 화면. 두 가지 방식:
+ *
+ * - **렌더 배경**(기본, 서버에 블렌더 렌더가 있을 때): 블렌더가 그린 방 사진을 배경으로 깔고 리본이만 실시간으로 그린다.
+ *   방 모델은 깊이만 그리는 가림막으로 두고, 바닥에는 그림자만 받는 판을 깐다. 리본이 조명은 같이 렌더한 360° HDR.
+ *   카메라가 블렌더와 똑같아야 하므로 화면은 16:9 로 고정(남는 곳은 검은 띠).
+ * - **실시간**(렌더가 없을 때): 방까지 three.js 로 그린다.
  */
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 500);
   readonly room: RoomModel;
+  mode: "render" | "live" = "live";
+  private hemi = new THREE.HemisphereLight(0xffffff, 0xcdbba8, 2.4);
+  private sun = new THREE.DirectionalLight(0xffffff, 1.6);
+  private shadowFloor: THREE.Mesh;
+  private bgKey = "";
+  private renderBg: THREE.Texture | null = null;
+  private envKey = "";
+  private view = { x: 0, y: 0, w: 1, h: 1 };
 
   constructor(parent: HTMLElement, catalog: Catalog) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.NeutralToneMapping;
-    parent.appendChild(this.renderer.domElement);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.VSMShadowMap;
+    const canvas = this.renderer.domElement;
+    canvas.style.position = "absolute";
+    parent.appendChild(canvas);
     this.scene.background = new THREE.Color(0x0e0b16);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xcdbba8, 2.4));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(6, 20, 12);
-    this.scene.add(sun);
+    this.sun.position.set(6, 20, 12);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.radius = 12;
+    this.sun.shadow.blurSamples = 16;
+    this.sun.shadow.bias = -0.0005;
+    this.scene.add(this.hemi, this.sun, this.sun.target);
+    this.shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.28 }));
+    this.shadowFloor.rotation.x = -Math.PI / 2;
+    this.shadowFloor.position.y = 0.004;
+    this.shadowFloor.receiveShadow = true;
+    this.shadowFloor.visible = false;
+    this.scene.add(this.shadowFloor);
     this.room = new RoomModel(catalog);
     this.scene.add(this.room.group);
     window.addEventListener("resize", () => this.resize());
     this.resize();
   }
 
+  /** 렌더 배경이면 16:9 로 가운데 맞춤, 실시간이면 창 전체 */
   resize(): void {
-    const w = window.innerWidth, h = window.innerHeight;
+    const W = window.innerWidth, H = window.innerHeight;
+    let w = W, h = H;
+    if (this.mode === "render") {
+      h = Math.round(W * 9 / 16);
+      if (h > H) { h = H; w = Math.round(H * 16 / 9); }
+    }
+    this.view = { x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h };
+    const c = this.renderer.domElement;
+    c.style.left = `${this.view.x}px`;
+    c.style.top = `${this.view.y}px`;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
 
-  /** 방의 tv_camera 로 카메라를 맞춘다 */
+  /** 방의 tv_camera 로 카메라를 맞춘다 (블렌더 TVCam 과 같은 위치·화각) */
   fitCamera(room: RoomInfo): void {
     const t = room.tv_camera;
     this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(rad(t.hfov_deg) / 2) * 9 / 16));
     this.camera.position.copy(toThree(t.x, t.y, t.z));
     this.camera.lookAt(toThree(t.x, t.y + 10, t.z));
     this.camera.updateProjectionMatrix();
+    // 그림자 카메라가 방 전체를 덮게
+    const s = this.sun.shadow.camera;
+    const half = Math.max(room.width, room.depth) / 2 + 1;
+    s.left = -half; s.right = half; s.top = half; s.bottom = -half;
+    s.near = 1; s.far = 60;
+    s.updateProjectionMatrix();
+    this.sun.position.set(2, 24, 6);
+    this.shadowFloor.scale.set(room.width, room.depth, 1);
   }
 
-  async setLayout(roomId: string, layout: Layout | null): Promise<boolean> {
-    const changed = await this.room.setLayout(roomId, layout);
-    if (changed && this.room.room) this.fitCamera(this.room.room);
-    return changed;
+  /**
+   * 방을 맞춘다. 렌더가 있으면 렌더에 쓴 배치로 가림막을 짓고 배경을 바꾼다.
+   * 방 모양(가림막·길찾기)이 바뀌었으면 true
+   */
+  async setWorld(roomId: string, layout: Layout | null, render: WorldRender | null | undefined): Promise<boolean> {
+    const useRender = !!render?.bg;
+    const lay = useRender ? render!.layout ?? layout : layout;
+    const modeChanged = (useRender ? "render" : "live") !== this.mode;
+    if (useRender) {
+      await Promise.all([this.setBackground(render!.bg), this.setEnvironment(render!.env)]);
+    }
+    const changed = await this.room.setLayout(roomId, lay);
+    if (changed || modeChanged) {
+      this.mode = useRender ? "render" : "live";
+      this.applyMode();
+      if (this.room.room) this.fitCamera(this.room.room);
+      this.resize();
+    }
+    return changed || modeChanged;
+  }
+
+  private async setBackground(url: string): Promise<void> {
+    if (url === this.bgKey) return;
+    const tex = await new THREE.TextureLoader().loadAsync(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.bgKey = url;
+    this.renderBg?.dispose();
+    this.renderBg = tex;
+    if (this.mode === "render") this.scene.background = tex;
+  }
+
+  private async setEnvironment(url: string | null): Promise<void> {
+    if ((url ?? "") === this.envKey) return;
+    this.envKey = url ?? "";
+    if (!url) { this.scene.environment = null; return; }
+    try {
+      const hdr = await new RGBELoader().loadAsync(url);
+      hdr.mapping = THREE.EquirectangularReflectionMapping;
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const env = pmrem.fromEquirectangular(hdr).texture;
+      pmrem.dispose();
+      hdr.dispose();
+      this.scene.environment = env;
+    } catch (e) {
+      console.warn("환경 HDR 을 못 읽음", url, e);
+      this.scene.environment = null;
+    }
+  }
+
+  private applyMode(): void {
+    const render = this.mode === "render";
+    const r = this.renderer;
+    r.toneMapping = render ? THREE.AgXToneMapping : THREE.NeutralToneMapping;   // 블렌더 AgX 와 맞춤
+    r.toneMappingExposure = 1;
+    this.scene.background = render && this.renderBg ? this.renderBg : new THREE.Color(0x0e0b16);
+    if (!render) this.scene.environment = null;
+    this.hemi.intensity = render ? 0.25 : 2.4;
+    this.sun.intensity = render ? 0.6 : 1.6;
+    this.shadowFloor.visible = render;
+    this.room.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (render) {
+        if (!m.userData.liveMaterial) {
+          m.userData.liveMaterial = m.material;
+          m.userData.liveVisible = m.visible;       // 그림이 걸린 이젤은 원래 캔버스가 숨겨져 있다
+        }
+        m.material = OCCLUDER;
+        m.renderOrder = -1;
+        // 바닥과 바닥에 깔린 것은 가림막이 아니다 (그림자판·발이 묻힌다)
+        m.visible = m.userData.liveVisible && !(/^Floor/.test(m.name) || this.isFlat(m));
+      } else if (m.userData.liveMaterial) {
+        m.material = m.userData.liveMaterial;
+        m.visible = m.userData.liveVisible;
+        m.renderOrder = 0;
+        delete m.userData.liveMaterial;
+      }
+    });
+  }
+
+  /** 러그처럼 바닥에 깔린 가구의 부품인가 */
+  private isFlat(o: THREE.Object3D): boolean {
+    for (let p: THREE.Object3D | null = o; p; p = p.parent) {
+      const id = p.userData.itemId as string | undefined;
+      if (!id) continue;
+      const e = this.room.layout?.items.find((i) => i.id === id);
+      const t = e && this.room.types.get(e.type);
+      return !!e && (FLOOR_LAYER.has(e.type) || (!!t && t.bbox.z1 < 0.15));
+    }
+    return false;
   }
 
   /** 발과 머리 끝이 모두 화면 안쪽(가장자리 여백 margin)에 보이는 바닥 점인가 */
@@ -74,10 +207,14 @@ export class Stage {
     return new NavGrid(r.room, r.types, r.layout, radius, 0.2, (p) => this.onScreen(p, height));
   }
 
-  /** 월드 점의 화면 픽셀 좌표 */
+  /** 월드 점의 화면(창) 픽셀 좌표 */
   toScreen(p: THREE.Vector3): { x: number; y: number; visible: boolean } {
     const v = p.clone().project(this.camera);
-    return { x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight, visible: v.z < 1 };
+    return {
+      x: this.view.x + (v.x + 1) / 2 * this.view.w,
+      y: this.view.y + (1 - v.y) / 2 * this.view.h,
+      visible: v.z < 1,
+    };
   }
 
   render(): void { this.renderer.render(this.scene, this.camera); }

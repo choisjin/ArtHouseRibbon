@@ -22,6 +22,26 @@ export interface DollAsset { scene: THREE.Group; animations: THREE.AnimationClip
 
 let cached: Promise<DollAsset> | null = null;
 
+/** 봉제 인형 천 재질: glb 의 단순 재질(기본색·거칠기)을 보풀 광택(sheen)이 있는 재질로 바꾼다 */
+const GLOSSY = new Set(["Button_Game", "EyeFelt_Game"]);
+function fabric(src: THREE.Material): THREE.Material {
+  const s = src as THREE.MeshStandardMaterial;
+  if (!s.isMeshStandardMaterial) return src.clone();
+  const m = new THREE.MeshPhysicalMaterial({
+    name: s.name, color: s.color.clone(), map: s.map, transparent: s.transparent, opacity: s.opacity,
+  });
+  if (GLOSSY.has(s.name)) {
+    m.roughness = 0.35;
+    m.clearcoat = 0.6;
+  } else {
+    m.roughness = Math.max(0.75, s.roughness);
+    m.sheen = 1;
+    m.sheenRoughness = 0.55;
+    m.sheenColor = new THREE.Color(1, 1, 1).lerp(s.color, 0.35);
+  }
+  return m;
+}
+
 /** doll.glb 를 읽어 새 복제본을 준다 (재질은 복제본마다 따로 둬서 색을 바꿀 수 있게) */
 export async function loadDoll(): Promise<DollAsset> {
   cached ??= new GLTFLoader().loadAsync(`${WORLD_BASE}doll.glb`).then((g) => ({ scene: g.scene, animations: g.animations }));
@@ -32,7 +52,7 @@ export async function loadDoll(): Promise<DollAsset> {
     const m = o as THREE.Mesh;
     if (!m.isMesh || Array.isArray(m.material)) return;
     let c = mats.get(m.material);
-    if (!c) { c = m.material.clone(); mats.set(m.material, c); }
+    if (!c) { c = fabric(m.material); mats.set(m.material, c); }
     m.material = c;
   });
   return { scene, animations: src.animations };
@@ -46,7 +66,10 @@ export function applyLook(root: THREE.Object3D, look: Partial<RibbonLook> | unde
     const m = o as THREE.Mesh;
     if (!m.isMesh || Array.isArray(m.material)) return;
     const key = TINT[m.material.name];
-    const mat = m.material as THREE.MeshStandardMaterial;
-    if (key && mat.color) mat.color.set(l[key] as string);
+    const mat = m.material as THREE.MeshPhysicalMaterial;
+    if (key && mat.color) {
+      mat.color.set(l[key] as string);
+      mat.sheenColor?.set(0xffffff).lerp(mat.color, 0.35);
+    }
   });
 }

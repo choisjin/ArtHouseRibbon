@@ -81,8 +81,17 @@ export interface Layout {
   arts?: LayoutArt[];
 }
 
+/** 블렌더로 렌더한 TV 배경 (서버 world_render.py) */
+export interface WorldRender {
+  bg: string;               // TV 시점 PNG
+  env: string | null;       // 리본이 조명용 360° HDR
+  layout: Layout | null;    // 렌더에 쓴 배치 (가림막·길찾기는 이것으로)
+  rendered_at: number;
+  stale: boolean;           // 그 뒤로 배치가 바뀜 (다시 렌더 중이거나 대기)
+}
+
 /** state.config.world */
-export interface WorldView { room: string; layout: Layout | null }
+export interface WorldView { room: string; layout: Layout | null; render?: WorldRender | null; rendering?: string | null }
 
 export interface ArtworkInfo { file: string; name: string; width: number; height: number }
 

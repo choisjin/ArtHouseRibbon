@@ -28,6 +28,8 @@ const api = {
   state: (room) => sendJSON('GET', `/api/world?room=${room}`),
   save: (room, layout) => sendJSON('PUT', `/api/world/layout?room=${room}`, layout),
   setActive: (room) => sendJSON('PUT', '/api/world/active', { room }),
+  render: (room) => sendJSON('POST', `/api/world/render?room=${room}`),
+  renderStatus: () => sendJSON('GET', '/api/world/render'),
   config: () => sendJSON('GET', '/api/config'),
   upload: (body) => sendJSON('POST', '/api/artworks', body),
   deleteArt: (file) => sendJSON('POST', '/api/artworks/delete', { file }),
@@ -1647,9 +1649,10 @@ function outputLayout() {
 }
 async function saveLayout(quiet = false) {
   try {
-    await api.save(roomId, outputLayout());
+    const res = await api.save(roomId, outputLayout());
     setDirty(false);
-    if (!quiet) toast(`저장했습니다 (${room.name})`);
+    if (!quiet) toast(res.rendering ? `저장했습니다 (${room.name}) · TV 배경을 다시 렌더합니다` : `저장했습니다 (${room.name})`);
+    pollRender();
     renderLibrary();
     return true;
   } catch (err) {
@@ -1676,6 +1679,48 @@ $('setActive').onclick = async () => {
   } catch (err) {
     toast(err.message, 4000);
   }
+};
+
+// ---------------- TV 배경 렌더 (맥미니 블렌더) ----------------
+let renderTimer = null;
+function showRender(st) {
+  const el = $('renderStatus');
+  $('renderBg').disabled = !st.available;
+  if (!st.available) {
+    el.textContent = '⚠ 블렌더 없음 (TV 는 실시간 화면)';
+    return;
+  }
+  const mine = st.rooms && st.rooms[roomId];
+  if (st.running) {
+    const other = st.running !== roomId ? ` [${catalog.rooms[st.running]?.name ?? st.running}]` : '';
+    el.textContent = `⏳ 배경 렌더 중${other} ${st.elapsed}초`;
+  } else if (st.pending.includes(roomId)) {
+    el.textContent = '⏳ 배경 렌더 대기';
+  } else if (st.last && st.last.room === roomId && !st.last.ok) {
+    el.textContent = '❌ 배경 렌더 실패 (서버 data/world/render/render.log)';
+  } else if (!mine) {
+    el.textContent = '배경 렌더 없음';
+  } else {
+    el.textContent = mine.stale ? '● 배경이 옛 배치' : `✅ 배경 ${new Date(mine.rendered_at * 1000).toLocaleTimeString()}`;
+  }
+}
+async function pollRender() {
+  clearTimeout(renderTimer);
+  try {
+    const { render } = await api.renderStatus();
+    showRender(render);
+    if (render.running || render.pending.length) renderTimer = setTimeout(pollRender, 3000);
+  } catch { /* 서버가 잠깐 없음 */ }
+}
+$('renderBg').onclick = async () => {
+  if (dirty && !(await saveLayout(true))) return;
+  try {
+    await api.render(roomId);
+    toast(`${room.name} 배경을 렌더합니다 (몇 분 걸립니다)`);
+  } catch (err) {
+    toast(err.message, 5000);
+  }
+  pollRender();
 };
 
 // ---------------- 방 불러오기 / 전환 ----------------
@@ -1727,6 +1772,7 @@ async function loadRoom(r) {
 
   activeRoom = st.active;
   showActive();
+  if (st.render) { showRender(st.render); pollRender(); }
   const shell = await loader.loadAsync(`${MODEL_BASE}${room.shell}?v=${cacheBust}`);
   shellNode = shell.scene;
   shellNode.traverse((o) => { if (/^Ceiling/.test(o.name)) ceilingParts.push(o); });
