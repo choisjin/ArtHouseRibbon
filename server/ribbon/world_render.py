@@ -157,7 +157,13 @@ class WorldRenderer:
             with open(self.log_path, "w", encoding="utf-8", errors="replace") as out:
                 return subprocess.run(cmd, stdout=out, stderr=subprocess.STDOUT, cwd=str(REPO), env=env).returncode
 
-        rc = await asyncio.to_thread(run)
+        job = asyncio.create_task(asyncio.to_thread(run))
+        while not job.done():   # 블렌더 출력은 render.log 로 가므로 서버 창에는 30초마다 진행 상황만
+            await asyncio.wait({job}, timeout=30)
+            if not job.done():
+                tail = self.log_tail(1)
+                log.info("배경 렌더 중: %s %d초 | %s", room, time.time() - self.started, tail[0][:120] if tail else "")
+        rc = job.result()
         png, hdr = work / f"{room}.png", work / f"{room}_env.hdr"
         if rc != 0 or not png.exists():
             log.warning("배경 렌더 실패: %s (종료 코드 %s) → %s", room, rc, self.log_path)
