@@ -17,6 +17,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const stage = new Stage(document.getElementById("app")!, await fetchCatalog());
   const hud = new Hud();
   const speaker = new Speaker(socket, { showLock: true });
+  const { mountOutputPicker } = await import("./output");
+  mountOutputPicker(speaker);
   const ribbon = new Ribbon3D();
   const brain = new RibbonBrain(ribbon);
   ribbon.root.visible = false;      // 길찾기가 준비되고 자리에 세울 때까지

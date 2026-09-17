@@ -185,6 +185,10 @@ hostname
 chrome.exe --autoplay-policy=no-user-gesture-required --kiosk http://<hostname>.local:8765/?mode=tv
 ```
 
+**TV 소리 출력 장치**: 탭에 스피커 표시는 뜨는데 소리가 안 들리면 소리가 다른 장치(원격 접속 프로그램의 가상 스피커 등)로 가는 것이다.
+TV 화면에서 `o` 키 → 출력 장치를 실제 스피커/HDMI 로 고르고 "삐 소리 시험" (장치 이름이 안 보이면 "장치 이름 보기").
+고른 장치는 그 브라우저가 기억한다. 서버 창에 `소리 출력: ... · 장치 N개 [...]` 가 찍힌다.
+
 폰 카메라도 같은 이유로 같은 설정이 필요하다 (Android Chrome 은 같은 플래그, iPhone Safari 는 이 방법이 없어 나중에 HTTPS 를 붙인다).
 
 ## 10. 상시 운영 준비
