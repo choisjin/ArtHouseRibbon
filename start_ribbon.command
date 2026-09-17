@@ -40,7 +40,13 @@ if [ -z "$RIBBON_NO_PULL" ] && [ -d .git ]; then
     echo "고친 파일이 있어서 git pull 을 건너뜁니다:"
     git status --short --untracked-files=no
   else
+    BEFORE="$(git rev-parse HEAD)"
     git pull --ff-only || echo "git pull 실패 (인터넷 확인). 지금 코드로 계속합니다."
+    if [ "$(git rev-parse HEAD)" != "$BEFORE" ]; then
+      # 이 파일도 바뀌었을 수 있으니 새 버전으로 처음부터 다시 실행한다
+      echo "새 코드를 받았습니다. 새 실행 파일로 다시 시작합니다."
+      RIBBON_NO_PULL=1 exec /bin/bash "$ROOT/start_ribbon.command"
+    fi
   fi
 fi
 
