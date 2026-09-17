@@ -33,7 +33,8 @@ cd server && .venv\Scripts\activate && uvicorn ribbon.main:app --host 0.0.0.0 --
 
 - WS 수신 루프 안에서 대화 이벤트를 `await` 하면 교착 → `main.py` `_spawn`.
 - 클라이언트 `RibbonSocket.on()` 은 늦게 등록된 핸들러에 마지막 `state` 를 재전달.
-- 브라우저 오디오는 첫 클릭 전까지 잠김 → 화면 안내 표시.
+- 브라우저 오디오는 첫 클릭 전까지 잠김 → 화면 안내 표시 (TV 는 풀릴 때까지 "소리 켜기" 유지, 서버 창에 기록).
+- **브라우저는 Chrome 기준.** Safari 에서는 소리가 안 나는 사례가 있고 출력 장치 선택(AudioContext.setSinkId)도 없다.
 - doll.blend 의 뼈대는 DollSpot(방 속 위치) → DollMover(옆걸음) 아래에 있다. 내보낼 때 조상을 모두 원점으로 (`export_doll.py`). 안 그러면 몸이 발밑 그림자에서 떨어져 가구를 통과해 보인다.
 - GLTFLoader 는 노드 이름의 점을 지운다: 블렌더 `arm.R` → three.js `armR` (트랙 이름도 `armR.quaternion`).
 - 맥미니에 블렌더 설치 필요 (`brew install --cask blender`). 없으면 TV 는 실시간 3D 로 대신한다.

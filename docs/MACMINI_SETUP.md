@@ -139,7 +139,10 @@ uvicorn ribbon.main:app --host 0.0.0.0 --port 8765
 
 시작 로그에 `stt=mlx_whisper llm=ollama:gemma3:27b tts=supertonic` 가 보여야 한다.
 
-맥미니 브라우저(Safari 또는 Chrome)에서 `http://localhost:8765/?mode=debug&demo=1` 을 연다.
+**브라우저는 Chrome 을 쓴다** (TV·마이크·편집기 모두). Safari 는 소리 출력 장치 선택(`o` 키)과 자동 재생 허용 옵션이 없고,
+마이크·오디오 동작이 달라 소리가 안 나는 경우가 있다. Chrome 에서 정상 동작하는 것을 기준으로 만든다.
+
+맥미니 Chrome 에서 `http://localhost:8765/?mode=debug&demo=1` 을 연다.
 
 1. 아이들이 입장하고 리본이가 목소리로 인사한다.
 2. 채널 0 → `호출` → 입력창에 `내 그림에 고양이 그렸어` → `말하기`
