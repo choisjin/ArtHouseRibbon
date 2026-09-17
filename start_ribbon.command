@@ -4,7 +4,7 @@
 #
 # 하는 일
 #   1. 최신 코드 받기 (git pull, 고친 파일이 있으면 건너뜀)   RIBBON_NO_PULL=1 이면 안 함
-#   2. 클라이언트가 바뀌었으면 npm install / npm run build
+#   2. 클라이언트가 바뀌었으면 npm ci / npm run build
 #   3. .env 가 Ollama 를 쓰면 Ollama 켜기
 #   4. 같은 포트에 떠 있는 옛 서버 끄기
 #   5. 서버 실행 + 브라우저로 관리자 페이지 열기            RIBBON_OPEN=tv|admin|editor|none
@@ -33,8 +33,11 @@ OPEN="${RIBBON_OPEN:-admin}"
 # ---- 1. 최신 코드 ----
 if [ -z "$RIBBON_NO_PULL" ] && [ -d .git ]; then
   say_step "최신 코드 받기"
+  # package-lock.json 은 npm 이 고쳐 놓을 수 있는 자동 생성 파일이라 되돌리고 받는다
+  git checkout -- client/package-lock.json 2>/dev/null
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    echo "고친 파일이 있어서 git pull 을 건너뜁니다."
+    echo "고친 파일이 있어서 git pull 을 건너뜁니다:"
+    git status --short --untracked-files=no
   else
     git pull --ff-only || echo "git pull 실패 (인터넷 확인). 지금 코드로 계속합니다."
   fi
@@ -44,8 +47,8 @@ fi
 command -v node >/dev/null || fail "node 가 없습니다. brew install node (docs/MACMINI_SETUP.md 1단계)"
 cd "$ROOT/client" || fail "client 폴더가 없습니다"
 if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then
-  say_step "클라이언트 패키지 설치 (npm install)"
-  npm install || fail "npm install 실패"
+  say_step "클라이언트 패키지 설치 (npm ci)"
+  npm ci || fail "npm ci 실패"
   touch node_modules
 fi
 if [ ! -f dist/index.html ] || [ -n "$(find src public index.html vite.config.ts package.json -newer dist/index.html -print -quit)" ]; then
