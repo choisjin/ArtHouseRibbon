@@ -88,4 +88,5 @@ export class AudioCapture {
   }
 
   get running(): boolean { return this.ctx !== null; }
+  get context(): AudioContext | null { return this.ctx; }
 }

@@ -7,7 +7,7 @@ import { Hud } from "./hud";
 import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
 
-export interface TvOptions { debug: boolean; demo: boolean }
+export interface TvOptions { debug: boolean; demo: boolean; mic: boolean }
 
 /**
  * TV 모드: 3D 방 + 리본이 + 대기 순서 + 자막.
@@ -79,6 +79,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       walkSpeed = rc.walk_speed ?? 1;
       applySpeed();
     }
+    const tv = s.config?.tv;
+    stage.setGlass(tv?.glass ?? true, tv?.glass_strength ?? 0.6);
     hud.setQueue(s.queue, kids);
     brain.setState(s.ribbon);
   }
@@ -134,6 +136,16 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   }
   requestAnimationFrame(frame);
 
+  if (opts.mic && !opts.debug) {
+    // 마이크가 TV 노트북에 꽂혀 있을 때: 오른쪽 아래 작은 마이크 칸 (m 키로 숨기기)
+    const { mountMicControl } = await import("../audio/micControl");
+    const box = document.createElement("div");
+    box.className = "overlay";
+    box.style.cssText = "right:16px;bottom:16px;width:280px";
+    document.body.appendChild(box);
+    mountMicControl(box, socket, { autoStart: true, compact: true });
+    window.addEventListener("keydown", (e) => { if (e.key === "m") box.hidden = !box.hidden; });
+  }
   if (opts.debug) {
     const { mountDebugPanel } = await import("../debug/panel");
     mountDebugPanel(socket, () => kids);

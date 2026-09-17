@@ -40,8 +40,14 @@ class RibbonConfig(BaseModel):
     return_after_s: float = 8.0  # 대화가 끝나고 이만큼 지나면 다시 돌아다닌다
 
 
+class TvConfig(BaseModel):
+    glass: bool = True           # 정면 유리 효과 (반사광·가장자리 빛)
+    glass_strength: float = 0.6  # 0 ~ 1
+
+
 class AppConfig(BaseModel):
     ribbon: RibbonConfig = Field(default_factory=RibbonConfig)
+    tv: TvConfig = Field(default_factory=TvConfig)
 
 
 class ConfigStore:
@@ -61,6 +67,14 @@ class ConfigStore:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.config.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def update_tv(self, data: Dict) -> TvConfig:
+        merged = self.config.tv.model_dump()
+        merged.update({k: v for k, v in data.items() if v is not None})
+        merged["glass_strength"] = min(1.0, max(0.0, float(merged["glass_strength"])))
+        self.config.tv = TvConfig(**merged)
+        self.save()
+        return self.config.tv
 
     def update_ribbon(self, data: Dict) -> RibbonConfig:
         merged = self.config.ribbon.model_dump()

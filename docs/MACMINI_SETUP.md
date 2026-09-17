@@ -124,10 +124,10 @@ python -c "import mlx_whisper, numpy as np; print(mlx_whisper.transcribe(np.zero
 ## 7. 서버 실행과 맥 안에서 확인
 
 **쉬운 방법**: Finder 에서 `~/ArtHouseRibbon/start_ribbon.command` 더블클릭 (Dock 에 끌어다 두면 편하다).
-최신 코드 받기 → 바뀌었으면 화면 빌드 → Ollama 켜기 → 옛 서버 끄기 → 서버 실행 → 관리자 페이지 열기까지 한 번에 한다.
+최신 코드 받기 → 바뀌었으면 화면 빌드 → Ollama 켜기 → 옛 서버 끄기 → 서버 실행 → 마이크 화면·관리자 페이지 열기까지 한 번에 한다.
 끄기는 그 터미널 창에서 Ctrl+C 또는 `stop_ribbon.command` 더블클릭.
 처음 한 번 "확인되지 않은 개발자" 경고가 나오면 우클릭 → 열기. 실행 권한이 없다고 나오면 `chmod +x ~/ArtHouseRibbon/*.command`.
-환경변수: `RIBBON_NO_PULL=1`(git pull 안 함), `RIBBON_OPEN=tv|admin|editor|none`(열 페이지).
+환경변수: `RIBBON_NO_PULL=1`(git pull 안 함), `RIBBON_OPEN=mic,admin`(열 페이지, 쉼표로 여러 개, `none` 이면 안 엶).
 
 직접 켜려면:
 
@@ -145,9 +145,17 @@ uvicorn ribbon.main:app --host 0.0.0.0 --port 8765
 2. 채널 0 → `호출` → 입력창에 `내 그림에 고양이 그렸어` → `말하기`
 3. 확인: 몇 초 안에 리본이가 실제 LLM 답을 두세 문장으로 말한다. 첫 답은 모델 로딩 때문에 느릴 수 있다.
 
-## 8. 맥 내장 마이크로 STT 확인
+## 8. 마이크
 
-같은 화면에서:
+마이크 소리는 **브라우저 창이 서버로 보낸다.** 무선 마이크 수신기가 꽂힌 컴퓨터에서 마이크 화면을 켜 두어야 리본이가 듣는다.
+
+- 맥미니에 꽂혀 있으면: `http://localhost:8765/?mode=mic` (`start_ribbon.command` 가 자동으로 연다)
+- TV 노트북에 꽂혀 있으면: TV 주소를 `?mode=tv&mic=1` 로 (오른쪽 아래 마이크 칸, `m` 키로 숨기기)
+
+처음 한 번 장치를 고르고 "마이크 켜기" 를 누르면 그 브라우저가 기억해 두었다가 다음부터는 열자마자 켠다.
+"브라우저가 소리 입력을 막고 있습니다" 가 뜨면 화면을 한 번 클릭한다. 서버 창에는 `마이크 소리 들어옴: 채널 N` 이 찍힌다.
+
+맥 내장 마이크로 STT 확인 (디버그 화면에서):
 
 1. 마이크 장치 첫 번째 칸에 `MacBook/Mac mini Microphone` 선택 → `마이크 시작` (브라우저가 권한을 물으면 허용)
 2. 채널 0 → `호출` 을 누른 뒤 마이크에 대고 한 문장 말하고 1초 조용히 한다.

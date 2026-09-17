@@ -52,7 +52,7 @@ export class Ribbon3D {
   constructor() {
     this.root.add(this.body);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({
-      map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.3,
+      map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.2,
     }));
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = 0.008;

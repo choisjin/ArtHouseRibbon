@@ -7,7 +7,8 @@
 #   2. 클라이언트가 바뀌었으면 npm ci / npm run build
 #   3. .env 가 Ollama 를 쓰면 Ollama 켜기
 #   4. 같은 포트에 떠 있는 옛 서버 끄기
-#   5. 서버 실행 + 브라우저로 관리자 페이지 열기            RIBBON_OPEN=tv|admin|editor|none
+#   5. 서버 실행 + 브라우저로 마이크 화면 열기 (무선 마이크 수신기가 이 맥에 꽂혀 있을 때)
+#      RIBBON_OPEN=mic|admin|tv|editor|none (쉼표로 여러 개, 기본 mic,admin)
 
 cd "$(dirname "$0")" || exit 1
 ROOT="$(pwd)"
@@ -28,7 +29,7 @@ env_value() {   # server/.env 에서 RIBBON_<이름> 값 읽기 (없으면 기�
 
 PORT="$(env_value PORT 8765)"
 LLM="$(env_value LLM_PROVIDER mock)"
-OPEN="${RIBBON_OPEN:-admin}"
+OPEN="${RIBBON_OPEN:-mic,admin}"
 
 # ---- 1. 최신 코드 ----
 if [ -z "$RIBBON_NO_PULL" ] && [ -d .git ]; then
@@ -91,7 +92,8 @@ fi
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname -s)"
 say_step "리본 서버 시작"
 cat <<EOF
-  이 맥     : http://localhost:$PORT/?mode=admin
+  마이크    : http://localhost:$PORT/?mode=mic   ← 켜 두어야 리본이가 소리를 듣습니다
+  관리자    : http://localhost:$PORT/?mode=admin
   TV(노트북): http://$HOST_NAME.local:$PORT/?mode=tv
   맵 편집기 : http://$HOST_NAME.local:$PORT/?mode=editor
   디버그    : http://$HOST_NAME.local:$PORT/?mode=debug
@@ -101,7 +103,10 @@ EOF
 if [ "$OPEN" != "none" ]; then
   (
     for _ in $(seq 1 60); do
-      curl -s -m 1 "http://localhost:$PORT/api/state" >/dev/null && { open "http://localhost:$PORT/?mode=$OPEN"; exit 0; }
+      if curl -s -m 1 "http://localhost:$PORT/api/state" >/dev/null; then
+        for m in ${OPEN//,/ }; do open "http://localhost:$PORT/?mode=$m"; done
+        exit 0
+      fi
       sleep 1
     done
   ) &

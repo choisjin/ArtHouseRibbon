@@ -147,6 +147,13 @@ async def api_config_ribbon(data: dict = Body(...)):
     return JSONResponse(rc.model_dump())
 
 
+@app.put("/api/config/tv")
+async def api_config_tv(data: dict = Body(...)):
+    tv_cfg = store.update_tv(data)
+    await dialogue.notify_config_changed()
+    return JSONResponse(tv_cfg.model_dump())
+
+
 # ---------- 3D 맵 (방 배치 · 그림). 편집기: /?mode=editor ----------
 
 def _room_param(room: str | None) -> str:
@@ -284,7 +291,14 @@ async def _transcribe_and_dispatch(channel: int, pcm: np.ndarray) -> None:
         await dialogue.on_utterance(channel, text)
 
 
+_audio_seen: Dict[int, float] = {}
+
+
 async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
+    now = asyncio.get_running_loop().time()
+    if now - _audio_seen.get(channel, -1e9) > 60:
+        log.info("마이크 소리 들어옴: 채널 %d", channel)   # 처음, 또는 1분 넘게 끊겼다가 다시 들어올 때
+    _audio_seen[channel] = now
     proc = processors.get(channel)
     if proc is None:
         return
@@ -299,6 +313,8 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
     t = msg.get("type")
     if t == "hello":
         hub.clients[ws] = msg.get("role", "unknown")
+        if hub.clients[ws] == "mic":
+            log.info("마이크 화면 연결됨 (%s)", ws.client.host if ws.client else "?")
         await ws.send_text(json.dumps(dialogue.snapshot().model_dump(), ensure_ascii=False))
     elif t == "tts.done":
         dialogue.mark_spoken(msg.get("utterance_id", ""))
