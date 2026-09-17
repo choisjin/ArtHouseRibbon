@@ -62,6 +62,8 @@ cd server && pytest
    자세한 순서는 `docs/MACMINI_SETUP.md`.
 4. 호출어 모델("리본아")은 openwakeword 로 별도 학습 후 `RIBBON_WAKEWORD_PROVIDER=openwakeword`, 경로 지정. 학습 전에는 디버그 패널의 `호출` 버튼으로 대신한다.
 
+맥미니에서는 `start_ribbon.command` 를 더블클릭하면 코드 받기·빌드·서버 실행을 한 번에 한다 (`docs/MACMINI_SETUP.md` 7단계).
+
 배포 시에는 `cd client && npm run build` 로 만든 `client/dist` 를 서버가 `/` 에서 그대로 서빙하므로, 노트북과 폰은 `http://<맥미니IP>:8765/?mode=tv` 처럼 접속하면 된다.
 
 ## 마이크 (DJI Mic Mini)

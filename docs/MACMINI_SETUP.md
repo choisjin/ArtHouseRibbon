@@ -11,8 +11,7 @@
 ```bash
 # Windows
 cd E:/Project/kids_helper && git add -A && git commit -m "메시지" && git push
-# 맥미니
-cd ~/ArtHouseRibbon && git pull && (cd client && npm run build)
+# 맥미니: start_ribbon.command 더블클릭 (pull + 빌드 + 서버 재시작까지 함)
 ```
 
 ## 1. 기본 도구 (맥미니 터미널)
@@ -109,6 +108,14 @@ python -c "import mlx_whisper, numpy as np; print(mlx_whisper.transcribe(np.zero
 확인: 오류 없이 끝난다 (빈 문자열이 출력되면 정상).
 
 ## 7. 서버 실행과 맥 안에서 확인
+
+**쉬운 방법**: Finder 에서 `~/ArtHouseRibbon/start_ribbon.command` 더블클릭 (Dock 에 끌어다 두면 편하다).
+최신 코드 받기 → 바뀌었으면 화면 빌드 → Ollama 켜기 → 옛 서버 끄기 → 서버 실행 → 관리자 페이지 열기까지 한 번에 한다.
+끄기는 그 터미널 창에서 Ctrl+C 또는 `stop_ribbon.command` 더블클릭.
+처음 한 번 "확인되지 않은 개발자" 경고가 나오면 우클릭 → 열기. 실행 권한이 없다고 나오면 `chmod +x ~/ArtHouseRibbon/*.command`.
+환경변수: `RIBBON_NO_PULL=1`(git pull 안 함), `RIBBON_OPEN=tv|admin|editor|none`(열 페이지).
+
+직접 켜려면:
 
 ```bash
 cd ~/ArtHouseRibbon/server

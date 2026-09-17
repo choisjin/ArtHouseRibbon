@@ -3,3 +3,5 @@
 *.png binary
 *.jpg binary
 *.wav binary
+*.glb binary
+*.command text eol=lf
