@@ -42,15 +42,8 @@ export interface RibbonConfig {
   return_after_s?: number;
 }
 
-/** TV 화면 설정 */
-export interface TvConfig {
-  glass: boolean;           // 정면 유리 효과
-  glass_strength: number;   // 0~1
-}
-
 export interface AppConfig {
   ribbon: RibbonConfig;
-  tv?: TvConfig;
   /** TV 에 보여줄 방과 그 배치 (서버 world_store.tv_view) */
   world?: import("./world/types").WorldView;
 }

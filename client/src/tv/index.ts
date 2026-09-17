@@ -79,8 +79,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       walkSpeed = rc.walk_speed ?? 1;
       applySpeed();
     }
-    const tv = s.config?.tv;
-    stage.setGlass(tv?.glass ?? true, tv?.glass_strength ?? 0.6);
     hud.setQueue(s.queue, kids);
     brain.setState(s.ribbon);
   }

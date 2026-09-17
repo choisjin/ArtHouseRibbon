@@ -147,13 +147,6 @@ async def api_config_ribbon(data: dict = Body(...)):
     return JSONResponse(rc.model_dump())
 
 
-@app.put("/api/config/tv")
-async def api_config_tv(data: dict = Body(...)):
-    tv_cfg = store.update_tv(data)
-    await dialogue.notify_config_changed()
-    return JSONResponse(tv_cfg.model_dump())
-
-
 # ---------- 3D 맵 (방 배치 · 그림). 편집기: /?mode=editor ----------
 
 def _room_param(room: str | None) -> str:

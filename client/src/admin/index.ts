@@ -140,8 +140,6 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
         <form id="world-form">
           <label>TV 에 보여줄 방 <select name="room"></select></label>
           <p id="render-info" class="hint"></p>
-          <label class="inline"><input name="glass" type="checkbox" /> 정면 유리 효과 (반사광·가장자리 빛)</label>
-          <label>유리 효과 세기 <input name="glass_strength" type="range" min="0" max="1" step="0.05" /></label>
           <div class="actions"><a class="button" id="editor-link" href="/?mode=editor" target="_blank">🪑 맵 편집기 열기</a></div>
           <p class="hint">맵 편집기에서 가구를 옮기고, 그림을 벽·가벽·이젤에 걸고, 리본이가 "부르면 오는 자리"를 정합니다.
             저장하면 이 맥의 블렌더가 TV 배경을 다시 렌더하고(몇 분), 끝나면 TV 가 새 배경으로 바뀝니다. 블렌더가 없으면 TV 는 실시간 3D 화면입니다.</p>
@@ -313,16 +311,6 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     }
     roomSel.value = w.active;
   } catch (err) { msg(`맵 정보를 못 읽음: ${err}`, true); }
-  const wf = $("#world-form") as HTMLFormElement;
-  const glassOn = wf.elements.namedItem("glass") as HTMLInputElement;
-  const glassK = wf.elements.namedItem("glass_strength") as HTMLInputElement;
-  let tvFilled = false;
-  const saveTv = async () => {
-    try { await api("PUT", "/api/config/tv", { glass: glassOn.checked, glass_strength: Number(glassK.value) }); msg("TV 화면 설정 저장됨"); }
-    catch (err) { msg(String(err), true); }
-  };
-  glassOn.onchange = saveTv;
-  glassK.onchange = saveTv;
   const syncLink = () => { ($("#editor-link") as HTMLAnchorElement).href = `/?mode=editor#${roomSel.value}`; };
   syncLink();
   roomSel.onchange = async () => {
@@ -341,11 +329,6 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       config = cfg;
     }
     if (cfg?.world && document.activeElement !== roomSel) { roomSel.value = cfg.world.room; syncLink(); }
-    if (cfg?.tv && !tvFilled) {
-      tvFilled = true;
-      glassOn.checked = cfg.tv.glass;
-      glassK.value = String(cfg.tv.glass_strength);
-    }
     if (cfg?.world) {
       const w = cfg.world, r = w.render;
       $("#render-info").textContent =

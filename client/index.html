@@ -17,27 +17,6 @@
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
       @keyframes bob { 50% { margin-top: -8px; } }
-      /* 정면 유리 (tv/glass.ts) */
-      #glass { position: absolute; pointer-events: none; overflow: hidden; border-radius: 1.6vmin; --g: 0.6; }
-      /* 가장자리 빛 + 위쪽 반사 + 모서리 광택 */
-      #glass::before { content: ""; position: absolute; inset: 0; border-radius: inherit;
-        box-shadow:
-          inset 0 0 0 calc(1px + var(--g) * 2px) rgba(255,255,255,calc(var(--g) * .7)),
-          inset 0 0 calc(var(--g) * 3vmin) rgba(255,255,255,calc(var(--g) * .75)),
-          inset 0 0 calc(var(--g) * 12vmin) rgba(170,210,255,calc(var(--g) * .45));
-        background:
-          radial-gradient(60% 45% at 12% 0%, rgba(255,255,255,calc(var(--g) * .45)), rgba(255,255,255,0) 70%),
-          linear-gradient(180deg, rgba(255,255,255,calc(var(--g) * .18)) 0%, rgba(255,255,255,0) 12%),
-          linear-gradient(118deg,
-            rgba(255,255,255,0) 6%, rgba(255,255,255,calc(var(--g) * .28)) 11%, rgba(255,255,255,calc(var(--g) * .1)) 19%, rgba(255,255,255,0) 22%,
-            rgba(255,255,255,0) 25%, rgba(255,255,255,calc(var(--g) * .18)) 27%, rgba(255,255,255,0) 30%,
-            rgba(255,255,255,0) 68%, rgba(255,255,255,calc(var(--g) * .12)) 74%, rgba(255,255,255,0) 80%),
-          radial-gradient(120% 95% at 50% 45%, rgba(0,0,0,0) 65%, rgba(20,35,60,calc(var(--g) * .22)) 100%); }
-      /* 천천히 지나가는 광택 */
-      #glass::after { content: ""; position: absolute; top: -20%; bottom: -20%; width: 22%; left: -40%;
-        background: linear-gradient(100deg, rgba(255,255,255,0), rgba(255,255,255,calc(var(--g) * .32)) 45%, rgba(255,255,255,calc(var(--g) * .32)) 55%, rgba(255,255,255,0));
-        filter: blur(6px); transform: skewX(-18deg); animation: glass-sheen 12s ease-in-out infinite; }
-      @keyframes glass-sheen { 0%, 65% { left: -40%; } 100% { left: 140%; } }
       /* 마이크 (audio/micControl.ts) */
       .mic-control { display: flex; flex-direction: column; gap: 8px; background: rgba(0,0,0,.6); border: 1px solid #444; border-radius: 12px; padding: 12px; }
       .mic-control label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #aaa; }

@@ -35,8 +35,6 @@ export class Stage {
   private envKey = "";
   private renderEnv: THREE.Texture | null = null;
   private view = { x: 0, y: 0, w: 1, h: 1 };
-  /** 정면 유리 효과 (CSS, index.html #glass). 화면(캔버스)과 같은 자리에 겹친다 */
-  private glass = document.createElement("div");
 
   constructor(parent: HTMLElement, catalog: Catalog) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -47,8 +45,6 @@ export class Stage {
     const canvas = this.renderer.domElement;
     canvas.style.position = "absolute";
     parent.appendChild(canvas);
-    this.glass.id = "glass";
-    parent.appendChild(this.glass);
     this.scene.background = new THREE.Color(0x0e0b16);
     this.sun.position.set(6, 20, 12);
     this.sun.castShadow = true;
@@ -83,16 +79,9 @@ export class Stage {
     const c = this.renderer.domElement;
     c.style.left = `${this.view.x}px`;
     c.style.top = `${this.view.y}px`;
-    Object.assign(this.glass.style, { left: `${this.view.x}px`, top: `${this.view.y}px`, width: `${w}px`, height: `${h}px` });
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-  }
-
-  /** 정면 유리: 켜기/끄기와 세기(0~1) */
-  setGlass(on: boolean, strength: number): void {
-    this.glass.hidden = !on;
-    this.glass.style.setProperty("--g", String(Math.max(0, Math.min(1, strength))));
   }
 
   /** 방의 tv_camera 로 카메라를 맞춘다 (블렌더 TVCam 과 같은 위치·화각) */
