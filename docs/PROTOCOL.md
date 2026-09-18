@@ -17,7 +17,6 @@
 | `admin.wake` | `kid_id` (또는 `channel`) | admin | 관리자 호출. 그 아이 마이크로, 호출 무시 중에도 받는다 |
 | `admin.stop` | `all` (bool) | admin | 중단: 하던 말·생각을 멈추고 다음 차례로. `all` 이면 대기열까지 비운다 |
 | `admin.ignore` | `on` (bool) | admin | 호출 무시 켜기/끄기 (호출어와 새 말을 받지 않는다) |
-| `admin.act` | `action`: peek | admin | 연출 시험. 서버가 TV 들에 `act` 로 보낸다 (TV 가 없으면 admin.msg 오류) |
 | `device.status` | `kind`: output, `supported, locked, current, devices, msg` | tv | TV 의 소리 출력 장치 상태 |
 | `devices.get` | - | admin | 장치 현황을 다시 달라 |
 | `device.control` | `agent`, `kind`: output, `action`: set{deviceId}/beep/labels | admin | 서버가 그 TV(agent)로 그대로 전달 |
@@ -33,7 +32,6 @@
 | `kid.enter` / `kid.leave` | `kid_id` | 입장/퇴장 연출 트리거. 곧이어 `state` 가 온다 |
 | `face.positions` | camera 가 보낸 것 그대로 | tv 에게만 |
 | `speak.stop` | - | 관리자 중단. TV 는 재생 중인 소리와 남은 문장을 버린다 |
-| `act` | `action`: peek | 관리자가 누른 연출. peek = 화면에 바짝 붙어 보기 (친구도 같이, 대화 중이면 안 함) |
 | `admin.msg` | `text`, `error` | 관리자 조작 결과 알림 (예: 마이크 없는 아이 호출) |
 | `devices` | `outputs[]` (`agent` = "브라우저 id/역할", `role`, `host` + 상태) | admin 에게만. 장치 현황이 바뀌거나 TV 가 닫힐 때 |
 | `device.control` | 관리자가 보낸 것 그대로 | 그 화면(agent)에게만 |

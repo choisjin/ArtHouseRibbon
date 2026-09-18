@@ -66,20 +66,13 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     brain.arts = stage.room.artSpots;
     brain.chairs = (stage.room.layout?.items ?? []).filter((e) => e.type in SEATS);
     brain.unitPerM = stage.room.U;
-    brain.glass = stage.glass;
-    const info = stage.room.room;
-    if (info) brain.frontCenter = { x: 0, y: info.front_y };
     const spot = stage.room.layout?.doll_spot;
     if (spot) brain.home = { x: spot.x, y: spot.y };
     if (friendBrain && friend) {
       friendBrain.nav = brain.nav;
       friendBrain.arts = brain.arts;
       friendBrain.chairs = brain.chairs;
-      friendBrain.glass = stage.glass;
-      brain.buddy = friendBrain;           // 한 명이 화면에 붙으러 가면 다른 한 명도 가끔 같이 온다
-      friendBrain.buddy = brain;
       friendBrain.unitPerM = brain.unitPerM;
-      friendBrain.frontCenter = brain.frontCenter;
       // 친구는 리본이 자리에서 조금 떨어진 곳을 제 자리로 삼는다
       const spot2 = brain.nav?.nearestFree({ x: brain.home.x + 2.2, y: brain.home.y + 1.2 });
       friendBrain.home = spot2 ?? brain.home;
@@ -157,7 +150,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "ribbon.state": brain.setState(msg.state); break;
       case "speak": speaker.enqueue(msg); break;
       case "speak.stop": speaker.stop(); break;
-      case "act": if (msg.action === "peek") brain.peekNow(); break;   // 관리자 대시보드의 연출 버튼
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
         hud.showCaption(`${name}: ${msg.text}`, 4000);
@@ -194,7 +186,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       }
     }
     stage.followShadow(ribbon.root.position);
-    stage.glass.update(dt);
     stage.render();
     // 말풍선: 듣는 중 / 생각 중
     const s = ribbon.state;

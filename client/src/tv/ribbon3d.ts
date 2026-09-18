@@ -14,7 +14,7 @@ const BONES = ["pelvis", "spine", "head", "armL", "armR", "legL", "legR"] as con
 const GREET_TRACKS = /^armR\./;
 /** 한 번씩 재생하는 동작 (doll_actions.py). Greet 은 오른팔만 남겨 Wave 로 넣는다 */
 export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "Point" | "Clap" | "Jump"
-  | "LookUp" | "Peek";        // Peek: 화면(유리) 코앞에 붙어 두 손을 짚고 들여다보기
+  | "LookUp" | "Peek";        // Peek: 두 손을 올려 짚기 (화면에 붙는 연출은 없앴다. 인형 파일에는 남아 있다)
 
 /** 앉을 자리: 바닥 좌표와 좌판 높이(장면 단위), 앉아서 바라보는 방향 */
 export interface Seat { x: number; y: number; height: number; yaw: number }
@@ -165,25 +165,14 @@ export class Ribbon3D {
   /** 이 동작을 할 수 있는가 (인형 파일에 들어 있는가) */
   can(name: Motion): boolean { return this.motions.has(name); }
 
-  /** 동작 한 번. 걷는 중이면 하지 않는다. speed 1 보다 작으면 느리게(오래) */
-  play(name: Motion, onDone?: () => void, speed = 1): boolean {
+  /** 동작 한 번. 걷는 중이면 하지 않는다 */
+  play(name: Motion, onDone?: () => void): boolean {
     const a = this.motions.get(name);
     if (!a || this.moving || this.playing) { onDone?.(); return false; }
     this.playing = name;
     this.motionDone = onDone ?? null;
     a.reset().setEffectiveWeight(1).fadeIn(0.2).play();
-    a.timeScale = speed;
     return true;
-  }
-
-  get currentLook(): Partial<RibbonLook> | undefined { return this.look; }
-
-  /** 하던 동작을 바로 멈춘다 (유리창 층 사본을 치울 때) */
-  cancelMotion(): void {
-    if (!this.playing) return;
-    this.motions.get(this.playing)?.stop();
-    this.playing = null;
-    this.motionDone = null;
   }
 
   setLook(look: Partial<RibbonLook> | undefined): void {
