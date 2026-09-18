@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+from ..kids.profile import context_lines
 from ..protocol import KidInfo
 
 SYSTEM_PROMPT = """너는 '{name}'이야. 미술학원 교실 TV 안에 사는 다정한 친구 캐릭터야.
@@ -46,7 +47,7 @@ def system_prompt(name: str = "리본", extra: str = "", max_sentences: int = 3)
 
 def build_messages(kid: Optional[KidInfo], history: List[Dict[str, str]], text: str,
                    name: str = "리본", extra: str = "", max_sentences: int = 3) -> List[Dict[str, str]]:
-    who = f"지금 말하는 아이: {kid.name}" + (f" ({kid.age}살)" if kid and kid.age else "") if kid else "지금 말하는 아이: 이름 모름 (친구라고 부른다)"
+    who = "\n".join(context_lines(kid)) if kid else "지금 말하는 아이: 이름 모름 (친구라고 부른다)"
     messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt(name, extra, max_sentences) + "\n" + who}]
     messages.extend(history[-8:])
     messages.append({"role": "user", "content": text})

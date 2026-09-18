@@ -41,35 +41,7 @@
       #debug .log { max-height: 200px; overflow: auto; font-size: 11px; color: #bbb; white-space: pre-wrap; }
       #mode { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; }
       #mode video { width: min(90vw, 480px); border-radius: 12px; }
-      /* 관리자 페이지 */
-      #admin { position: fixed; inset: 0; overflow: auto; padding: 20px 24px 60px; box-sizing: border-box; }
-      #admin h1 { margin: 0 0 16px; font-size: 22px; }
-      #admin h2 { margin: 0 0 12px; font-size: 17px; color: #ffd54a; }
-      #admin .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
-      #admin .card { background: #1b1626; border: 1px solid #3a2f4f; border-radius: 14px; padding: 16px 18px; }
-      #admin .kid-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
-      #admin ul#kid-list { list-style: none; margin: 0; padding: 0; min-width: 150px; }
-      #admin ul#kid-list li { padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
-      #admin ul#kid-list li:hover { background: #2a2238; }
-      #admin ul#kid-list li.sel { border-color: #ffd54a; background: #2a2238; }
-      #admin .preview canvas { border-radius: 10px; border: 1px solid #3a2f4f; }
-      #admin form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; flex: 1; min-width: 260px; }
-      #admin form[hidden] { display: none; }
-      #admin label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #bbb; }
-      #admin input, #admin select, #admin textarea { padding: 7px 9px; background: #0e0b16; color: #eee; border: 1px solid #555; border-radius: 6px; font-size: 14px; }
-      #admin input[type=color] { padding: 2px; height: 34px; width: 60px; }
-      #admin input[type=range] { padding: 0; }
-      #admin .colors { display: flex; gap: 12px; flex-wrap: wrap; }
-      #admin .actions { display: flex; gap: 8px; margin-top: 6px; }
-      #admin button { padding: 8px 14px; border-radius: 8px; border: 1px solid #666; background: #2a2238; color: #eee; cursor: pointer; font-size: 14px; }
-      #admin button[type=submit] { background: #ffd54a; color: #222; border-color: #ffd54a; font-weight: 600; }
-      #admin button.danger { border-color: #c0392b; color: #f5a1a1; }
-      #admin .msg { margin-top: 16px; min-height: 1.2em; }
-      #admin label.inline { flex-direction: row; align-items: center; gap: 6px; }
-      #admin label.inline input { width: auto; }
-      #admin fieldset { border: 1px solid #3a2f4f; border-radius: 10px; display: flex; flex-direction: column; gap: 8px; }
-      #admin a.button { display: inline-block; padding: 8px 14px; border-radius: 8px; background: #ffd54a; color: #222; font-weight: 600; text-decoration: none; }
-      #admin .hint { color: #888; font-size: 12px; }
+      /* 관리자 페이지 스타일은 src/admin/style.css */
     </style>
   </head>
   <body>

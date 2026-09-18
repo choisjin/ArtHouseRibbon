@@ -125,6 +125,17 @@ export class Speaker {
     void this.drain();
   }
 
+  /** 지금 재생 중인 문장을 끊고 남은 문장을 버린다 (관리자 "중단") */
+  stop(): void {
+    this.queue = [];
+    this.current?.();
+    this.current = null;
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+  }
+
+  /** 지금 재생을 끝내는 함수 */
+  private current: (() => void) | null = null;
+
   /** ?mute=1 이면 소리를 내지 않고 글자 수에 비례한 시간만 흘려보낸다 (자동 테스트용) */
   private muted = new URLSearchParams(location.search).has("mute");
 
@@ -135,7 +146,12 @@ export class Speaker {
       const msg = this.queue.shift()!;
       this.onStart?.(msg);
       try {
-        if (this.muted) await new Promise((r) => setTimeout(r, 300 + msg.text.length * 60));
+        if (this.muted) {
+          await new Promise<void>((r) => {
+            const t = setTimeout(r, 300 + msg.text.length * 60);
+            this.current = () => { clearTimeout(t); r(); };
+          });
+        }
         else if (msg.audio_b64) await this.playWav(msg.audio_b64);
         else await this.speakBrowser(msg.text);
       } catch (e) {
@@ -207,7 +223,12 @@ export class Speaker {
       for (const v of data) { const d = (v - 128) / 128; sum += d * d; }
       this.onLevel?.(Math.min(1, Math.sqrt(sum / data.length) * 4));
     }, 50);
-    await new Promise<void>((resolve) => { src.onended = () => resolve(); src.start(); });
+    await new Promise<void>((resolve) => {
+      src.onended = () => resolve();
+      this.current = () => { try { src.stop(); } catch { /* 이미 끝남 */ } resolve(); };
+      src.start();
+    });
+    this.current = null;
     clearInterval(ticker);
     this.onLevel?.(0);
     src.disconnect();

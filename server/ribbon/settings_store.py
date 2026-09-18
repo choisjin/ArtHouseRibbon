@@ -43,8 +43,39 @@ class RibbonConfig(BaseModel):
     return_after_s: float = 8.0  # 대화가 끝나고 이만큼 지나면 다시 돌아다닌다
 
 
+class CharacterProfile(BaseModel):
+    """캐릭터 한 명의 프로필 (관리자 '캐릭터' 탭). 주인공이 된 캐릭터의 값이 RibbonConfig 로 복사돼 대화·TV 에 쓰인다"""
+    name: str = "리본"
+    personality: str = ""        # 성격·말투 (시스템 프롬프트 뒤에 붙는다 = RibbonConfig.persona_extra)
+    intro: str = ""              # 한 줄 소개 (프로필 카드용)
+    voice: str = "F1"
+    speed: float = 1.05
+    steps: int = 8
+    pitch: float = 0.0
+    look: RibbonLook = Field(default_factory=RibbonLook)
+
+
+#: 처음 쓸 때의 캐릭터별 기본 프로필 (client/src/world/doll.ts CHARACTERS 와 같은 id)
+DEFAULT_PROFILES: Dict[str, Dict] = {
+    "ribbon": {"name": "리본", "intro": "TV 안에 사는 명랑한 미술 친구",
+               "personality": "밝고 호기심이 많다. 아이 그림에서 색과 모양을 먼저 알아봐 준다.", "voice": "F1",
+               "look": {"outfit": "onepiece"}},
+    "ollie": {"name": "올리", "intro": "앞치마를 두른 차분한 남자 친구",
+              "personality": "차분하고 다정하다. 천천히 말하고 아이 이야기를 끝까지 들어 준다.", "voice": "M1",
+              "look": {"outfit": "apron"}},
+    "seoyul": {"name": "서율", "intro": "양갈래 머리의 씩씩한 여자 친구",
+               "personality": "씩씩하고 장난스럽다. 새로운 그림 아이디어를 같이 떠올리는 걸 좋아한다.", "voice": "F2",
+               "look": {"outfit": "apron"}},
+}
+
+#: 주인공 프로필에서 RibbonConfig 로 복사하는 값 (프로필 키 -> RibbonConfig 키)
+_PROFILE_TO_RIBBON = {"name": "name", "personality": "persona_extra", "voice": "voice", "speed": "speed",
+                      "steps": "steps", "pitch": "pitch", "look": "look"}
+
+
 class AppConfig(BaseModel):
     ribbon: RibbonConfig = Field(default_factory=RibbonConfig)
+    characters: Dict[str, CharacterProfile] = Field(default_factory=dict)
 
 
 class ConfigStore:
@@ -54,20 +85,66 @@ class ConfigStore:
         self.load()
 
     def load(self) -> AppConfig:
+        raw: Dict = {}
         if self.path.exists():
             try:
-                self.config = AppConfig(**json.loads(self.path.read_text(encoding="utf-8")))
+                raw = json.loads(self.path.read_text(encoding="utf-8"))
+                self.config = AppConfig(**raw)
             except Exception:  # noqa: BLE001 - 깨진 파일이면 기본값으로
-                self.config = AppConfig()
+                raw, self.config = {}, AppConfig()
+        self._seed_profiles(had_profiles=bool(raw.get("characters")))
+        self._sync_main()
         return self.config
+
+    def _seed_profiles(self, had_profiles: bool) -> None:
+        """프로필이 없던 예전 설정이면 지금 주인공 값(이름·목소리·성격·겉모습)을 그 캐릭터 프로필로 옮긴다"""
+        rc = self.config.ribbon
+        chars = self.config.characters
+        if not had_profiles and rc.character not in chars:
+            base = DEFAULT_PROFILES.get(rc.character, {})
+            prof = {p: getattr(rc, r) for p, r in _PROFILE_TO_RIBBON.items()}
+            prof["personality"] = prof["personality"] or base.get("personality", "")   # 비어 있었으면 기본 성격
+            chars[rc.character] = CharacterProfile(**prof, intro=base.get("intro", ""))
+        for cid, d in DEFAULT_PROFILES.items():
+            chars.setdefault(cid, CharacterProfile(**d))
+
+    def profile(self, cid: str) -> CharacterProfile:
+        chars = self.config.characters
+        if cid not in chars:
+            chars[cid] = CharacterProfile(**DEFAULT_PROFILES.get(cid, {"name": cid}))
+        return chars[cid]
+
+    def _sync_main(self) -> None:
+        """주인공 프로필을 RibbonConfig 의 이름·목소리·성격·겉모습으로 복사 (대화·TTS·TV 는 RibbonConfig 만 본다)"""
+        rc = self.config.ribbon
+        p = self.profile(rc.character)
+        merged = rc.model_dump()
+        merged.update({r: getattr(p, k).model_dump() if k == "look" else getattr(p, k)
+                       for k, r in _PROFILE_TO_RIBBON.items()})
+        self.config.ribbon = RibbonConfig(**merged)
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.config.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
 
     def update_ribbon(self, data: Dict) -> RibbonConfig:
+        """공통 설정(주인공·친구·대화·움직임). 이름·목소리 등 프로필 값이 오면 주인공 프로필에 적는다"""
         merged = self.config.ribbon.model_dump()
         merged.update({k: v for k, v in data.items() if v is not None})
         self.config.ribbon = RibbonConfig(**merged)
+        rc = self.config.ribbon
+        prof = {k: data[r] for k, r in _PROFILE_TO_RIBBON.items() if data.get(r) is not None}
+        if prof:
+            self.update_character(rc.character, prof, save=False)
+        self._sync_main()
         self.save()
         return self.config.ribbon
+
+    def update_character(self, cid: str, data: Dict, save: bool = True) -> CharacterProfile:
+        merged = self.profile(cid).model_dump()
+        merged.update({k: v for k, v in data.items() if v is not None and k in CharacterProfile.model_fields})
+        self.config.characters[cid] = CharacterProfile(**merged)
+        if save:
+            self._sync_main()
+            self.save()
+        return self.config.characters[cid]

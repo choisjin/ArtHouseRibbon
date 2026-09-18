@@ -130,6 +130,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
         return;
       }
       ribbon.setLook(rc.look);
+      const fp = friendId ? s.config?.characters?.[friendId] : undefined;
+      if (friend && fp) friend.setLook(fp.look);   // 친구는 자기 프로필의 옷을 입는다
       brain.opts = { wander: rc.wander ?? true, returnAfterS: rc.return_after_s ?? 8 };
       if (friendBrain) friendBrain.opts = { wander: true, returnAfterS: 8 };
       walkSpeed = rc.walk_speed ?? 1;
@@ -145,6 +147,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "state": applyState(msg); break;
       case "ribbon.state": brain.setState(msg.state); break;
       case "speak": speaker.enqueue(msg); break;
+      case "speak.stop": speaker.stop(); break;
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
         hud.showCaption(`${name}: ${msg.text}`, 4000);

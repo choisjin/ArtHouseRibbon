@@ -7,6 +7,7 @@ WS:    /ws  (JSON 텍스트 프레임 + 오디오 바이너리 프레임)
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -25,6 +26,7 @@ from .kids.registry import KidRegistry
 from .providers.llm import make_llm
 from .providers.stt import make_stt
 from .providers.tts import configure_tts, make_tts
+from . import schedule as sched
 from .settings_store import ConfigStore
 from .world_render import WorldRenderer
 from .world_store import WorldStore
@@ -56,6 +58,7 @@ class Hub:
 hub = Hub()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
+schedule = sched.ScheduleStore(settings.schedule_path())
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 llm = make_llm(settings)
 stt = make_stt(settings)
@@ -120,7 +123,14 @@ async def api_kid_upsert(kid_id: str | None = None, data: dict = Body(...)):
         data["id"] = kid_id
     if not str(data.get("name", "")).strip():
         raise HTTPException(400, "이름이 필요합니다")
-    kid = kids.upsert(data)
+    for slot in data.get("schedule") or []:
+        if not (sched.valid_time(str(slot.get("start"))) and sched.valid_time(str(slot.get("end")))
+                and str(slot["start"]) < str(slot["end"]) and 0 <= int(slot.get("day", -1)) <= 6):
+            raise HTTPException(400, f"수업 시간이 잘못됐습니다: {slot}")
+    try:
+        kid = kids.upsert(data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     await dialogue.notify_config_changed()
     return JSONResponse(kid.model_dump())
 
@@ -131,6 +141,7 @@ async def api_kid_delete(kid_id: str):
     if not kids.remove(kid_id):
         raise HTTPException(404, "없는 아이")
     world.forget_kid_room(room)          # 전시실에 걸어 둔 그림 목록도 같이 지운다 (사진 파일은 남는다)
+    schedule.drop_kid(kid_id)
     await dialogue.notify_config_changed()
     return JSONResponse({"ok": True})
 
@@ -138,6 +149,20 @@ async def api_kid_delete(kid_id: str):
 @app.get("/api/config")
 async def api_config_get():
     return JSONResponse(store.config.model_dump())
+
+
+@app.put("/api/config/character/{cid}")
+async def api_config_character(cid: str, data: dict = Body(...)):
+    """캐릭터 프로필(이름·성격·소개·목소리·겉모습). 주인공이면 대화·TV 에 바로 반영된다"""
+    try:
+        prof = store.update_character(cid, data)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    rc = store.config.ribbon
+    configure_tts(tts, rc.voice, rc.speed, rc.steps, rc.pitch)
+    log.info("character %s saved: name=%s voice=%s", cid, prof.name, prof.voice)
+    await dialogue.notify_config_changed()
+    return JSONResponse(prof.model_dump())
 
 
 @app.put("/api/config/ribbon")
@@ -148,6 +173,70 @@ async def api_config_ribbon(data: dict = Body(...)):
              rc.voice, rc.speed, rc.steps, rc.pitch, rc.name, settings.tts_provider)
     await dialogue.notify_config_changed()
     return JSONResponse(rc.model_dump())
+
+
+# ---------- 시간표 (대시보드). 정규 수업은 아이마다(KidInfo.schedule), 끌어 옮긴 건 그날만 ----------
+
+def _date_param(s: str) -> "dt.date":
+    try:
+        return dt.date.fromisoformat(s)
+    except ValueError:
+        raise HTTPException(400, f"날짜 형식이 잘못됐습니다: {s}")
+
+
+@app.get("/api/schedule")
+async def api_schedule(start: str, end: str):
+    a, b = _date_param(start), _date_param(end)
+    if b < a or (b - a).days > 62:
+        raise HTTPException(400, "기간은 62일까지")
+    items = schedule.occurrences(kids.all(), a, b, include_cancelled=True)
+    return JSONResponse({"items": [o.model_dump() for o in items],
+                         "day_start": sched.DAY_START, "day_end": sched.DAY_END})
+
+
+def _schedule_kid(data: dict):
+    kid = kids.get(str(data.get("kid_id") or ""))
+    if kid is None:
+        raise HTTPException(404, "없는 아이입니다")
+    _date_param(str(data.get("orig_date") or ""))
+    return kid, str(data["orig_date"]), str(data.get("orig_start") or "")
+
+
+@app.post("/api/schedule/move")
+async def api_schedule_move(data: dict = Body(...)):
+    """수업 하나를 그날만 옮긴다 {kid_id, orig_date, orig_start, date, start}"""
+    kid, od, os_ = _schedule_kid(data)
+    date, start = str(data.get("date") or ""), str(data.get("start") or "")
+    _date_param(date)
+    if not sched.valid_time(start):
+        raise HTTPException(400, f"시각 형식이 잘못됐습니다: {start}")
+    try:
+        ov = sched.move(schedule.overrides, kid, od, os_, date, start)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    schedule.save()
+    return JSONResponse(ov.model_dump())
+
+
+@app.post("/api/schedule/cancel")
+async def api_schedule_cancel(data: dict = Body(...)):
+    """그날 결석 {kid_id, orig_date, orig_start}"""
+    kid, od, os_ = _schedule_kid(data)
+    try:
+        sched.cancel(schedule.overrides, kid, od, os_)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    schedule.save()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/schedule/restore")
+async def api_schedule_restore(data: dict = Body(...)):
+    """옮기거나 결석한 수업을 원래대로"""
+    kid, od, os_ = _schedule_kid(data)
+    sched.restore(schedule.overrides, kid.id, od, os_)
+    schedule.save()
+    return JSONResponse({"ok": True})
 
 
 # ---------- 3D 맵 (방 배치 · 그림). 편집기: /?mode=editor ----------
@@ -380,6 +469,28 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
                     str(msg.get("text", ""))[:300])
     elif t == "debug.utterance":
         _spawn(dialogue.on_utterance(int(msg.get("channel", 0)), str(msg.get("text", ""))))
+    elif t == "admin.wake":
+        # 관리자가 누른 호출: 아이(kid_id)의 마이크 채널로, 호출 무시 중에도 받는다
+        kid = kids.get(str(msg.get("kid_id") or ""))
+        ch = kid.mic_channel if kid else msg.get("channel")
+        if ch is None or int(ch) not in processors:
+            await ws.send_text(json.dumps({"type": "admin.msg", "error": True,
+                                           "text": f"{kid.name if kid else '아이'}에게 마이크가 지정되지 않았습니다"},
+                                          ensure_ascii=False))
+            return
+        processors[int(ch)].start_listening()
+        _spawn(dialogue.on_wake(int(ch), force=True))
+    elif t == "admin.stop":
+        if msg.get("all"):
+            for p in processors.values():
+                p.stop_listening()
+        _spawn(dialogue.stop(clear_queue=bool(msg.get("all"))))
+    elif t == "admin.ignore":
+        on = bool(msg.get("on"))
+        if on:
+            for p in processors.values():
+                p.stop_listening()
+        _spawn(dialogue.set_ignore_calls(on))
     elif t == "kid.enter":
         _spawn(dialogue.on_kid_enter(str(msg.get("kid_id", ""))))
     elif t == "kid.leave":

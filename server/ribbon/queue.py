@@ -117,6 +117,14 @@ class TurnQueue:
         self._turns.remove(turn)
         return self._promote(now)
 
+    def clear(self) -> List[Turn]:
+        """관리자 "모두 멈춤": 활성·대기 턴을 모두 취소한다."""
+        gone = self._live()
+        for t in gone:
+            t.state = "cancelled"
+        self._turns = [t for t in self._turns if t not in gone]
+        return gone
+
     def expire(self, now: float, waiting_timeout: float) -> List[Turn]:
         """말 없이 오래 기다린 대기 턴을 만료시켜 반환."""
         expired: List[Turn] = []

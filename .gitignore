@@ -12,6 +12,7 @@ client/dist/
 # 데이터 (운영 중 바뀌는 파일은 커밋하지 않음. 예제는 data/kids.example.json)
 data/kids.json
 data/settings.json
+data/schedule.json
 data/faces/
 data/recordings/
 data/artworks/

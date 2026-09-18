@@ -13,6 +13,7 @@ import time
 from typing import Awaitable, Callable, Dict, List, Optional
 
 from .config import Settings
+from .kids.profile import call_name
 from .kids.registry import KidRegistry
 from .persona import ribbon as persona
 from .protocol import (KidInfo, RibbonState, RibbonStateMessage, SessionSnapshot, SpeakMessage,
@@ -49,6 +50,10 @@ class DialogueManager:
         self._pending_done: List[tuple] = []   # (utterance_id, Event, 글자수) - 아직 재생 완료를 안 기다린 문장
         self._speak_lock = asyncio.Lock()
         self._last_spoken_at = 0.0
+        self.ignore_calls = False                     # 관리자 "호출 무시": 호출어·새 말을 받지 않는다
+        self._respond_task: Optional[asyncio.Task] = None
+        self._stop_gen = 0                            # "중단"할 때마다 늘린다. 그 전에 줄 서 있던 말은 버린다
+        self._waiting: Optional[asyncio.Event] = None  # 지금 재생 완료를 기다리는 문장
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
@@ -56,7 +61,8 @@ class DialogueManager:
         if self.world:
             config["world"] = self.world.tv_view()
         return SessionSnapshot(kids=self.kids.all(), queue=self.queue.snapshot(),
-                               ribbon=self.ribbon_state, target_kid=self.target_kid, config=config)
+                               ribbon=self.ribbon_state, target_kid=self.target_kid, config=config,
+                               ignore_calls=self.ignore_calls)
 
     async def notify_config_changed(self) -> None:
         """관리자 페이지 저장 후 호출: 모든 화면에 새 설정을 보낸다."""
@@ -73,18 +79,24 @@ class DialogueManager:
         return kid
 
     # ---------- 이벤트 ----------
-    async def on_wake(self, channel: int) -> None:
+    async def on_wake(self, channel: int, force: bool = False) -> None:
+        """호출. force 는 관리자가 누른 호출 (호출 무시 중에도 받는다)"""
+        if self.ignore_calls and not force:
+            log.info("호출 무시 중: ch=%s", channel)
+            return
         kid = self._kid_for_channel(channel)
         turn, position, created = self.queue.request(kid.id, channel)
         log.info("wake ch=%s kid=%s position=%s created=%s", channel, kid.name, position, created)
+        if created:
+            await self._broadcast_state()   # 줄을 선 것은 대답("응, 말해봐")이 끝나기 전에 바로 보여 준다
         if position == 0:
             await self._set_ribbon("listening", kid.id)
             if created:
-                await self._say(persona.listening_prompt(kid.name), kid.id, final=True)
+                await self._say(persona.listening_prompt(call_name(kid)), kid.id, final=True)
         elif created:
             active = self.queue.active()
-            active_name = self._kid_for_channel(active.channel).name if active else "친구"
-            await self._say(persona.queue_notice(kid.name, active_name), kid.id, final=True)
+            active_name = call_name(self._kid_for_channel(active.channel)) if active else "친구"
+            await self._say(persona.queue_notice(call_name(kid), active_name), kid.id, final=True)
         await self._broadcast_state()
 
     async def on_utterance(self, channel: int, text: str) -> None:
@@ -99,12 +111,15 @@ class DialogueManager:
             turn = self.queue.cancel(channel)
             if turn:
                 log.info("cancel ch=%s", channel)
-                await self._say(persona.cancel_notice(kid.name), kid.id, final=True)
+                await self._say(persona.cancel_notice(call_name(kid)), kid.id, final=True)
             await self._broadcast_state()
             await self._maybe_respond()
             return
 
         turn = self.queue.add_text(channel, text)
+        if turn is None and self.ignore_calls:
+            log.info("호출 무시 중이라 새 말은 받지 않음: ch=%s", channel)
+            return
         if turn is None:
             # 호출어 없이 후속 발화(follow-up window) -> 새 턴으로 취급
             turn, _, _ = self.queue.request(kid.id, channel)
@@ -117,7 +132,7 @@ class DialogueManager:
         if kid:
             await self.broadcast({"type": "kid.enter", "kid_id": kid_id})
             await self._broadcast_state()  # 아바타가 걸어 들어오는 동안 인사한다
-            await self._say(persona.enter_greeting(kid.name), kid.id, final=True)
+            await self._say(persona.enter_greeting(call_name(kid)), kid.id, final=True)
             if self.queue.active() is None:
                 await self._set_ribbon("idle", None)
 
@@ -126,6 +141,39 @@ class DialogueManager:
         if kid:
             await self.broadcast({"type": "kid.leave", "kid_id": kid_id})
             await self._broadcast_state()
+
+    # ---------- 관리자 조작 (대시보드) ----------
+    async def set_ignore_calls(self, on: bool) -> None:
+        self.ignore_calls = on
+        log.info("호출 무시 %s", "켬" if on else "끔")
+        await self._broadcast_state()
+
+    async def stop(self, clear_queue: bool = False) -> None:
+        """지금 하던 말·생각을 멈추고 이 차례를 끝낸다. clear_queue 면 기다리는 아이들도 모두 지운다.
+        기다리는 아이가 남아 있으면 다음 차례로 넘어간다."""
+        task = self._respond_task
+        if task and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 멈춘 작업의 오류는 상관없다
+                pass
+        self._respond_task = None
+        self._responding = False
+        self._stop_gen += 1                           # 인사·"말해봐"처럼 차례를 기다리던 말도 하지 않는다
+        if self._waiting:
+            self._waiting.set()
+        for _uid, ev, _n in self._pending_done:
+            ev.set()                                   # 재생 완료를 기다리던 곳을 풀어 준다
+        self._pending_done.clear()
+        self._spoken.clear()
+        await self.broadcast({"type": "speak.stop"})   # TV 가 재생 중인 소리와 남은 문장을 버린다
+        if clear_queue:
+            self.queue.clear()
+        else:
+            self.queue.complete_active()
+        log.info("관리자 중단 (대기열 %s)", "비움" if clear_queue else f"{len(self.queue)}명 남음")
+        await self._after_turn()
 
     def mark_spoken(self, utterance_id: str) -> None:
         """클라이언트가 재생을 끝냈다고 알릴 때 (browser TTS)."""
@@ -138,7 +186,7 @@ class DialogueManager:
         now = time.time()
         for turn in self.queue.expire(now, self.settings.waiting_timeout_s):
             kid = self._kid_for_channel(turn.channel)
-            await self._say(persona.expired_notice(kid.name), kid.id, final=True)
+            await self._say(persona.expired_notice(call_name(kid)), kid.id, final=True)
             await self._broadcast_state()
         active = self.queue.active()
         idle_since = max(active.activated_at or 0.0, self._last_spoken_at) if active else 0.0
@@ -146,7 +194,7 @@ class DialogueManager:
                 and idle_since and now - idle_since > self.settings.turn_idle_timeout_s):
             kid = self._kid_for_channel(active.channel)
             self.queue.complete_active(now)
-            await self._say(persona.expired_notice(kid.name), kid.id, final=True)
+            await self._say(persona.expired_notice(call_name(kid)), kid.id, final=True)
             await self._after_turn()
 
     # ---------- 내부 ----------
@@ -161,6 +209,8 @@ class DialogueManager:
 
     async def _respond(self, turn: Turn) -> None:
         self._responding = True
+        self._respond_task = asyncio.current_task()   # 관리자 "중단"이 이 작업을 멈춘다
+        producer: Optional[asyncio.Task] = None
         kid = self._kid_for_channel(turn.channel)
         text = turn.text
         turn.text = ""  # 응답 중 들어오는 추가 발화는 새 질문으로 쌓인다
@@ -209,7 +259,7 @@ class DialogueManager:
 
             # 1) 인식 직후 즉시 반응 (LLM 을 기다리지 않는다)
             if rc is None or rc.ack_enabled:
-                await self._say(persona.acknowledge(text, kid.name), kid.id, final=False, wait=True)
+                await self._say(persona.acknowledge(text, call_name(kid)), kid.id, final=False, wait=True)
                 await self._set_ribbon("thinking", kid.id)
             # 2) 첫 문장이 늦으면 추임새로 침묵을 메운다
             if rc is None or rc.filler_enabled:
@@ -249,6 +299,8 @@ class DialogueManager:
             await self._say("미안, 잠깐 생각이 안 났어. 다시 말해줄래?", kid.id, final=True)
         finally:
             self._responding = False
+            if producer and not producer.done():
+                producer.cancel()                     # 중단되면 LLM 스트림도 닫는다
         self.queue.complete_active()
         await self._after_turn()
 
@@ -262,16 +314,19 @@ class DialogueManager:
         await self._set_ribbon("listening", kid.id)
         await self._broadcast_state()
         if nxt.text:
-            nxt.text = persona.recall_prefix(kid.name) + nxt.text
+            nxt.text = persona.recall_prefix(call_name(kid)) + nxt.text
             await self._respond(nxt)
         else:
-            await self._say(persona.listening_prompt(kid.name), kid.id, final=True)
+            await self._say(persona.listening_prompt(call_name(kid)), kid.id, final=True)
 
     async def _say(self, text: str, kid_id: Optional[str], final: bool,
                    audio: Optional[bytes] = None, wait: bool = True) -> None:
         """한 문장을 보낸다. audio 가 없으면 여기서 합성한다. wait=False 면 재생 완료를 기다리지 않고
         다음 문장을 바로 보낸다 (클라이언트가 순서대로 이어 재생). 마지막 문장은 wait=True 로 기다린다."""
+        gen = self._stop_gen
         async with self._speak_lock:
+            if gen != self._stop_gen:
+                return                                # 기다리는 사이 관리자가 중단했다
             utt_id = f"u{next(_utt_ids)}"
             log.info("리본> %s", text)
             await self._set_ribbon("speaking", kid_id)
@@ -293,11 +348,13 @@ class DialogueManager:
         """지금까지 보낸 문장들의 재생 완료를 순서대로 기다린다 (문장당 최대 글자수 비례 시간)."""
         while self._pending_done:
             uid, pending_ev, n = self._pending_done.pop(0)
+            self._waiting = pending_ev
             try:
                 await asyncio.wait_for(pending_ev.wait(), timeout=2.0 + 0.25 * n)
             except asyncio.TimeoutError:
                 pass
             finally:
+                self._waiting = None
                 self._spoken.pop(uid, None)
         self._last_spoken_at = time.time()
 

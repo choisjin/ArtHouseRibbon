@@ -42,7 +42,7 @@ const MARKUP = `
     <button id="setActive" title="관리자 페이지의 'TV 에 보여줄 방'과 같습니다">📺 TV 에 보여주기</button>
     <button id="renderBg" title="블렌더로 TV 배경을 다시 렌더 (저장하면 자동으로도 함)">🎬 배경 렌더</button>
     <span id="renderStatus"></span>
-    <a class="button" href="/?mode=admin">관리자 페이지</a>
+    <a class="button" id="adminLink" href="/?mode=admin">관리자 페이지</a>
   </div>
 </header>
 
@@ -167,5 +167,7 @@ export async function startEditor(): Promise<void> {
   document.title = "맵 편집기";
   document.body.innerHTML = MARKUP;
   document.body.classList.add("editor");
+  // 관리자 페이지 '맵' 탭 안에 들어갈 때는 관리자 페이지로 가는 링크가 필요 없다
+  if (new URLSearchParams(location.search).has("embed")) document.getElementById("adminLink")?.remove();
   await import("./app.js");
 }

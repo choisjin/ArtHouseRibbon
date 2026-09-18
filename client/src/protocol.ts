@@ -4,6 +4,9 @@ export type RibbonState = "idle" | "listening" | "thinking" | "speaking";
 export type TurnState = "waiting" | "active" | "done" | "cancelled" | "expired";
 export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin" | "editor" | "art" | "mic";
 
+/** 매주 반복되는 정규 수업 (0=월 ... 4=금) */
+export interface ClassSlot { day: number; start: string; end: string }
+
 export interface KidInfo {
   id: string;
   name: string;
@@ -12,6 +15,13 @@ export interface KidInfo {
   seat?: number | null;
   avatar: Record<string, string>;
   present: boolean;
+  /** 리본이가 부르는 이름 (비우면 이름) */
+  nickname?: string;
+  birthday?: string;     // YYYY-MM-DD
+  start_date?: string;   // 등원 시작일
+  likes?: string;
+  memo?: string;
+  schedule?: ClassSlot[];
 }
 
 export interface TurnInfo {
@@ -46,8 +56,21 @@ export interface RibbonConfig {
   return_after_s?: number;
 }
 
+/** 캐릭터 한 명의 프로필 (서버 settings_store.CharacterProfile). 주인공 프로필이 RibbonConfig 로 복사된다 */
+export interface CharacterProfile {
+  name: string;
+  personality: string;
+  intro: string;
+  voice: string;
+  speed: number;
+  steps: number;
+  pitch: number;
+  look: import("./world/doll").RibbonLook;
+}
+
 export interface AppConfig {
   ribbon: RibbonConfig;
+  characters?: Record<string, CharacterProfile>;
   /** TV 에 보여줄 방과 그 배치 (서버 world_store.tv_view) */
   world?: import("./world/types").WorldView;
 }
@@ -59,6 +82,8 @@ export interface StateMsg {
   ribbon: RibbonState;
   target_kid: string | null;
   config?: Partial<AppConfig>;
+  /** 관리자가 "호출 무시"를 켰는지 */
+  ignore_calls?: boolean;
 }
 
 export interface SpeakMsg {
@@ -101,4 +126,11 @@ export interface FacePositionsMsg {
   faces: FacePosition[];
 }
 
-export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg;
+/** 관리자 "중단": TV 는 재생 중인 소리와 남은 문장을 버린다 */
+export interface SpeakStopMsg { type: "speak.stop" }
+
+/** 관리자 조작에 대한 서버 알림 (예: 마이크가 없는 아이를 호출) */
+export interface AdminMsg { type: "admin.msg"; text: string; error?: boolean }
+
+export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
+  | SpeakStopMsg | AdminMsg;

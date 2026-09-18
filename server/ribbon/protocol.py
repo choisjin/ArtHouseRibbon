@@ -9,14 +9,28 @@ RibbonState = Literal["idle", "listening", "thinking", "speaking"]
 TurnState = Literal["waiting", "active", "done", "cancelled", "expired"]
 
 
+class ClassSlot(BaseModel):
+    """매주 반복되는 정규 수업 시간 (관리자 '아이들' 탭에서 정한다)"""
+    day: int                      # 0=월 ... 4=금
+    start: str                    # "15:00"
+    end: str                      # "16:30"
+
+
 class KidInfo(BaseModel):
     id: str
     name: str
-    age: Optional[int] = None
+    age: Optional[int] = None     # 생일이 있으면 생일로 계산한 나이를 쓴다
     mic_channel: Optional[int] = None
     seat: Optional[int] = None
     avatar: Dict[str, Any] = {}
     present: bool = False
+    # 인적사항 (대화에 쓴다)
+    nickname: str = ""            # 리본이가 부르는 이름 (비우면 이름)
+    birthday: str = ""            # "YYYY-MM-DD"
+    start_date: str = ""          # 등원 시작일 "YYYY-MM-DD"
+    likes: str = ""               # 좋아하는 것
+    memo: str = ""                # 선생님 메모
+    schedule: List[ClassSlot] = []
 
 
 class TurnInfo(BaseModel):
@@ -35,6 +49,7 @@ class SessionSnapshot(BaseModel):
     ribbon: RibbonState
     target_kid: Optional[str] = None
     config: Dict[str, Any] = {}   # 관리자 설정(RibbonConfig 등). TV 가 색/이름/스프라이트에 쓴다
+    ignore_calls: bool = False    # 관리자가 "호출 무시"를 켰는지
 
 
 class SpeakMessage(BaseModel):

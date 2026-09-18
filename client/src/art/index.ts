@@ -28,6 +28,7 @@ async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export async function startArt(): Promise<void> {
   document.body.innerHTML = PAGE;
+  if (new URLSearchParams(location.search).has("embed")) document.getElementById("adminLink")?.remove();   // 관리자 '맵' 탭 안
   const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
   const msg = (t: string, err = false) => {
     const el = $("#msg");
@@ -455,7 +456,7 @@ const PAGE = `
   <label>아이 <select id="kid"></select></label>
   <button id="save">저장</button>
   <button id="show">TV 에서 보기</button>
-  <a href="/?mode=admin" style="color:#866">관리자 페이지</a>
+  <a id="adminLink" href="/?mode=admin" style="color:#866">관리자 페이지</a>
   <span id="msg"></span>
 </header>
 <main>
