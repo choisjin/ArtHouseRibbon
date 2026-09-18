@@ -17,6 +17,10 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      /* 화면에 붙은 캐릭터의 입김 (tv/glass.ts) */
+      .glass-fog { position: fixed; z-index: 4; pointer-events: none; opacity: 0; border-radius: 50%;
+        background: radial-gradient(ellipse at center, rgba(255,255,255,.75) 0%, rgba(240,245,250,.45) 45%, rgba(255,255,255,0) 72%);
+        filter: blur(6px); }
       @keyframes bob { 50% { margin-top: -8px; } }
       #debug { right: 16px; top: 16px; width: 320px; background: rgba(0,0,0,.75); border: 1px solid #555; border-radius: 10px; padding: 12px; display: none; }
       #debug label { display: block; margin: 6px 0 2px; color: #aaa; font-size: 12px; }

@@ -4,6 +4,7 @@ import type { Blocker, NavGrid, P2 } from "../world/nav";
 import type { ArtSpot } from "../world/room";
 import { rad, SEATS, toFloor, type LayoutItem } from "../world/types";
 import type { Expression } from "./face";
+import type { GlassLayer } from "./glass";
 import type { Motion, Ribbon3D } from "./ribbon3d";
 
 export interface BrainOptions {
@@ -17,15 +18,13 @@ type Mode =
   | { kind: "called" }                       // 불려서 대화 중 (또는 오는 중)
   | { kind: "linger"; until: number }        // 대화 끝나고 잠깐 머무르기
   | { kind: "sitting"; until: number }       // 의자에 앉아 쉬는 중
-  | { kind: "peek"; until: number };         // 화면 코앞에 붙어 유리 너머로 우리를 보는 중
+  | { kind: "peek" };                        // 화면(유리)에 바짝 붙어 너머를 보려고 애쓰는 중 (glass.ts)
 
 /** 평소에 가끔 짓는 표정 */
 const IDLE_FACES: Expression[] = ["normal", "normal", "normal", "happy", "curious"];
 
-/** 화면(유리)에 붙을 때 방 앞면보다 얼마나 더 나가는지. 더 나가면 발이 화면 아래로 잘린다 */
-const GLASS_STEP = 0.55;
-/** 유리에 붙어 있는 시간 (초). 동작 클립 길이와 비슷하게 */
-const PEEK_HOLD = 5;
+/** 화면에 붙으러 갈 때 방 앞면에서 더 걸어 나가는 거리. 여기까지 오면 화면 아래로 빠져나가 안 보인다 */
+const OUT_STEP = 2.6;
 
 /** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
 const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
@@ -54,6 +53,11 @@ export class RibbonBrain {
   private gazeUntil = 0;
   private lastPeek = -1e9;
   private peekBack: P2 | null = null;
+  /** 화면에 붙는 모습을 그리는 층 (stage.glass) */
+  glass: GlassLayer | null = null;
+  /** 같이 나온 다른 캐릭터의 브레인 (화면에 붙으러 갈 때 부른다) */
+  buddy: RibbonBrain | null = null;
+  private glassDone: (() => void) | null = null;
   nav: NavGrid | null = null;
   home: P2 = { x: 0, y: 0 };
   arts: ArtSpot[] = [];
@@ -84,6 +88,9 @@ export class RibbonBrain {
   /** 길찾기 격자가 바뀌었을 때. toHome 이면 "부르면 오는 자리"에, 아니면 막힌 곳에 있을 때만 가까운 빈 곳으로 */
   reset(toHome: boolean): void {
     if (!this.nav) return;
+    if (this.glass?.isOn(this.body)) { this.glassDone = () => undefined; this.glass.leave(this.body); }
+    this.peekBack = null;
+    this.body.root.visible = true;
     this.body.standUp();
     this.sitExit = null;
     this.blockedSince = null;
@@ -236,7 +243,11 @@ export class RibbonBrain {
   }
 
   private onCalled(): void {
-    if (this.peekBack) this.leaveGlass();     // 유리에 붙어 있었으면 먼저 방 안으로
+    if (this.peekBack) {                      // 화면에 붙어 있었으면 먼저 내려가 방 안으로 들어온 뒤
+      this.mode = { kind: "called" };
+      this.leaveGlass(() => { if (this.mode.kind === "called") this.answerCall(); });
+      return;
+    }
     this.mode = { kind: "called" };
     this.body.hold(false);
     this.blockedSince = null;
@@ -322,9 +333,6 @@ export class RibbonBrain {
       case "sitting":
         if (now > m.until) { this.leaveSeat(); this.mode = { kind: "walk" }; }
         break;
-      case "peek":
-        if (now > m.until) this.leaveGlass();
-        break;
       case "walk":
         if (!this.body.moving && !this.body.climbing) this.mode = { kind: "idle", until: now + 2 + Math.random() * 5 };
         break;
@@ -406,7 +414,7 @@ export class RibbonBrain {
       this.mode = { kind: "idle", until: this.clock + 5 };
       return;
     }
-    if (r < 0.32 && this.clock - this.lastPeek > 90 && this.peekAtGlass()) return;
+    if (r < 0.32 && this.clock - this.lastPeek > 90 && this.peekAtGlass()) return;   // 화면에 바짝 붙어 들여다보기
     if (r < 0.4 && this.arts.length && this.visitArt()) return;
     if (r < 0.6 && this.body.canSit && this.sitOnChair()) return;
     const me = this.body.pos;
@@ -445,49 +453,77 @@ export class RibbonBrain {
   }
 
   /**
-   * 화면 코앞으로 와서 유리 너머로 우리를 보기.
-   * 길찾기 격자는 벽 여백만큼 앞쪽을 비워 두므로, 격자 안에서 갈 수 있는 제일 앞자리까지 걸어간 뒤
-   * 마지막 한 걸음은 격자 밖(화면 바로 앞)으로 더 나간다. 다 보고 나면 그 자리로 되돌아온다.
+   * 화면(유리)에 바짝 붙어 너머를 보려고 애쓰기.
+   * 방 앞쪽까지 걸어와 화면 아래로 걸어 나가면(방 카메라가 멀리 있어서 가까이 오기 전에 화면 밖으로 나간다),
+   * 유리창 층(glass.ts)에서 같은 캐릭터가 화면 아래로부터 크게 올라와 유리에 손을 짚고 두리번거린다.
+   * 다 보면 내려가고, 방 캐릭터가 다시 걸어 들어온다. 같이 나온 친구도 가끔 옆에 같이 붙는다 (invited).
    */
-  peekAtGlass(): boolean {
+  peekAtGlass(preferX = this.frontCenter.x, invited = false): boolean {
     const nav = this.nav;
-    if (!nav || !this.body.can("Peek")) return false;
-    // 앞쪽 가운데부터 조금씩 뒤로 물러나며 설 수 있는 자리를 찾는다
+    if (!nav || !this.glass || this.peekBack) return false;
+    // 앞쪽에서 조금씩 뒤로 물러나며 설 수 있는 자리를 찾는다
     let stand: P2 | null = null;
     for (let back = 0; back < 3 && !stand; back += 0.3) {
-      for (const dx of [0, 0.8, -0.8, 1.6, -1.6]) {
-        const p = { x: this.frontCenter.x + dx, y: this.frontCenter.y + back };
-        if (nav.isFree(p)) { stand = p; break; }
+      for (const dx of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8]) {
+        const p = { x: preferX + dx, y: this.frontCenter.y + back };
+        if (nav.isFree(p) && !this.occupied(p)) { stand = p; break; }
       }
     }
-    const glassAt = { x: this.frontCenter.x, y: this.frontCenter.y - GLASS_STEP };
-    if (!stand || this.occupied(stand) || this.occupied(glassAt)) return false;   // 다른 캐릭터가 화면 앞에 있다
+    if (!stand) return false;
+    const out = { x: stand.x, y: this.frontCenter.y - OUT_STEP };
+    if (this.occupied(out)) return false;
     const path = this.pathTo(stand);
     if (!path) return false;
     this.lastPeek = this.clock;
     this.peekBack = stand;
-    this.body.walkPath([...path, glassAt], () => {
-      this.faceViewer();
-      // 돌아서는 시간을 조금 주고 유리에 손을 짚는다
-      setTimeout(() => {
-        if (this.called) { this.leaveGlass(); return; }
-        this.showFor("curious", PEEK_HOLD);
-        this.body.play("Peek");
-        this.mode = { kind: "peek", until: this.clock + PEEK_HOLD };
-      }, 350);
+    this.body.walkPath([...path, out], () => {
+      if (this.called || !this.glass) { this.leaveGlass(); return; }
+      this.mode = { kind: "peek" };
+      this.glass.enter(this.body, stand!.x, () => {
+        const done = this.glassDone ?? (() => this.backFromGlass());
+        this.glassDone = null;
+        done();
+      });
     });
     this.mode = { kind: "walk" };
+    if (!invited) this.buddy?.joinPeek(stand.x);
     return true;
   }
 
-  /** 유리 앞에서 물러나 길찾기 격자 안으로 돌아온다 (밖에 서 있으면 다음 길을 못 찾는다) */
-  private leaveGlass(): void {
+  /** 다른 캐릭터가 화면에 붙으러 갈 때: 가끔 옆에 같이 붙는다 */
+  joinPeek(x: number): void {
+    const m = this.mode.kind;
+    if (this.called || this.peekBack || m === "peek" || this.clock - this.lastPeek < 20 || Math.random() > 0.7) return;
+    const side = x + (this.body.pos.x < x ? -1 : 1) * 2.4;       // 내가 있는 쪽 옆자리
+    const go = () => { if (!this.called && !this.peekBack) this.peekAtGlass(side, true); };
+    if (this.body.sitting) { this.leaveSeat(go); return; }
+    this.body.stop();
+    go();
+  }
+
+  /** 다 보고 내려왔을 때: 방 안 제자리로 걸어 들어온다 */
+  private backFromGlass(): void {
     const back = this.peekBack;
     this.peekBack = null;
-    this.mode = { kind: "idle", until: this.clock + 1 };
-    if (!back) return;
+    this.mode = { kind: "walk" };
+    if (back) this.body.walkPath([back]);
+  }
+
+  /** 화면에서 먼저 물러나기 (불렸을 때 등). 붙어 있으면 내려간 뒤, 가는 중이면 멈추고 방 안으로 돌아온 뒤 then */
+  private leaveGlass(then?: () => void): void {
+    const back = this.peekBack;
+    const finish = () => {
+      this.peekBack = null;
+      if (back) this.body.walkPath([back], then);
+      else then?.();
+    };
+    if (this.glass?.isOn(this.body)) {
+      this.glassDone = finish;
+      this.glass.leave(this.body);
+      return;
+    }
     this.body.stop();
-    this.body.walkPath([back]);
+    finish();
   }
 
   /** 걸린 그림 앞에 가서 구경하기 */

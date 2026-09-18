@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { NavGrid, type P2 } from "../world/nav";
 import { RoomModel } from "../world/room";
+import { GlassLayer } from "./glass";
 import { FLOOR_LAYER, rad, toThree, WORLD_BASE, type Catalog, type Layout, type RoomInfo, type WorldRender } from "../world/types";
 
 export async function fetchCatalog(): Promise<Catalog> {
@@ -43,6 +44,8 @@ export class Stage {
   private envKey = "";
   private renderEnv: THREE.Texture | null = null;
   private view = { x: 0, y: 0, w: 1, h: 1 };
+  /** 화면(유리)에 바짝 붙은 캐릭터를 방 위에 겹쳐 그리는 층 (glass.ts) */
+  readonly glass = new GlassLayer(() => this.view);
 
   constructor(parent: HTMLElement, catalog: Catalog) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -238,5 +241,8 @@ export class Stage {
     };
   }
 
-  render(): void { this.renderer.render(this.scene, this.camera); }
+  render(): void {
+    this.renderer.render(this.scene, this.camera);
+    this.glass.render(this.renderer, this.scene.environment, this.camera.aspect);
+  }
 }
