@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     llm_api_key: str = "ollama"
     llm_max_tokens: int = 400
     llm_no_think: bool = True           # qwen3 계열의 생각(thinking) 모드 끄기
+    # mlx-serve 처럼 다른 모델(그림·목소리)에 자리를 내주려고 모델을 스스로 내리는 서버: 답하기 전에 /load-model 로 올려 둔다
+    llm_autoload: bool = False
     llm_mock_delay_s: float = 0.0       # mock LLM 응답 지연 (추임새 동작 확인용)
 
     stt_model: str = "large-v3-turbo"

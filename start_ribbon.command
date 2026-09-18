@@ -82,6 +82,14 @@ if [ "$LLM" = "ollama" ]; then
     for _ in $(seq 1 20); do curl -s -m 1 http://localhost:11434/api/tags >/dev/null && break; sleep 1; done
     curl -s -m 2 http://localhost:11434/api/tags >/dev/null || echo "Ollama 가 아직 응답하지 않습니다. 답이 안 나오면 ollama serve 를 확인하세요."
   fi
+elif [ "$LLM" = "openai" ]; then
+  # mlx-serve 등 OpenAI 호환 서버는 따로 켜 둔다. 여기서는 응답하는지만 본다
+  LLM_URL="$(env_value LLM_BASE_URL http://localhost:11434/v1)"
+  if curl -s -m 3 "$LLM_URL/models" >/dev/null; then
+    echo "LLM 서버 응답 확인: $LLM_URL ($(env_value LLM_MODEL ?))"
+  else
+    echo "주의: LLM 서버($LLM_URL)가 응답하지 않습니다. mlx-serve 가 켜져 있는지 확인하세요."
+  fi
 fi
 
 # ---- 4. 옛 서버 끄기 ----
