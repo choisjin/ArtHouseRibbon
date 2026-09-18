@@ -3,7 +3,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import type { AppConfig, KidInfo, RibbonConfig, ServerMsg } from "../protocol";
 import type { RibbonSocket } from "../ws";
 import { Ribbon3D } from "../tv/ribbon3d";
-import { DEFAULT_LOOK, type RibbonLook } from "../world/doll";
+import { CHARACTERS, characterOf, DEFAULT_LOOK, type RibbonLook } from "../world/doll";
 import type { Catalog } from "../world/types";
 
 /**
@@ -25,7 +25,7 @@ async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
 }
 
 /** 리본이 3D 미리보기: 천천히 도는 받침 위에 인형 하나 */
-function mountRibbonPreview(el: HTMLElement): Ribbon3D {
+function mountRibbonPreview(el: HTMLElement, character?: string): Ribbon3D {
   const W = 240, H = 300;
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -43,7 +43,7 @@ function mountRibbonPreview(el: HTMLElement): Ribbon3D {
   sun.position.set(3, 8, 6);
   scene.add(sun);
   const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 50);
-  const ribbon = new Ribbon3D();
+  const ribbon = new Ribbon3D(character);
   const turntable = new THREE.Group();
   turntable.add(ribbon.root);
   scene.add(turntable);
@@ -118,13 +118,16 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
             </div>
             <fieldset>
               <legend>겉모습</legend>
-              <label>옷 <select name="outfit"><option value="onepiece">민트 원피스</option><option value="twopiece">블라우스 + 주름치마</option></select></label>
+              <label>캐릭터 <select name="character"></select></label>
+              <label>같이 나오는 친구 <select name="friend"></select></label>
+              <label>옷 <select name="outfit"></select></label>
               <div class="colors">
-                <label>머리 <input name="hair" type="color" /></label>
-                <label>머리 리본 <input name="bow" type="color" /></label>
-                <label>원피스·치마 <input name="dress" type="color" /></label>
-                <label>블라우스 <input name="blouse" type="color" /></label>
+                <label data-tint="hair">머리 <input name="hair" type="color" /></label>
+                <label data-tint="bow">머리 리본 <input name="bow" type="color" /></label>
+                <label data-tint="dress">원피스·치마 <input name="dress" type="color" /></label>
+                <label data-tint="blouse">블라우스 <input name="blouse" type="color" /></label>
               </div>
+              <p class="hint">친구는 대화는 하지 않고 같이 돌아다니기만 합니다. 캐릭터나 친구를 바꾸면 TV 화면이 한 번 새로 열립니다.</p>
               <div class="actions"><button type="button" id="look-reset">기본 색으로</button></div>
             </fieldset>
             <fieldset>
@@ -244,9 +247,32 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   };
 
   // ---- 리본이 ----
-  const preview = mountRibbonPreview($("#ribbon-preview"));
+  let previewChar = "";
+  let preview = mountRibbonPreview($("#ribbon-preview"));
+
+  /** 캐릭터를 바꾸면 미리보기 인형을 새로 만들고, 옷 목록과 색 항목도 그 캐릭터 것으로 바꾼다 */
+  function applyCharacter(id: string, outfit?: string): void {
+    const spec = characterOf(id);
+    if (previewChar !== spec.id) {
+      previewChar = spec.id;
+      preview = mountRibbonPreview($("#ribbon-preview"), spec.id);
+    }
+    const sel = field("outfit") as unknown as HTMLSelectElement;
+    const want = outfit ?? sel.value;
+    sel.innerHTML = spec.outfits.map((o) => `<option value="${o.id}">${o.name}</option>`).join("");
+    sel.value = spec.outfits.some((o) => o.id === want) ? want! : spec.outfits[0].id;
+    const keys = new Set(Object.values(spec.tint));
+    rf.querySelectorAll<HTMLElement>("[data-tint]").forEach((el) => {
+      el.style.display = keys.has(el.dataset.tint as keyof RibbonLook) ? "" : "none";
+    });
+  }
   const rf = $("#ribbon-form") as HTMLFormElement;
   const field = (n: string) => rf.elements.namedItem(n) as HTMLInputElement;
+  const charSel = rf.elements.namedItem("character") as HTMLSelectElement;
+  const friendSel = rf.elements.namedItem("friend") as HTMLSelectElement;
+  charSel.innerHTML = Object.values(CHARACTERS).map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+  friendSel.innerHTML = `<option value="">없음 (혼자)</option>`
+    + Object.values(CHARACTERS).map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
   const voiceSel = rf.elements.namedItem("voice") as HTMLSelectElement;
   for (const v of VOICES) { const o = document.createElement("option"); o.value = v; o.textContent = v.startsWith("F") ? `여성 ${v}` : `남성 ${v}`; voiceSel.appendChild(o); }
 
@@ -265,6 +291,9 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
 
   function fillRibbonForm(rc: RibbonConfig): void {
     const set = (n: string, v: string) => { field(n).value = v; };
+    set("character", characterOf(rc.character).id);
+    set("friend", rc.friend && CHARACTERS[rc.friend] ? rc.friend : "");
+    applyCharacter(field("character").value, rc.look?.outfit);
     set("name", rc.name); set("voice", rc.voice); set("speed", String(rc.speed)); set("steps", String(rc.steps));
     set("pitch", String(rc.pitch ?? 0));
     set("max_sentences", String(rc.max_sentences)); set("persona_extra", rc.persona_extra ?? "");
@@ -280,7 +309,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
 
   function lookFromForm(): RibbonLook {
     return {
-      outfit: field("outfit").value === "twopiece" ? "twopiece" : "onepiece",
+      outfit: field("outfit").value,
       hair: field("hair").value, bow: field("bow").value, dress: field("dress").value, blouse: field("blouse").value,
     };
   }
@@ -296,6 +325,8 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       filler_enabled: field("filler_enabled").checked,
       filler_delay_s: Number(s("filler_delay_s")) || 1.5, filler_interval_s: Number(s("filler_interval_s")) || 4,
       look: lookFromForm(),
+      character: field("character").value,
+      friend: field("friend").value,
       wander: field("wander").checked,
       walk_speed: Number(s("walk_speed")) || 1,
       return_after_s: Number(s("return_after_s")) || 0,
@@ -308,6 +339,10 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     preview.setLook(rc.look);
   };
   $("#look-reset").onclick = () => fillLook({ outfit: lookFromForm().outfit });
+  (field("character") as unknown as HTMLSelectElement).onchange = () => {
+    applyCharacter(field("character").value);
+    preview.setLook(lookFromForm());
+  };
   rf.onsubmit = async (e) => {
     e.preventDefault();
     try { await api("PUT", "/api/config/ribbon", ribbonFromForm()); msg("리본이 설정 저장됨"); }

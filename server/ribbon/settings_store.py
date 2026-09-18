@@ -13,8 +13,9 @@ from pydantic import BaseModel, Field
 
 
 class RibbonLook(BaseModel):
-    """3D 인형(client/public/world/doll.glb) 겉모습. 색은 재질 기본색을 바꾼다"""
-    outfit: str = "onepiece"     # onepiece | twopiece
+    """3D 인형 겉모습. 색은 재질 기본색을 바꾼다. 고를 수 있는 옷은 캐릭터마다 다르다
+    (client/src/world/doll.ts CHARACTERS: 리본이 onepiece|twopiece, 올리 apron|tee)"""
+    outfit: str = "onepiece"
     hair: str = "#f48a9e"
     bow: str = "#de2834"
     dress: str = "#80d6be"       # 원피스 / 주름치마
@@ -34,6 +35,8 @@ class RibbonConfig(BaseModel):
     filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
     filler_interval_s: float = 4.0  # 그 뒤 추임새 간격
     look: RibbonLook = Field(default_factory=RibbonLook)
+    character: str = "ribbon"    # TV 에 나오는 캐릭터: ribbon (여자) | ollie (남자)
+    friend: str = ""             # 같이 나오는 친구 캐릭터 (빈 값이면 혼자). 친구는 부르지 않아도 알아서 돌아다닌다
     # 맵에서 돌아다니기
     wander: bool = True          # 끄면 "부르면 오는 자리"에 서 있는다
     walk_speed: float = 1.0      # 배율 (1 = 초속 약 0.5m)

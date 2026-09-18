@@ -5,7 +5,8 @@
 가져오는 것
   - export/room_shell*.glb, catalog/*.glb, catalog.json  → client/public/world/
   - room_map.py, game_export.py, phases.py  → tools/blender/ (맥미니가 TV 배경을 렌더할 때 씀)
-  - --doll    : doll.blend 를 고화질로 다시 내보내 client/public/world/doll.glb (블렌더 필요)
+  - --doll    : 캐릭터들을 고화질로 다시 내보내기 (블렌더 필요)
+                doll.blend → doll.glb (리본이), yoon.blend → ollie.glb (올리)
   - --layouts : layout.json / layout_gallery.json → data/world/ (이미 있으면 덮어쓰기 전에 history 로 보관)
   - --artworks: artworks/*  → data/artworks/ (index.json 은 합친다)
 
@@ -51,12 +52,21 @@ def sync_models(src):
         copy(os.path.join(src, f), os.path.join(ROOT, "tools", "blender", f))
 
 
+#: Character_Creator 의 캐릭터 파일 → client/public/world 의 이름 (client/src/world/doll.ts CHARACTERS 와 같게)
+DOLLS = {"doll.blend": "doll.glb", "yoon.blend": "ollie.glb"}
+
+
 def export_doll(src, blender):
-    print("인형 (고화질 내보내기):")
-    out = os.path.join(PUBLIC, "doll.glb")
-    subprocess.run([blender, "-b", os.path.join(src, "doll.blend"), "--factory-startup",
-                    "-P", os.path.join(ROOT, "tools", "blender", "export_doll.py"), "--", out], check=True)
-    print("  ", os.path.relpath(out, ROOT))
+    print("캐릭터 (고화질 내보내기):")
+    for blend, name in DOLLS.items():
+        path = os.path.join(src, blend)
+        if not os.path.exists(path):
+            print(f"   (건너뜀: {blend} 없음)")
+            continue
+        out = os.path.join(PUBLIC, name)
+        subprocess.run([blender, "-b", path, "--factory-startup",
+                        "-P", os.path.join(ROOT, "tools", "blender", "export_doll.py"), "--", out], check=True)
+        print("  ", os.path.relpath(out, ROOT))
 
 
 def sync_layouts(src):
@@ -96,7 +106,7 @@ def main():
     ap.add_argument("--src", default=DEFAULT_SRC)
     ap.add_argument("--layouts", action="store_true", help="배치 파일도 가져오기")
     ap.add_argument("--artworks", action="store_true", help="올린 그림도 가져오기")
-    ap.add_argument("--doll", action="store_true", help="doll.blend 를 고화질로 다시 내보내기")
+    ap.add_argument("--doll", action="store_true", help="캐릭터들(doll.blend, yoon.blend)을 고화질로 다시 내보내기")
     ap.add_argument("--blender", default=os.environ.get("BLENDER_EXE", ""), help="블렌더 실행 파일")
     args = ap.parse_args()
     sync_models(args.src)

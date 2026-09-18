@@ -8,6 +8,7 @@ TV 화면은 **블렌더로 렌더한 방 사진 위에 three.js 로 리본이�
 | 위치 | 내용 | git |
 |---|---|---|
 | `client/public/world/doll.glb` | 리본이 (뼈대 + 원피스/투피스 + Walk/Greet 액션) | 포함 |
+| `client/public/world/ollie.glb` | 올리 (같은 뼈대·같은 얼굴 부품, 앞치마/반팔 티) | 포함 |
 | `client/public/world/room_shell*.glb` | 방 껍데기 (미술실, 전시장) | 포함 |
 | `client/public/world/catalog/*.glb`, `catalog.json` | 가구 종류, 방 크기·벽·기둥·TV 카메라, 기본 배치 | 포함 |
 | `data/world/<방>.json` | 방별 가구 배치 + 걸린 그림 + 리본이 "부르면 오는 자리"(`doll_spot`) | 제외 |
@@ -118,6 +119,23 @@ Character_Creator 에서 가구 모양이나 인형을 고쳤으면 그쪽에서
 | 아이 하원 | 시무룩 (3초) |
 
 이 밖에 부끄러움·울상·뾰로통도 있고 필요할 때 붙이면 된다 (`EXPRESSIONS`).
+
+## 캐릭터
+
+캐릭터는 여럿 둘 수 있습니다 (`client/src/world/doll.ts` 의 `CHARACTERS`).
+
+| id | 파일 | 만든 곳 | 옷 (부품 앞머리) | 색 바꾸기 |
+|---|---|---|---|---|
+| `ribbon` | `doll.glb` | Character_Creator `doll.blend` | 원피스 `OP_` / 투피스 `TP_` | 머리·리본·원피스·블라우스 |
+| `ollie` | `ollie.glb` | Character_Creator `yoon.blend` | 앞치마 `AP_` / 반팔 티 `TE_` | 없음 (만들 때 정한 색 그대로) |
+
+비율·뼈대·얼굴 부품(`Eye_L/R`, `Blush_L/R`, `Furrow_L/R`, `Mouth_*`)이 같아서 표정과 동작은 그대로 통합니다.
+새 캐릭터를 더하려면 `tools/sync_world.py` 의 `DOLLS` 와 `doll.ts` 의 `CHARACTERS` 에 한 줄씩 넣고
+`python tools/sync_world.py --doll` 을 돌리면 됩니다.
+
+관리자 페이지 "겉모습" 에서 **캐릭터**(대화하는 주인공)와 **같이 나오는 친구**를 고릅니다.
+친구는 대화하지 않고 돌아다니기만 하고, 리본이와 겹치지 않게 떨어진 곳을 목적지로 고르며
+부딪힐 것 같으면 친구 쪽이 멈춰 양보합니다. 캐릭터나 친구를 바꾸면 모델을 새로 읽어야 해서 TV 화면이 한 번 새로 열립니다.
 
 ## 동작 (`tools/blender/doll_actions.py`)
 

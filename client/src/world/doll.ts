@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { WORLD_BASE } from "./types";
 
-/** 관리자 페이지에서 고르는 리본이 겉모습 (서버 settings_store.RibbonLook) */
+/** 관리자 페이지에서 고르는 겉모습 (서버 settings_store.RibbonLook) */
 export interface RibbonLook {
-  outfit: "onepiece" | "twopiece";
+  outfit: string;              // 캐릭터마다 다르다 (CharacterSpec.outfits)
   hair: string;
   bow: string;
   dress: string;
@@ -13,14 +13,39 @@ export interface RibbonLook {
 
 export const DEFAULT_LOOK: RibbonLook = { outfit: "onepiece", hair: "#f48a9e", bow: "#de2834", dress: "#80d6be", blouse: "#ffe896" };
 
-/** 옷은 부품 이름 앞머리로 나뉜다 (Character_Creator doll.py: OP_ 원피스, TP_ 투피스) */
-const OUTFIT_PREFIX = { onepiece: "OP_", twopiece: "TP_" } as const;
-/** 색을 바꾸는 재질 (glb 재질 이름 → look 키) */
-const TINT: Record<string, keyof RibbonLook> = { Hair_Game: "hair", Bow_Game: "bow", Dress_Game: "dress", Blouse_Game: "blouse" };
+/**
+ * 쓸 수 있는 캐릭터. 모두 Character_Creator 에서 같은 비율·같은 뼈대로 만들어서
+ * 얼굴(Eye_L/R, Blush_L/R, Furrow_L/R, Mouth_*)과 동작(Walk/Greet/Nod/…/Peek)이 똑같다.
+ * 다른 것은 모델 파일과 옷(부품 이름 앞머리), 색을 바꿀 수 있는 재질뿐이다.
+ */
+export interface CharacterSpec {
+  id: string;
+  name: string;
+  file: string;                                   // world/ 아래 glb
+  outfits: { id: string; name: string; prefix: string }[];
+  tint: Record<string, keyof RibbonLook>;         // glb 재질 이름 → look 키 (없으면 색을 안 바꾼다)
+}
+
+export const CHARACTERS: Record<string, CharacterSpec> = {
+  ribbon: {
+    id: "ribbon", name: "리본이 (여자)", file: "doll.glb",
+    outfits: [{ id: "onepiece", name: "원피스", prefix: "OP_" }, { id: "twopiece", name: "투피스", prefix: "TP_" }],
+    tint: { Hair_Game: "hair", Bow_Game: "bow", Dress_Game: "dress", Blouse_Game: "blouse" },
+  },
+  ollie: {
+    id: "ollie", name: "올리 (남자)", file: "ollie.glb",
+    outfits: [{ id: "apron", name: "앞치마", prefix: "AP_" }, { id: "tee", name: "반팔 티", prefix: "TE_" }],
+    // 올리는 색을 따로 고르지 않고 만들 때 정한 색(까만 머리·회색 티·청바지) 그대로 쓴다
+    tint: {},
+  },
+};
+
+export const DEFAULT_CHARACTER = "ribbon";
+export const characterOf = (id: string | undefined): CharacterSpec => CHARACTERS[id ?? ""] ?? CHARACTERS[DEFAULT_CHARACTER];
 
 export interface DollAsset { scene: THREE.Group; animations: THREE.AnimationClip[] }
 
-let cached: Promise<DollAsset> | null = null;
+const cached = new Map<string, Promise<DollAsset>>();
 
 /** 봉제 인형 천 재질: glb 의 단순 재질(기본색·거칠기)을 보풀 광택(sheen)이 있는 재질로 바꾼다 */
 const GLOSSY = new Set(["Button_Game", "EyeFelt_Game"]);
@@ -42,10 +67,14 @@ function fabric(src: THREE.Material): THREE.Material {
   return m;
 }
 
-/** doll.glb 를 읽어 새 복제본을 준다 (재질은 복제본마다 따로 둬서 색을 바꿀 수 있게) */
-export async function loadDoll(): Promise<DollAsset> {
-  cached ??= new GLTFLoader().loadAsync(`${WORLD_BASE}doll.glb`).then((g) => ({ scene: g.scene, animations: g.animations }));
-  const src = await cached;
+/** 캐릭터 glb 를 읽어 새 복제본을 준다 (재질은 복제본마다 따로 둬서 색을 바꿀 수 있게) */
+export async function loadDoll(file = CHARACTERS[DEFAULT_CHARACTER].file): Promise<DollAsset> {
+  let job = cached.get(file);
+  if (!job) {
+    job = new GLTFLoader().loadAsync(`${WORLD_BASE}${file}`).then((g) => ({ scene: g.scene, animations: g.animations }));
+    cached.set(file, job);
+  }
+  const src = await job;
   const scene = src.scene.clone(true);
   // 인형은 발밑 원점 기준이어야 한다. 내보낼 때 방 속 위치가 남아 있어도 수평 위치는 지운다
   for (const c of scene.children) c.position.set(0, c.position.y, 0);
@@ -60,14 +89,17 @@ export async function loadDoll(): Promise<DollAsset> {
   return { scene, animations: src.animations };
 }
 
-export function applyLook(root: THREE.Object3D, look: Partial<RibbonLook> | undefined): void {
+export function applyLook(root: THREE.Object3D, look: Partial<RibbonLook> | undefined,
+                          spec: CharacterSpec = CHARACTERS[DEFAULT_CHARACTER]): void {
   const l = { ...DEFAULT_LOOK, ...(look ?? {}) };
-  const hide = l.outfit === "twopiece" ? OUTFIT_PREFIX.onepiece : OUTFIT_PREFIX.twopiece;
+  // 고른 옷만 보이게 (고른 옷이 이 캐릭터에 없으면 첫 번째 옷)
+  const wear = spec.outfits.find((o) => o.id === l.outfit) ?? spec.outfits[0];
+  const prefixes = spec.outfits.map((o) => o.prefix);
   root.traverse((o) => {
-    if (/^(OP|TP)_/.test(o.name)) o.visible = !o.name.startsWith(hide);
+    if (prefixes.some((p) => o.name.startsWith(p))) o.visible = o.name.startsWith(wear.prefix);
     const m = o as THREE.Mesh;
     if (!m.isMesh || Array.isArray(m.material)) return;
-    const key = TINT[m.material.name];
+    const key = spec.tint[m.material.name];
     const mat = m.material as THREE.MeshPhysicalMaterial;
     if (key && mat.color) {
       mat.color.set(l[key] as string);

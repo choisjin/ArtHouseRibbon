@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { RibbonState } from "../protocol";
-import { applyLook, loadDoll, type RibbonLook } from "../world/doll";
+import { applyLook, characterOf, loadDoll, type CharacterSpec, type RibbonLook } from "../world/doll";
 import { Face, type Expression } from "./face";
 import type { P2 } from "../world/nav";
 import { toThree } from "../world/types";
@@ -23,7 +23,7 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (cur: number, target: number, k: number) => cur + (target - cur) * k;
 
 /**
- * 리본이 몸: doll.glb + Walk/Greet 액션 + 코드로 만드는 움직임(숨쉬기·고개 돌리기·말할 때 끄덕임).
+ * 캐릭터 몸: <캐릭터>.glb + Walk/Greet 액션 + 코드로 만드는 움직임(숨쉬기·고개 돌리기·말할 때 끄덕임).
  * 어디로 갈지는 brain.ts 가 정하고, 여기서는 받은 경로를 따라 걷고 돌아선다.
  * 좌표는 배치 파일 바닥 단위(P2). 정면은 three.js +Z (TV 카메라 쪽).
  */
@@ -44,6 +44,8 @@ export class Ribbon3D {
   private rig = new THREE.Group();
   private model: THREE.Object3D | null = null;
   private look: Partial<RibbonLook> | undefined;
+  /** 어떤 캐릭터인가 (리본이 / 올리). 옷 부품 앞머리와 색 바꿀 재질이 캐릭터마다 다르다 */
+  readonly spec: CharacterSpec;
   private path: P2[] = [];
   private onArrive: (() => void) | null = null;
   private yaw = 0;
@@ -69,7 +71,8 @@ export class Ribbon3D {
   state: RibbonState = "idle";
   loaded: Promise<void>;
 
-  constructor() {
+  constructor(character?: string) {
+    this.spec = characterOf(character);
     this.root.add(this.body);
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({
       map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.2,
@@ -83,9 +86,9 @@ export class Ribbon3D {
   }
 
   private async load(): Promise<void> {
-    const { scene, animations } = await loadDoll();
+    const { scene, animations } = await loadDoll(this.spec.file);
     this.model = scene;
-    applyLook(scene, this.look);
+    applyLook(scene, this.look, this.spec);
     this.body.add(scene);
     scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
@@ -165,7 +168,7 @@ export class Ribbon3D {
 
   setLook(look: Partial<RibbonLook> | undefined): void {
     this.look = look;
-    if (this.model) applyLook(this.model, look);
+    if (this.model) applyLook(this.model, look, this.spec);
   }
 
   get pos(): P2 { return { x: this.root.position.x, y: -this.root.position.z }; }

@@ -61,6 +61,11 @@ export class RibbonBrain {
   viewer = new THREE.Vector3();
   /** 카메라 폰이 본 얼굴 쪽 (없으면 null) */
   faceTarget: THREE.Vector3 | null = null;
+  /** 같이 나온 다른 캐릭터 (겹치지 않게 자리를 피해 다닌다) */
+  avoid: Ribbon3D | null = null;
+  /** 부딪힐 것 같을 때 멈춰서 양보하는 쪽인가 (친구만 양보하고 리본이는 하던 일을 한다) */
+  yields = false;
+  private yieldUntil = 0;
 
   constructor(private body: Ribbon3D) {}
 
@@ -150,6 +155,18 @@ export class RibbonBrain {
     this.clock += dt;
     const m = this.mode;
     const now = this.clock;
+    // 부딪힐 것 같으면 걸음을 멈추고 지나갈 때까지 기다린다 (양보하는 쪽만)
+    if (this.yields && this.avoid && this.body.moving && now > this.yieldUntil) {
+      const o = this.avoid.pos, me = this.body.pos;
+      if (Math.hypot(o.x - me.x, o.y - me.y) < (this.body.radius + this.avoid.radius) * 1.1) {
+        this.yieldUntil = now + 2.5;
+        this.body.stop();
+        // 비켜서면서 상대를 쳐다본다
+        this.body.lookAt(this.avoid.root.position.clone().setY(this.avoid.height * 0.8));
+        this.mode = { kind: "idle", until: now + 1.5 };
+        return;
+      }
+    }
     if (this.state === "thinking" && now - this.thinkingSince > 6) this.face();      // 오래 생각하면 걱정
 
     // 고개
@@ -268,7 +285,9 @@ export class RibbonBrain {
     if (r < 0.4 && this.arts.length && this.visitArt()) return;
     if (r < 0.6 && this.body.canSit && this.sitOnChair()) return;
     const me = this.body.pos;
-    const dest = nav.randomFree((p) => Math.hypot(p.x - me.x, p.y - me.y) > 2.5);
+    const other = this.avoid?.pos ?? null;
+    const dest = nav.randomFree((p) => Math.hypot(p.x - me.x, p.y - me.y) > 2.5
+      && (!other || Math.hypot(p.x - other.x, p.y - other.y) > 2.5));
     const path = dest && nav.findPath(me, dest);
     if (!path) { this.mode = { kind: "idle", until: this.clock + 2 }; return; }
     this.body.walkPath(path, () => {

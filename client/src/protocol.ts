@@ -36,6 +36,10 @@ export interface RibbonConfig {
   filler_delay_s?: number;
   filler_interval_s?: number;
   look?: Partial<import("./world/doll").RibbonLook>;
+  /** TV 에 나오는 캐릭터 (world/doll.ts CHARACTERS) */
+  character?: string;
+  /** 같이 나오는 친구 캐릭터. 빈 값이면 혼자 */
+  friend?: string;
   /** 맵에서 돌아다니기 (끄면 "부르면 오는 자리"에 서 있다) */
   wander?: boolean;
   walk_speed?: number;

@@ -1,10 +1,11 @@
-"""리본이 인형을 고화질로 다시 내보낸다 (Character_Creator/doll.blend → client/public/world/doll.glb)
+"""인형 캐릭터를 고화질로 다시 내보낸다 (Character_Creator/<캐릭터>.blend → client/public/world/<캐릭터>.glb)
 
     blender -b <Character_Creator>/doll.blend --factory-startup -P tools/blender/export_doll.py -- [out.glb] [면 상한]
+    blender -b <Character_Creator>/yoon.blend --factory-startup -P tools/blender/export_doll.py -- .../ollie.glb
 
-doll.py 의 기본 내보내기는 메시당 최대 5000면으로 줄여서 머리카락·옷이 뭉툭하다.
+캐릭터 스크립트(doll.py / yoon.py)의 기본 내보내기는 메시당 최대 5000면으로 줄여서 머리카락·옷이 뭉툭하다.
 여기서는 상한을 크게(기본 24000면) 잡아 모양을 살리고, doll_actions.py 의 동작들(끄덕임·가리키기 등)을 더해 내보낸다.
-블렌더 파일(doll.blend)은 저장하지 않는다.
+뼈대 이름은 캐릭터마다 다르므로(DollRig / YoonRig) 파일 안의 아마추어를 찾아 쓴다. 블렌더 파일은 저장하지 않는다.
 """
 import os
 import sys
@@ -24,7 +25,10 @@ CAP = int(argv[1]) if len(argv) > 1 else 24000
 # 작은 부품은 그대로, 큰 부품만 CAP 까지 줄인다
 game_export._face_target = lambda n: min(n, CAP)
 
-rig = bpy.data.objects["DollRig"]
+rigs = [o for o in bpy.data.objects if o.type == "ARMATURE"]
+if not rigs:
+    raise SystemExit("[doll] 뼈대(아마추어)를 찾지 못했습니다")
+rig = next((o for o in rigs if o.name == "DollRig"), rigs[0])
 parts = [o for o in bpy.data.objects if o.type == "MESH" and o.parent == rig]
 for c in bpy.data.collections:
     c.hide_viewport = c.hide_render = False
@@ -57,4 +61,4 @@ if off.length > 1e-4:
 n, tris = game_export.export_game([rig] + parts, OUT, None, animations=True)
 if ad:
     ad.action = saved
-print(f"[doll] {OUT}: 메시 {n}개, 삼각형 약 {tris}")
+print(f"[doll] {OUT}: 뼈대 {rig.name}, 메시 {n}개, 삼각형 약 {tris}")

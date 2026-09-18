@@ -20,10 +20,25 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const speaker = new Speaker(socket, { showLock: true });
   const { mountOutputPicker } = await import("./output");
   mountOutputPicker(speaker);
-  const ribbon = new Ribbon3D();
+  // 어떤 캐릭터로 나올지는 관리자 설정에서 온다. 만들 때 정해야 해서 state 를 기다리지 않고 먼저 물어본다
+  const cfg0 = await fetch("/api/config").then((r) => r.json()).catch(() => null);
+  const character = String(cfg0?.ribbon?.character ?? "");
+  const friendId = String(cfg0?.ribbon?.friend ?? "");
+  const ribbon = new Ribbon3D(character);
   const brain = new RibbonBrain(ribbon);
   ribbon.root.visible = false;      // 길찾기가 준비되고 자리에 세울 때까지
   stage.scene.add(ribbon.root);
+
+  // 친구 캐릭터: 부르지 않아도 알아서 돌아다니기만 한다 (대화는 리본이 몫)
+  const friend = friendId ? new Ribbon3D(friendId) : null;
+  const friendBrain = friend ? new RibbonBrain(friend) : null;
+  if (friend && friendBrain) {
+    friend.root.visible = false;
+    stage.scene.add(friend.root);
+    friendBrain.avoid = ribbon;         // 리본이와 겹치지 않게 비켜 다닌다 (양보는 친구 쪽이)
+    friendBrain.yields = true;
+    brain.avoid = friend;               // 리본이는 친구가 있는 쪽을 목적지로 고르지 않는다
+  }
   const bubble = document.getElementById("bubble")!;
 
   let kids: KidInfo[] = [];
@@ -40,7 +55,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
 
   /** 길찾기 격자를 다시 만든다. toHome 이면 "부르면 오는 자리"에 다시 세운다 (처음, 방이 바뀔 때) */
   async function rebuildNav(toHome: boolean): Promise<void> {
-    await ribbon.loaded;
+    await Promise.all([ribbon.loaded, friend?.loaded]);
     applySpeed();
     brain.nav = stage.buildNav(ribbon.radius, ribbon.height);
     brain.arts = stage.room.artSpots;
@@ -50,6 +65,19 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     if (info) brain.frontCenter = { x: 0, y: info.front_y };
     const spot = stage.room.layout?.doll_spot;
     if (spot) brain.home = { x: spot.x, y: spot.y };
+    if (friendBrain && friend) {
+      friendBrain.nav = brain.nav;
+      friendBrain.arts = brain.arts;
+      friendBrain.chairs = brain.chairs;
+      friendBrain.unitPerM = brain.unitPerM;
+      friendBrain.frontCenter = brain.frontCenter;
+      // 친구는 리본이 자리에서 조금 떨어진 곳을 제 자리로 삼는다
+      const spot2 = brain.nav?.nearestFree({ x: brain.home.x + 2.2, y: brain.home.y + 1.2 });
+      friendBrain.home = spot2 ?? brain.home;
+      friend.speed = Math.max(0.6, friend.height * 0.38) * walkSpeed;
+      friendBrain.reset(toHome || !placed);
+      friend.root.visible = true;
+    }
     brain.reset(toHome || !placed);
     placed = true;
     ribbon.root.visible = true;
@@ -96,10 +124,17 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     applyWorld(s);
     const rc = s.config?.ribbon;
     if (rc) {
+      // 캐릭터를 바꾸면 모델부터 다시 읽어야 해서 화면을 새로 연다 (관리자가 가끔 하는 일)
+      if (String(rc.character ?? "") !== character || String(rc.friend ?? "") !== friendId) {
+        location.reload();
+        return;
+      }
       ribbon.setLook(rc.look);
       brain.opts = { wander: rc.wander ?? true, returnAfterS: rc.return_after_s ?? 8 };
+      if (friendBrain) friendBrain.opts = { wander: true, returnAfterS: 8 };
       walkSpeed = rc.walk_speed ?? 1;
       applySpeed();
+      if (friend) friend.speed = Math.max(0.6, friend.height * 0.38) * walkSpeed;
     }
     hud.setQueue(s.queue, kids);
     brain.setState(s.ribbon);
@@ -138,7 +173,13 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     const dt = Math.min(clock.getDelta(), 0.1);
     brain.viewer.copy(stage.camera.position);
     brain.faceTarget = faceTarget();
-    if (placed) brain.update(dt);
+    if (placed) {
+      brain.update(dt);
+      if (friendBrain) {
+        friendBrain.viewer.copy(stage.camera.position);
+        friendBrain.update(dt);
+      }
+    }
     stage.followShadow(ribbon.root.position);
     stage.render();
     // 말풍선: 듣는 중 / 생각 중
@@ -170,7 +211,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   if (opts.debug) {
     const { mountDebugPanel } = await import("../debug/panel");
     mountDebugPanel(socket, () => kids);
-    (window as unknown as { __ribbon: unknown }).__ribbon = { stage, ribbon, brain, speaker, kids: () => kids, THREE };
+    (window as unknown as { __ribbon: unknown }).__ribbon = { stage, ribbon, brain, friend, friendBrain, speaker, kids: () => kids, THREE };
   }
   if (opts.demo) {
     setTimeout(() => {
