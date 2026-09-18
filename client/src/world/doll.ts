@@ -38,6 +38,12 @@ export const CHARACTERS: Record<string, CharacterSpec> = {
     // 올리는 색을 따로 고르지 않고 만들 때 정한 색(까만 머리·회색 티·청바지) 그대로 쓴다
     tint: {},
   },
+  seoyul: {
+    id: "seoyul", name: "서율 (여자)", file: "seoyul.glb",
+    outfits: [{ id: "apron", name: "앞치마", prefix: "AP_" }, { id: "tee", name: "반팔 티", prefix: "TE_" }],
+    // 서율이도 만들 때 정한 색(갈색 양갈래·흰 티·남색 바지·분홍 운동화) 그대로 쓴다
+    tint: {},
+  },
 };
 
 export const DEFAULT_CHARACTER = "ribbon";
