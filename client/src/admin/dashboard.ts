@@ -1,11 +1,14 @@
 import type { KidInfo, ServerMsg, StateMsg } from "../protocol";
+import type { Catalog } from "../world/types";
 import { fetchSchedule, mountSchedule, type Occurrence } from "./schedule";
 import { api, type AdminCtx, esc, kidLabel, toMin, ymd } from "./shared";
 
 /**
- * 대시보드: 왼쪽 시간표, 오른쪽 캐릭터 조작 · 지금 수업 아이들(등원·마이크·호출) · 대화 기록.
+ * 대시보드. 작은 탭 두 개:
+ *   #dashboard/control   캐릭터 조작 · TV 에 보여줄 방 · 지금 수업 아이들(등원·마이크·호출) · 대화 기록
+ *   #dashboard/schedule  수업 시간표
  *
- * 단축키 (대시보드에서, 글자를 입력하는 중이 아닐 때)
+ * 단축키 (대시보드에서, 글자를 입력하는 중이 아닐 때. 휴대폰에서는 버튼으로)
  *   1~4        마이크 1~4번(채널 0~3) 아이 호출
  *   Esc        중단 (지금 하던 말을 멈추고 다음 차례로)
  *   Shift+Esc  모두 멈춤 (기다리는 아이까지 모두 지움)
@@ -14,11 +17,13 @@ import { api, type AdminCtx, esc, kidLabel, toMin, ymd } from "./shared";
 const CHANNELS = [0, 1, 2, 3];
 const STATE_NAME: Record<string, string> = { idle: "쉬는 중", listening: "듣는 중", thinking: "생각 중", speaking: "말하는 중" };
 
-export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => boolean): void {
+export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => boolean): { show(sub?: string): void } {
   el.innerHTML = `
-    <div class="dash">
-      <section class="card sch"><h2>수업 시간표</h2><div id="sch"></div></section>
-      <div class="dash-side">
+    <div class="subtabs seg">
+      <button data-sub="control">🎮 캐릭터 조작</button><button data-sub="schedule">📅 수업 시간표</button>
+    </div>
+    <div class="dash" data-subpanel="control">
+      <div class="dash-col">
         <section class="card control">
           <h2>캐릭터 조작</h2>
           <div class="status"><span class="dot"></span><b id="ctl-state">-</b><span id="ctl-target" class="hint"></span></div>
@@ -28,8 +33,15 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
             <button id="ctl-ignore" title="M">🔕 호출 무시 <kbd>M</kbd></button>
           </div>
           <ol id="ctl-queue" class="queue"></ol>
-          <p class="hint">호출: 아이 줄의 📣 버튼, 또는 <kbd>1</kbd>~<kbd>4</kbd> (그 마이크를 쓰는 아이). 중단하면 기다리던 다음 아이 차례로 넘어갑니다.</p>
+          <p class="hint">호출: 아이 줄의 📣 버튼<span class="keys">, 또는 <kbd>1</kbd>~<kbd>4</kbd> (그 마이크를 쓰는 아이)</span>. 중단하면 기다리던 다음 아이 차례로 넘어갑니다.</p>
         </section>
+        <section class="card">
+          <h2>TV 에 보여줄 방</h2>
+          <div class="seg rooms" id="tv-room"></div>
+          <p id="render-info" class="hint"></p>
+        </section>
+      </div>
+      <div class="dash-col">
         <section class="card now">
           <h2 id="now-title">지금 수업</h2>
           <ul id="now-list" class="now-list"></ul>
@@ -42,7 +54,8 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
           <ul id="talk" class="talk-log"></ul>
         </section>
       </div>
-    </div>`;
+    </div>
+    <section class="card sch" data-subpanel="schedule" hidden><div id="sch"></div></section>`;
   const $ = <T extends HTMLElement>(sel: string) => el.querySelector(sel) as T;
 
   let today: Occurrence[] = [];
@@ -50,6 +63,47 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   let last: StateMsg | null = null;
 
   mountSchedule($("#sch"), ctx, () => void loadToday());
+
+  // ---- 작은 탭 (마지막으로 본 것을 기억) ----
+  const SUB_KEY = "ribbon.admin.dashboard.sub";
+  function show(sub?: string): void {
+    let want = sub;
+    if (want !== "control" && want !== "schedule") {
+      try { want = localStorage.getItem(SUB_KEY) ?? "control"; } catch { want = "control"; }
+    }
+    try { localStorage.setItem(SUB_KEY, want!); } catch { /* 저장소 없음 */ }
+    el.querySelectorAll<HTMLElement>("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== want; });
+    el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === want));
+  }
+  el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => { b.onclick = () => ctx.go(`dashboard/${b.dataset.sub}`); });
+
+  // ---- TV 에 보여줄 방 ----
+  let rooms: [string, string][] = [];
+  async function loadRooms(): Promise<void> {
+    try {
+      const w = await api<{ catalog: Catalog }>("GET", "/api/world");
+      rooms = Object.entries(w.catalog.rooms ?? {}).map(([id, r]) => [id, r.name] as [string, string]);
+    } catch (err) { ctx.msg(`방 목록을 못 읽음: ${err}`, true); }
+    if (last) renderRooms(last);
+  }
+  function renderRooms(s: StateMsg): void {
+    const w = s.config?.world;
+    const box = $("#tv-room");
+    box.innerHTML = rooms.map(([id, n]) => `<button data-room="${id}" class="${w?.room === id ? "on" : ""}">${esc(n)}</button>`).join("")
+      + (w && !rooms.some(([id]) => id === w.room) ? `<button class="on" disabled>🖼 전시실 보는 중</button>` : "");
+    box.querySelectorAll<HTMLButtonElement>("[data-room]").forEach((b) => {
+      b.onclick = async () => {
+        try { await api("PUT", "/api/world/active", { room: b.dataset.room }); ctx.msg(`TV 방: ${b.textContent}`); }
+        catch (err) { ctx.msg(String(err), true); }
+      };
+    });
+    const r = w?.render;
+    $("#render-info").textContent = !w ? "" :
+      (w.rendering ? `⏳ 배경 렌더 중 (${w.rendering}) · ` : "") +
+      (r ? `배경: 블렌더 렌더 ${new Date(r.rendered_at * 1000).toLocaleString()}${r.stale ? " (배치가 바뀌어 다시 렌더 필요)" : ""}`
+         : "배경: 렌더 없음 → 실시간 3D");
+  }
+  void loadRooms();
 
   async function loadToday(): Promise<void> {
     const d = ymd(new Date());
@@ -192,8 +246,10 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   ctx.onState((s) => {
     last = s;
     renderControl(s);
+    renderRooms(s);
     renderNow();
   });
   void loadToday();
   setInterval(() => { if (el.isConnected) void loadToday(); }, 60000);   // 시각이 지나면 "지금 수업"이 바뀐다
+  return { show };
 }

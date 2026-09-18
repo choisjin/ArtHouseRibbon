@@ -38,9 +38,16 @@ export async function startArt(): Promise<void> {
 
   const kids = await api<Kid[]>("GET", "/api/kids");
   const kidSel = $<HTMLSelectElement>("#kid");
-  kidSel.innerHTML = kids.map((k) => `<option value="${k.id}">${esc(k.name)}</option>`).join("");
+  // 편집할 곳: 방(맵 편집기로 간다) + 아이들 전시실. 맵 편집기의 방 목록과 같다
+  const rooms = await api<{ catalog: Catalog }>("GET", "/api/world")
+    .then((w) => Object.entries(w.catalog.rooms ?? {}).map(([id, r]) => [id, r.name] as [string, string]))
+    .catch(() => [["classroom", "미술실"], ["gallery", "전시장"]] as [string, string][]);
+  kidSel.innerHTML = `<optgroup label="방">${rooms.map(([id, n]) => `<option value="room:${id}">${esc(n)}</option>`).join("")}</optgroup>`
+    + `<optgroup label="아이들 전시실">${[...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))
+      .map((k) => `<option value="${k.id}">🖼 ${esc(k.name)} 전시실</option>`).join("")}</optgroup>`;
   const wanted = new URLSearchParams(location.search).get("kid") || location.hash.slice(1);
-  if (wanted && kids.some((k) => k.id === wanted)) kidSel.value = wanted;
+  kidSel.value = wanted && kids.some((k) => k.id === wanted) ? wanted : kids[0]?.id ?? "";
+  let curKid = kidSel.value;
   if (!kids.length) { msg("관리자 페이지에서 아이를 먼저 추가하세요", true); return; }
 
   let room = "";
@@ -252,7 +259,13 @@ export async function startArt(): Promise<void> {
     } catch (e) { msg(String(e), true); }
   };
   kidSel.onchange = () => {
-    if (dirty && !confirm("저장하지 않은 것이 있습니다. 옮길까요?")) { return; }
+    if (dirty && !confirm("저장하지 않은 것이 있습니다. 옮길까요?")) { kidSel.value = curKid; return; }
+    if (kidSel.value.startsWith("room:")) {
+      const embed = new URLSearchParams(location.search).has("embed") ? "&embed=1" : "";
+      location.href = `/?mode=editor${embed}#${kidSel.value.slice(5)}`;
+      return;
+    }
+    curKid = kidSel.value;
     void loadKid();
   };
   window.addEventListener("resize", () => drawWall());
@@ -415,7 +428,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 const PAGE = `
 <style>
   :root { color-scheme: light }
-  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; background:#f6f4f1; color:#241f2b }
+  html { background:#f6f4f1; overflow:auto }   /* index.html 의 TV 용 어두운 바탕·스크롤 막기를 덮는다 */
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; background:#f6f4f1; color:#241f2b; overflow:visible }
   header { display:flex; gap:12px; align-items:center; padding:10px 16px; background:#fff; border-bottom:1px solid #e3ded8; flex-wrap:wrap }
   header h1 { font-size:17px; margin:0 8px 0 0 }
   select, input, button { font:inherit }
@@ -453,7 +467,7 @@ const PAGE = `
 </style>
 <header>
   <h1>🖼 전시실 꾸미기</h1>
-  <label>아이 <select id="kid"></select></label>
+  <label>편집할 곳 <select id="kid"></select></label>
   <button id="save">저장</button>
   <button id="show">TV 에서 보기</button>
   <a id="adminLink" href="/?mode=admin" style="color:#866">관리자 페이지</a>

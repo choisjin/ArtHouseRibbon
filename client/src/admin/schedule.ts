@@ -23,7 +23,8 @@ export async function fetchSchedule(start: string, end: string): Promise<{ items
 
 export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => void): { refresh(): void } {
   let view: View = "week";
-  try { view = (localStorage.getItem(VIEW_KEY) as View) || "week"; } catch { /* 저장소 없음 */ }
+  const narrow = window.matchMedia("(max-width: 700px)").matches;
+  try { view = (localStorage.getItem(VIEW_KEY) as View) || (narrow ? "day" : "week"); } catch { view = narrow ? "day" : "week"; }
   let anchor = new Date();
   let items: Occurrence[] = [];
   let dayStart = toMin("15:00"), dayEnd = toMin("19:00");
@@ -38,7 +39,7 @@ export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => vo
       </div>
     </div>
     <div class="sch-body"></div>
-    <p class="hint">아이 이름을 끌어 옮기면 <b>그날만</b> 바뀝니다 (점선). 이름을 누르면 원래대로 되돌리거나 결석으로 표시합니다.
+    <p class="hint">아이 이름을 끌어(휴대폰은 손가락으로) 옮기면 <b>그날만</b> 바뀝니다 (점선). 이름을 누르면 원래대로 되돌리거나 결석으로 표시합니다.
       매주 수업 시간은 '아이들' 탭에서 정합니다.</p>
     <div class="sch-pop" hidden></div>`;
   const body = el.querySelector(".sch-body") as HTMLElement;
@@ -89,7 +90,7 @@ export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => vo
     const i = items.indexOf(o);
     const cls = ["kchip", o.moved ? "moved" : "", o.cancelled ? "cancelled" : "", k?.present ? "present" : ""].join(" ");
     const tip = o.cancelled ? "결석" : o.moved ? `원래 ${o.orig_date.slice(5)} ${o.orig_start}` : "정규 수업";
-    return `<span class="${cls}" data-i="${i}" draggable="${!o.cancelled}" title="${esc(tip)}">${esc(k ? kidLabel(k) : "?")}</span>`;
+    return `<span class="${cls}" data-i="${i}" title="${esc(tip)}">${esc(k ? kidLabel(k) : "?")}</span>`;
   }
 
   function render(): void {
@@ -132,7 +133,6 @@ export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => vo
     body.innerHTML = `<div class="sch-week${view === "day" ? " single" : ""}" style="--n:${n}">
       <div></div>${heads}
       <div class="sch-times" style="height:${H}px">${times}</div>${cols}</div>`;
-    body.querySelectorAll<HTMLElement>(".sch-col").forEach(bindColumn);
   }
 
   function nowLine(): string {
@@ -175,26 +175,33 @@ export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => vo
     return Math.min(Math.max(m, dayStart), Math.max(dayStart, dayEnd - len));
   }
 
-  function bindColumn(col: HTMLElement): void {
-    const ghost = col.querySelector(".ghost") as HTMLElement;
-    col.ondragover = (e) => {
-      if (!dragging) return;
-      e.preventDefault();
-      const len = toMin(dragging.end) - toMin(dragging.start);
-      const m = dropMinute(col, e.clientY, len);
-      ghost.hidden = false;
-      ghost.style.top = `${(m - dayStart) * PX}px`;
-      ghost.style.height = `${len * PX}px`;
-      ghost.textContent = `${toHhmm(m)}~${toHhmm(m + len)}`;
-    };
-    col.ondragleave = (e) => { if (!col.contains(e.relatedTarget as Node)) ghost.hidden = true; };
-    col.ondrop = (e) => {
-      e.preventDefault();
-      ghost.hidden = true;
-      if (!dragging) return;
-      const len = toMin(dragging.end) - toMin(dragging.start);
-      void moveTo(dragging, col.dataset.date!, toHhmm(dropMinute(col, e.clientY, len)));
-    };
+  /** 끄는 중: 손가락·마우스 아래 칸에 놓일 자리를 보여 준다 */
+  function hover(x: number, y: number): void {
+    body.querySelectorAll<HTMLElement>(".ghost").forEach((g) => { g.hidden = true; });
+    body.querySelectorAll<HTMLElement>(".mcell.over").forEach((c) => c.classList.remove("over"));
+    const t = dropTarget(x, y);
+    if (!t || !dragging) return;
+    if (t.classList.contains("mcell")) { t.classList.add("over"); return; }
+    const ghost = t.querySelector(".ghost") as HTMLElement;
+    const len = toMin(dragging.end) - toMin(dragging.start);
+    const m = dropMinute(t, y, len);
+    ghost.hidden = false;
+    ghost.style.top = `${(m - dayStart) * PX}px`;
+    ghost.style.height = `${len * PX}px`;
+    ghost.textContent = `${toHhmm(m)}~${toHhmm(m + len)}`;
+  }
+
+  function dropTarget(x: number, y: number): HTMLElement | null {
+    const under = document.elementFromPoint(x, y) as HTMLElement | null;
+    return (under?.closest(".sch-col, .mcell") as HTMLElement | null) ?? null;
+  }
+
+  function drop(x: number, y: number): void {
+    const t = dropTarget(x, y);
+    const o = dragging;
+    if (!t || !o) return;
+    if (t.classList.contains("mcell")) { void moveTo(o, t.dataset.date!, o.start); return; }   // 달력: 날짜만, 시각은 그대로
+    void moveTo(o, t.dataset.date!, toHhmm(dropMinute(t, y, toMin(o.end) - toMin(o.start))));
   }
 
   // ---- 월: 달력 ----
@@ -213,30 +220,56 @@ export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => vo
         <div class="md">${d.getDate()}</div>${rows}</div>`;
     }
     body.innerHTML = `<div class="sch-month">${cells}</div>`;
-    body.querySelectorAll<HTMLElement>(".mcell").forEach((cell) => {
-      cell.ondragover = (e) => { if (dragging) { e.preventDefault(); cell.classList.add("over"); } };
-      cell.ondragleave = () => cell.classList.remove("over");
-      cell.ondrop = (e) => {
-        e.preventDefault();
-        cell.classList.remove("over");
-        if (dragging) void moveTo(dragging, cell.dataset.date!, dragging.start);   // 날짜만 바꾸고 시각은 그대로
-      };
-    });
   }
 
-  // ---- 칩: 끌기 / 누르기 ----
+  // ---- 칩: 끌기 / 누르기 (포인터 이벤트라 마우스와 손가락 모두 된다) ----
+  let justDragged = false;
   function bindChips(): void {
     body.querySelectorAll<HTMLElement>(".kchip").forEach((c) => {
       const o = items[Number(c.dataset.i)];
-      c.ondragstart = (e) => {
-        dragging = o;
-        e.dataTransfer?.setData("text/plain", o.kid_id);
-        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-        c.classList.add("dragging");
-        pop.hidden = true;
+      c.onclick = (e) => {
+        e.stopPropagation();
+        if (justDragged) { justDragged = false; return; }
+        showPop(o, c);
       };
-      c.ondragend = () => { dragging = null; c.classList.remove("dragging"); body.querySelectorAll<HTMLElement>(".ghost").forEach((g) => { g.hidden = true; }); };
-      c.onclick = (e) => { e.stopPropagation(); showPop(o, c); };
+      if (o.cancelled) return;                     // 결석은 누르기만 (원래대로)
+      c.onpointerdown = (e) => {
+        if (e.button !== 0) return;
+        const x0 = e.clientX, y0 = e.clientY;
+        let float: HTMLElement | null = null;
+        const move = (ev: PointerEvent) => {
+          if (!float) {
+            if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;   // 조금 움직여야 끌기 시작
+            dragging = o;
+            pop.hidden = true;
+            c.classList.add("dragging");
+            float = c.cloneNode(true) as HTMLElement;
+            float.classList.add("floating");
+            (document.getElementById("admin") ?? document.body).appendChild(float);   // 칩 스타일이 #admin 안에만 있다
+          }
+          ev.preventDefault();
+          float.style.left = `${ev.clientX}px`;
+          float.style.top = `${ev.clientY}px`;
+          hover(ev.clientX, ev.clientY);
+        };
+        const end = (ev: PointerEvent) => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", end);
+          window.removeEventListener("pointercancel", end);
+          if (!float) return;                       // 끌지 않았으면 누르기(click)로 처리된다
+          float.remove();
+          c.classList.remove("dragging");
+          justDragged = true;
+          setTimeout(() => { justDragged = false; }, 0);
+          if (ev.type === "pointerup") drop(ev.clientX, ev.clientY);
+          body.querySelectorAll<HTMLElement>(".ghost").forEach((g) => { g.hidden = true; });
+          body.querySelectorAll<HTMLElement>(".mcell.over").forEach((x) => x.classList.remove("over"));
+          dragging = null;
+        };
+        window.addEventListener("pointermove", move, { passive: false });
+        window.addEventListener("pointerup", end);
+        window.addEventListener("pointercancel", end);
+      };
     });
   }
 
@@ -253,7 +286,7 @@ export function mountSchedule(el: HTMLElement, ctx: AdminCtx, onChange: () => vo
         <button data-act="close">닫기</button>
       </div>`;
     const r = anchorEl.getBoundingClientRect(), host = el.getBoundingClientRect();
-    pop.style.left = `${Math.min(r.left - host.left, host.width - 240)}px`;
+    pop.style.left = `${Math.max(0, Math.min(r.left - host.left, host.width - 240))}px`;
     pop.style.top = `${r.bottom - host.top + 6}px`;
     pop.hidden = false;
     const key = { kid_id: o.kid_id, orig_date: o.orig_date, orig_start: o.orig_start };

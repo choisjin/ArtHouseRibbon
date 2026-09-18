@@ -74,9 +74,9 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `src/tv/brain.ts` | 리본이 행동: 돌아다니기·그림 구경, 부르면 멈춰 인사 후 "부르면 오는 자리"로 |
 | `src/tv/hud.ts` | 대기 순서 칩, 자막 |
 | `src/tv/index.ts` | 서버 메시지 → 화면 상태, 듣는 중/생각 중 말풍선 |
-| `src/admin/index.ts` | 관리자 페이지 (탭: 대시보드 · 아이들 · 캐릭터 · 맵) |
-| `src/admin/dashboard.ts`, `schedule.ts` | 시간표(일·주·월, 끌어 옮기기), 지금 수업 아이들, 캐릭터 조작 단축키 |
-| `src/admin/kids.ts`, `characters.ts`, `map.ts` | 아이 인적사항·정규 수업 / 캐릭터 프로필(이력서) / 맵 편집기·전시실 (iframe) |
+| `src/admin/index.ts` | 관리자 페이지 (탭: 대시보드 · 아이들 · 캐릭터 · 맵 · 설정). 휴대폰은 아래 탭 막대 |
+| `src/admin/dashboard.ts`, `schedule.ts` | 캐릭터 조작·TV 방·지금 수업 아이들 / 시간표(일·주·월, 포인터로 끌어 옮기기 = 터치 가능) |
+| `src/admin/kids.ts`, `characters.ts`, `map.ts`, `settings.ts` | 아이 인적사항·정규 수업 / 캐릭터 프로필(이력서) / 맵 편집기 (iframe) / 라이트·다크 |
 | `src/editor/` | 맵 편집기 (Character_Creator 배치 편집기 이식본) |
 | `src/debug/panel.ts` | 호출/발화/취소/등원 흉내, 마이크 장치 선택 |
 | `src/entrance/index.ts` | 출입구 폰 골격 |

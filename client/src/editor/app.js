@@ -1801,6 +1801,12 @@ $('room').onchange = async () => {
     $('room').value = roomId;
     return;
   }
+  if (r.startsWith('kid:')) {
+    // 아이 전시실은 전시실 꾸미기 화면에서 (index.ts addGalleries)
+    const embed = new URLSearchParams(location.search).has('embed') ? '&embed=1' : '';
+    location.href = `/?mode=art&kid=${encodeURIComponent(r.slice(4))}${embed}`;
+    return;
+  }
   try {
     await loadRoom(r);
   } catch (err) {

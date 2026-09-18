@@ -7,9 +7,11 @@ import "./style.css";
 const MARKUP = `
 <header id="toolbar">
   <strong class="title">맵 편집기</strong>
-  <select id="room" title="방 선택">
-    <option value="classroom">미술실</option>
-    <option value="gallery">전시장</option>
+  <select id="room" title="편집할 곳: 방 또는 아이 전시실">
+    <optgroup label="방">
+      <option value="classroom">미술실</option>
+      <option value="gallery">전시장</option>
+    </optgroup>
   </select>
   <div class="group" role="group" aria-label="보기">
     <button data-view="persp" class="view on" title="1">원근</button>
@@ -163,11 +165,29 @@ const MARKUP = `
 </main>
 <div id="toast"></div>`;
 
+/** 방 목록 아래에 아이들 전시실을 붙인다. 고르면 전시실 꾸미기(?mode=art)로 간다 (app.js 의 room.onchange) */
+async function addGalleries(): Promise<void> {
+  try {
+    const kids = (await fetch("/api/kids").then((r) => r.json())) as { id: string; name: string }[];
+    if (!kids.length) return;
+    const g = document.createElement("optgroup");
+    g.label = "아이들 전시실";
+    for (const k of [...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))) {
+      const o = document.createElement("option");
+      o.value = `kid:${k.id}`;
+      o.textContent = `🖼 ${k.name} 전시실`;
+      g.appendChild(o);
+    }
+    document.getElementById("room")!.appendChild(g);
+  } catch { /* 아이 목록이 없어도 방 편집은 된다 */ }
+}
+
 export async function startEditor(): Promise<void> {
   document.title = "맵 편집기";
   document.body.innerHTML = MARKUP;
   document.body.classList.add("editor");
   // 관리자 페이지 '맵' 탭 안에 들어갈 때는 관리자 페이지로 가는 링크가 필요 없다
   if (new URLSearchParams(location.search).has("embed")) document.getElementById("adminLink")?.remove();
+  await addGalleries();
   await import("./app.js");
 }

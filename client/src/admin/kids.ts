@@ -118,8 +118,9 @@ export function mountKids(el: HTMLElement, ctx: AdminCtx): { select(id: string):
     selected = ctx.kids().find((k) => k.id === id) ?? null;
     fill(selected);
     renderList();
+    if (window.matchMedia("(max-width: 800px)").matches) form.scrollIntoView({ behavior: "smooth" });   // 휴대폰: 목록 아래 폼으로
   }
-  $("#kid-new").onclick = () => { selected = null; fill(null); renderList(); field("name").focus(); };
+  $("#kid-new").onclick = () => { selected = null; fill(null); renderList(); field("name").focus(); form.scrollIntoView({ behavior: "smooth" }); };
 
   form.onsubmit = async (e) => {
     e.preventDefault();
