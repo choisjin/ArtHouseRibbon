@@ -77,7 +77,7 @@ export class Speaker {
       try { await (this.audioContext() as SinkContext).setSinkId!(saved); this.outputId = saved; } catch { /* 장치 없음 */ }
     }
     const names = outs.map((d) => d.label || "(이름 숨김)").join(", ");
-    this.report(`소리 출력: ${await this.outputLabel()} · 장치 ${outs.length}개 [${names}] · o 키로 바꾸기`);
+    this.report(`소리 출력: ${await this.outputLabel()} · 장치 ${outs.length}개 [${names}] · 관리자 설정 탭에서 바꾸기`);
   }
 
   /** 출력 확인용 짧은 삐 소리 */

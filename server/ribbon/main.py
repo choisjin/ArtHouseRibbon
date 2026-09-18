@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from .audio.stream import ChannelProcessor
 from .audio.wakeword import make_wakeword
 from .config import settings
+from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
 from .providers.llm import make_llm
@@ -40,6 +41,25 @@ class Hub:
 
     def __init__(self) -> None:
         self.clients: Dict[WebSocket, str] = {}  # ws -> role
+        self.ids: Dict[WebSocket, str] = {}      # ws -> client_id (브라우저마다 고정, ws.ts clientId)
+
+    def agent(self, ws: WebSocket) -> str:
+        """장치를 가진 화면 하나: "브라우저 id/역할". 같은 크롬에서 마이크 화면과 TV 를 같이 열어도 나뉜다"""
+        return f"{self.ids.get(ws, '')}/{self.clients.get(ws, '?')}"
+
+    async def send_to(self, agent: str, message: dict) -> int:
+        """그 화면(agent)의 연결들에만 보낸다. 보낸 수를 돌려준다"""
+        data = json.dumps(message, ensure_ascii=False)
+        n = 0
+        for ws in list(self.ids):
+            if self.agent(ws) != agent:
+                continue
+            try:
+                await ws.send_text(data)
+                n += 1
+            except Exception:
+                pass
+        return n
 
     async def broadcast(self, message: dict, roles: Set[str] | None = None) -> None:
         data = json.dumps(message, ensure_ascii=False)
@@ -56,6 +76,7 @@ class Hub:
 
 
 hub = Hub()
+devices = DeviceBoard()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
 schedule = sched.ScheduleStore(settings.schedule_path())
@@ -455,6 +476,9 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
     t = msg.get("type")
     if t == "hello":
         hub.clients[ws] = msg.get("role", "unknown")
+        hub.ids[ws] = str(msg.get("client_id") or "")
+        if hub.clients[ws] == "admin":
+            await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))
         if hub.clients[ws] == "mic":
             log.info("마이크 화면 연결됨 (%s)", ws.client.host if ws.client else "?")
         await ws.send_text(json.dumps(dialogue.snapshot().model_dump(), ensure_ascii=False))
@@ -469,6 +493,26 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
                     str(msg.get("text", ""))[:300])
     elif t == "debug.utterance":
         _spawn(dialogue.on_utterance(int(msg.get("channel", 0)), str(msg.get("text", ""))))
+    elif t == "device.status":
+        # 마이크 화면·TV 가 알려 온 장치 상태 → 관리자 '설정' 탭
+        aid = hub.agent(ws)
+        changed = devices.update(aid, str(msg.get("kind") or ""), hub.clients.get(ws, "?"),
+                                 ws.client.host if ws.client else "?", msg)
+        snap = devices.snapshot()
+        if changed:
+            await hub.broadcast(snap, roles={"admin"})
+        else:   # 음량만 바뀜: 가볍게
+            await hub.broadcast({"type": "devices.levels", "agent": aid, "levels": msg.get("levels")},
+                                roles={"admin"})
+    elif t == "devices.get":
+        await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))   # 관리자 '설정' 탭을 열 때
+    elif t == "device.control":
+        # 관리자가 고른 장치 설정 → 그 화면으로
+        sent = await hub.send_to(str(msg.get("agent") or ""), msg)
+        if not sent:
+            await ws.send_text(json.dumps({"type": "admin.msg", "error": True,
+                                           "text": "그 화면이 연결되어 있지 않습니다 (창이 닫혔거나 새로 열리는 중)"},
+                                          ensure_ascii=False))
     elif t == "admin.wake":
         # 관리자가 누른 호출: 아이(kid_id)의 마이크 채널로, 호출 무시 중에도 받는다
         kid = kids.get(str(msg.get("kid_id") or ""))
@@ -527,7 +571,11 @@ async def ws_endpoint(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        aid = hub.agent(ws)
         hub.clients.pop(ws, None)
+        hub.ids.pop(ws, None)
+        if not any(hub.agent(w) == aid for w in hub.ids) and devices.drop_agent(aid):
+            await hub.broadcast(devices.snapshot(), roles={"admin"})   # 그 화면이 닫혔다
 
 
 art_dir = settings.artworks_path()

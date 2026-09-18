@@ -18,8 +18,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const stage = new Stage(document.getElementById("app")!, await fetchCatalog());
   const hud = new Hud();
   const speaker = new Speaker(socket, { showLock: true });
-  const { mountOutputPicker } = await import("./output");
-  mountOutputPicker(speaker);
+  const { startOutputAgent } = await import("./output");
+  startOutputAgent(speaker, socket);   // 출력 장치는 관리자 '설정' 탭에서 고른다
   // 어떤 캐릭터로 나올지는 관리자 설정에서 온다. 만들 때 정해야 해서 state 를 기다리지 않고 먼저 물어본다
   const cfg0 = await fetch("/api/config").then((r) => r.json()).catch(() => null);
   const character = String(cfg0?.ribbon?.character ?? "");
@@ -202,14 +202,9 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   requestAnimationFrame(frame);
 
   if (opts.mic && !opts.debug) {
-    // 마이크가 TV 노트북에 꽂혀 있을 때: 오른쪽 아래 작은 마이크 칸 (m 키로 숨기기)
-    const { mountMicControl } = await import("../audio/micControl");
-    const box = document.createElement("div");
-    box.className = "overlay";
-    box.style.cssText = "right:16px;bottom:16px;width:280px";
-    document.body.appendChild(box);
-    mountMicControl(box, socket, { autoStart: true, compact: true });
-    window.addEventListener("keydown", (e) => { if (e.key === "m") box.hidden = !box.hidden; });
+    // 마이크가 TV 노트북에 꽂혀 있을 때: 장치 고르기·켜기는 관리자 '설정' 탭에서 (화면에는 아무것도 띄우지 않는다)
+    const { MicAgent } = await import("../audio/micAgent");
+    new MicAgent(socket, { autoStart: true });
   }
   if (opts.debug) {
     const { mountDebugPanel } = await import("../debug/panel");

@@ -14,7 +14,7 @@ import type { AdminCtx } from "./shared";
  *   #kids        아이 추가·수정 (인적사항, 정규 수업 시간)
  *   #characters  TV 에 나올 캐릭터, 캐릭터별 프로필(#characters/<id> 설정 페이지)
  *   #map         맵 편집기 (방 목록에서 아이들 전시실도 고른다)
- *   #settings    화면 스타일 (라이트·다크)
+ *   #settings    마이크(마이크 화면·TV 의 장치 고르기·켜기), TV 소리 출력, 화면 스타일 (라이트·다크)
  * 저장은 REST API 로, 화면 반영은 서버가 보내는 state 브로드캐스트로 이뤄진다.
  */
 const TABS = [
@@ -76,7 +76,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     if (id === "kids") kidsTab = mountKids(el, ctx);
     if (id === "characters") characters = mountCharacters(el, ctx);
     if (id === "map") mapTab = mountMap(el);
-    if (id === "settings") mountSettings(el);
+    if (id === "settings") mountSettings(el, ctx);
   }
 
   function route(): void {
