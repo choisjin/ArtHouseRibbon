@@ -4,6 +4,7 @@
 
   <데이터 폴더> : 배치의 image("artworks/x.png") 를 찾는 기준 (리본 서버에서는 data/)
   <출력 폴더>   : <방>_<시간대>.png (TV 배경), <방>_<시간대>_env.hdr (리본이 조명용 360° 환경)
+환경변수 RENDER_SHELL_ROOM 을 주면 그 방의 모양·조명으로 짓고 파일 이름만 <방> 을 쓴다 (아이 전시실).
   [시간대]      : phases.py 의 이름 (dawn/morning/day/sunset/night). 여러 개면 방을 한 번만 짓고
                   조명만 바꿔 차례로 렌더한다. 빼면 그 방이 쓰는 시간대 전부
 환경변수
@@ -28,14 +29,16 @@ argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 if len(argv) < 4:
     raise SystemExit("사용법: -- <방> <배치.json> <데이터 폴더> <출력 폴더> [시간대...]")
 ROOM, LAYOUT_FILE, DATA_DIR, OUT_DIR = argv[:4]
-os.environ["MAP_ROOM"] = ROOM
+# 방 모양·조명을 가져올 방 (아이 전시실처럼 남의 껍데기를 쓰는 방이 있다). 파일 이름은 ROOM 그대로
+SHELL = os.environ.get("RENDER_SHELL_ROOM") or ROOM
+os.environ["MAP_ROOM"] = SHELL
 import phases  # noqa: E402
 import room_map  # noqa: E402  (불러올 때 기본 배치를 읽지만 아래에서 바꾼다)
 
-PHASES = [p for p in argv[4:] if p in phases.PHASES] or room_map.room_phases(ROOM)
+PHASES = [p for p in argv[4:] if p in phases.PHASES] or room_map.room_phases(SHELL)
 
 room_map.PROJECT_DIR = os.path.abspath(DATA_DIR)          # 그림 파일 기준
-room_map.CURRENT_ROOM = ROOM
+room_map.CURRENT_ROOM = SHELL
 with open(LAYOUT_FILE, encoding="utf-8") as f:
     layout = json.load(f)
 layout["items"] = [e for e in layout.get("items", []) if e.get("type") in room_map.ITEM_TYPES]
@@ -72,7 +75,7 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
 coll = bpy.data.collections.new("Map")
 scene.collection.children.link(coll)
-room_map.build_room(coll.objects.link, layout=layout, room=ROOM)
+room_map.build_room(coll.objects.link, layout=layout, room=SHELL)
 world = bpy.data.worlds.new("World")
 scene.world = world
 world.use_nodes = True
@@ -94,8 +97,8 @@ lights = []
 for phase in PHASES:
     for o in lights:                       # 시간대마다 조명을 새로 놓는다
         bpy.data.objects.remove(o, do_unlink=True)
-    lights = room_map.room_lights(coll.objects.link, room=ROOM, phase=phase)
-    sky, exposure = room_map.apply_phase(phase, room=ROOM)
+    lights = room_map.room_lights(coll.objects.link, room=SHELL, phase=phase)
+    sky, exposure = room_map.apply_phase(phase, room=SHELL)
     world.node_tree.nodes["Background"].inputs["Color"].default_value = sky
     scene.view_settings.exposure = exposure
 
