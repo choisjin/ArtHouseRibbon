@@ -56,7 +56,8 @@ export class Ribbon3D {
   private mouth = 0;
   private sitAction: THREE.AnimationAction | null = null;
   private seat: Seat | null = null;
-  private lift = 0;               // 바닥에서 띄운 높이 (앉으면 좌판 높이)
+  private lift = 0;               // 바닥에서 띄운 높이 (앉으면 좌판 높이 - 엉덩이 높이)
+  private hipHeight = 0.46;       // 서 있을 때 골반(엉덩이)이 발바닥에서 얼마나 위인지
   private liftTarget = 0;
   private shadow: THREE.Mesh;
   private motionBlend = 1;
@@ -102,6 +103,7 @@ export class Ribbon3D {
       while (p && !proxies.has(p.name)) p = p.parent;
       (p ? proxies.get(p.name)! : this.rig).add(proxies.get(node.name)!);
     }
+    this.hipHeight = this.bones.get("pelvis")?.node.position.y ?? 0.46;
     const box = new THREE.Box3().setFromObject(scene);
     const size = box.getSize(new THREE.Vector3());
     this.height = size.y;
@@ -210,7 +212,9 @@ export class Ribbon3D {
     if (!this.sitAction) return;
     this.stop();
     this.seat = seat;
-    this.liftTarget = seat.height;
+    // 발이 아니라 엉덩이가 좌판에 닿아야 한다 (안 그러면 의자 위에 올라선 모습이 된다).
+    // 좌판에 살짝 얹히도록 아주 조금 띄운다
+    this.liftTarget = Math.max(0, seat.height - this.hipHeight + 0.04);
     this.targetYaw = seat.yaw;
     this.root.position.copy(toThree(seat.x, seat.y, 0));
     this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.45).play();

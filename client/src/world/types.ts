@@ -109,9 +109,9 @@ export const rad = THREE.MathUtils.degToRad;
  * 의자는 back=(0,1) 이라 의자 좌표에서 앞은 -Y 쪽이다.
  */
 export const SEATS: Record<string, { height: number; forward: number }> = {
-  junior_chair_red: { height: 0.52, forward: 0.05 },
-  junior_chair_black: { height: 0.52, forward: 0.05 },
-  windsor_chair: { height: 0.46, forward: 0.07 },
+  junior_chair_red: { height: 0.52, forward: 0.09 },
+  junior_chair_black: { height: 0.52, forward: 0.09 },
+  windsor_chair: { height: 0.46, forward: 0.13 },
 };
 
 /** 바닥에 깔려 위를 지나가도 되는 것 */
