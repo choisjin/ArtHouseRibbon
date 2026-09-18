@@ -106,11 +106,15 @@ cp .env.example .env
 
 ```
 RIBBON_STT_PROVIDER=mlx_whisper
-RIBBON_LLM_PROVIDER=ollama
-RIBBON_LLM_MODEL=gemma3:27b
+RIBBON_LLM_PROVIDER=mlx
+RIBBON_LLM_MODEL=ddalcu/Qwen3.6-35B-A3B-MLX-Serve-4bit
 RIBBON_TTS_PROVIDER=supertonic
 RIBBON_TTS_VOICE=F1
 ```
+
+대화 모델(LLM)은 서버를 켠 뒤 **관리자 페이지 → 설정 → 🧠 대화 모델**에서 바꾼다. 위 LLM 값은 처음 한 번 그 칸을 채우는 데만 쓰고,
+설정 탭에서 저장한 값이 `.env` 보다 앞선다. 맥미니에서는 **MLX (맥미니 mlx-serve)** 를 고른다 (mlx-serve 는 따로 켜 두는 서비스, 포트 11234).
+"💬 시험해 보기" 로 답이 나오는지 확인한다.
 
 STT 모델을 미리 내려받아 둔다 (약 1.6GB, 처음 한 번).
 
