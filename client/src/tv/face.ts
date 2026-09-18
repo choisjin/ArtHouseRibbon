@@ -73,6 +73,8 @@ function pivotFor(mesh: THREE.Object3D): THREE.Object3D | null {
 export class Face {
   private mouth: Mouth | null = null;
   private eyes: { left: THREE.Object3D | null; right: THREE.Object3D | null } = { left: null, right: null };
+  /** 눈 위의 흰 광 (Eye_L_Hi, Eye_L_Hi2 …). 눈 축에 붙여 같이 눌리고 기울고, 눈을 감으면 숨긴다 */
+  private glints: { left: THREE.Object3D[]; right: THREE.Object3D[] } = { left: [], right: [] };
   private baseY: { left: number; right: number } = { left: 0, right: 0 };
   private blush: THREE.Object3D[] = [];
   private brow: THREE.Object3D[] = [];
@@ -89,6 +91,17 @@ export class Face {
     const l = find("Eye_L"), r = find("Eye_R");
     this.eyes.left = l ? pivotFor(l) : null;
     this.eyes.right = r ? pivotFor(r) : null;
+    for (const [side, s] of [["left", "L"], ["right", "R"]] as const) {
+      const pivot = this.eyes[side];
+      if (!pivot) continue;
+      for (const suffix of ["_Hi", "_Hi2"]) {
+        const g = find(`Eye_${s}${suffix}`);
+        if (!g) continue;
+        g.parent?.updateWorldMatrix(true, true);
+        pivot.attach(g);                  // 보이는 자리는 그대로 두고 눈 축 아래로 옮긴다
+        this.glints[side].push(g);
+      }
+    }
     this.baseY.left = this.eyes.left?.position.y ?? 0;
     this.baseY.right = this.eyes.right?.position.y ?? 0;
     for (const n of ["Furrow_L", "Furrow_R"]) {
@@ -146,6 +159,9 @@ export class Face {
       pivot.scale.set(s.wide, Math.max(0.05, s.open), 1);
       pivot.rotation.z = s.slant * (side === "left" ? 1 : -1);
       pivot.position.y = this.baseY[side] + s.lift * 0.1;
+      // 감거나 가늘게 뜬 눈(깜빡임·웃는 눈·졸린 눈)에는 광을 숨긴다 (눌린 광이 선처럼 남으면 어색하다)
+      const shine = s.open > 0.45;
+      for (const g of this.glints[side]) g.visible = shine;
     }
     this.blushNow += (this.current.blush - this.blushNow) * k;
     for (const b of this.blush) b.scale.setScalar(this.blushNow);

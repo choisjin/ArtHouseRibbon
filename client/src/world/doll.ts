@@ -55,13 +55,24 @@ const cached = new Map<string, Promise<DollAsset>>();
 
 /** 봉제 인형 천 재질: glb 의 단순 재질(기본색·거칠기)을 보풀 광택(sheen)이 있는 재질로 바꾼다 */
 const GLOSSY = new Set(["Button_Game", "EyeFelt_Game"]);
+/** 눈의 흰 광: 살짝 스스로 빛나서 어두운 곳에서도 눈이 초롱초롱 (Character_Creator doll.py M_EYE_HI 와 같게) */
+const GLINT = "EyeHighlight_Game";
 function fabric(src: THREE.Material): THREE.Material {
   const s = src as THREE.MeshStandardMaterial;
   if (!s.isMeshStandardMaterial) return src.clone();
   const m = new THREE.MeshPhysicalMaterial({
     name: s.name, color: s.color.clone(), map: s.map, transparent: s.transparent, opacity: s.opacity,
   });
-  if (GLOSSY.has(s.name)) {
+  if (s.name === GLINT) {
+    m.color.set(0xffffff);
+    m.roughness = 0.3;
+    m.clearcoat = 0.3;
+    m.emissive = new THREE.Color(0xffffff);
+    m.emissiveIntensity = 0.35;
+  } else if (s.name === "EyeFelt_Game") {
+    m.roughness = 0.55;                     // 광은 흰 조각이 맡으니 눈 자체는 덜 반짝이게
+    m.clearcoat = 0.12;
+  } else if (GLOSSY.has(s.name)) {
     m.roughness = 0.35;
     m.clearcoat = 0.6;
   } else {
