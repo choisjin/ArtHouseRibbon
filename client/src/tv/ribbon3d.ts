@@ -19,6 +19,9 @@ export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "P
 /** 앉을 자리: 바닥 좌표와 좌판 높이(장면 단위), 앉아서 바라보는 방향 */
 export interface Seat { x: number; y: number; height: number; yaw: number }
 
+/** 폴짝 뛰면서 넘어야 하는 것: 이 바닥 점을 지날 때 발이 height 보다 높아야 한다 (의자 등받이) */
+export interface HopOver { at: P2; height: number }
+
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (cur: number, target: number, k: number) => cur + (target - cur) * k;
 
@@ -63,7 +66,7 @@ export class Ribbon3D {
   private seat: Seat | null = null;
   private held = false;           // 길은 그대로 두고 잠깐 멈춤 (앞에 다른 캐릭터가 있을 때)
   /** 의자에 폴짝 올라앉기 / 내려오기: 좌판 높이보다 높게 포물선으로 옮겨 다리가 의자를 뚫지 않게 */
-  private hop: { from: P2; to: P2; t: number; dur: number; l0: number; l1: number; y0: number; y1: number;
+  private hop: { from: P2; to: P2; t: number; dur: number; l0: number; l1: number; y0: number; y1: number; arc: number;
                  done: (() => void) | null } | null = null;
   private lift = 0;               // 바닥에서 띄운 높이 (앉으면 좌판 높이 - 엉덩이 높이)
   private hipHeight = 0.46;       // 서 있을 때 골반(엉덩이)이 발바닥에서 얼마나 위인지
@@ -249,26 +252,46 @@ export class Ribbon3D {
    * 의자 옆(또는 앞)에 서 있다가 좌판으로 폴짝 올라앉는다. 서서 좌판까지 걸어가면 다리가 의자·책상을 뚫는다.
    * 뛰는 동안 앉은 자세로 바뀌고, 좌판을 보고 돌아앉는다.
    */
-  hopOnto(seat: Seat, onDone?: () => void): void {
+  hopOnto(seat: Seat, onDone?: () => void, over?: HopOver): void {
     if (!this.sitAction) { onDone?.(); return; }
     this.stop();
     this.seat = seat;
     this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.3).play();
     const l1 = this.seatLift(seat);
     this.liftTarget = l1;
-    this.hop = { from: this.pos, to: { x: seat.x, y: seat.y }, t: 0, dur: 0.6, l0: this.lift, l1, y0: this.yaw, y1: seat.yaw,
-                 done: onDone ?? null };
+    this.startHop(this.pos, { x: seat.x, y: seat.y }, this.lift, l1, this.yaw, seat.yaw, over, onDone);
   }
 
   /** 좌판에서 이 자리로 폴짝 내려온다 (올라왔던 자리). 내려오는 쪽을 보고 뛴다 */
-  hopOff(to: P2, onDone?: () => void): void {
+  hopOff(to: P2, onDone?: () => void, over?: HopOver): void {
     this.stop();
     this.seat = null;
     this.sitAction?.fadeOut(0.3);
     this.liftTarget = 0;
     const me = this.pos;
     const y1 = Math.atan2(to.x - me.x, -(to.y - me.y));
-    this.hop = { from: me, to, t: 0, dur: 0.55, l0: this.lift, l1: 0, y0: this.yaw, y1, done: onDone ?? null };
+    this.startHop(me, to, this.lift, 0, this.yaw, y1, over, onDone);
+  }
+
+  /**
+   * 포물선 뛰기 준비. 보통은 몸 키의 12% 만큼 떴다가 내려앉는다.
+   * over(등받이)가 있으면 그 위를 지날 때 발이 등받이보다 높도록 더 높이 (그만큼 조금 더 오래) 뛴다.
+   */
+  private startHop(from: P2, to: P2, l0: number, l1: number, y0: number, y1: number, over?: HopOver, done?: () => void): void {
+    let arc = this.height * 0.12;
+    if (over) {
+      const vx = to.x - from.x, vy = to.y - from.y;
+      const L = vx * vx + vy * vy;
+      const e = L > 1e-9 ? Math.min(0.95, Math.max(0.05, ((over.at.x - from.x) * vx + (over.at.y - from.y) * vy) / L)) : 0.5;
+      // e = smoothstep(k) 를 k 에 대해 풀기 (이분법)
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (m * m * (3 - 2 * m) < e) lo = m; else hi = m; }
+      const k = (lo + hi) / 2;
+      const need = over.height + 0.08 - (l0 + (l1 - l0) * e);          // 그 순간 바닥에서 몸을 띄울 높이
+      arc = Math.max(arc, need / Math.max(0.3, Math.sin(Math.PI * k)));
+    }
+    const dur = 0.55 + 0.35 * Math.min(1, arc / (this.height * 0.5));   // 높이 뛸수록 조금 오래
+    this.hop = { from, to, t: 0, dur, l0, l1, y0, y1, arc, done: done ?? null };
   }
 
   /** 뛰는 중이면 한 프레임 진행 (자리·높이·방향). 뛰는 중이 아니면 false */
@@ -280,8 +303,8 @@ export class Ribbon3D {
     const e = k * k * (3 - 2 * k);                              // 부드럽게 출발·착지
     this.root.position.x = h.from.x + (h.to.x - h.from.x) * e;
     this.root.position.z = -(h.from.y + (h.to.y - h.from.y) * e);
-    // 좌판보다 높이 떴다가 내려앉는다 (몸 키의 12%)
-    this.lift = h.l0 + (h.l1 - h.l0) * e + Math.sin(Math.PI * k) * this.height * 0.12;
+    // 좌판보다(뒤에서 오르면 등받이보다) 높이 떴다가 내려앉는다
+    this.lift = h.l0 + (h.l1 - h.l0) * e + Math.sin(Math.PI * k) * h.arc;
     this.yaw = h.y0 + wrap(h.y1 - h.y0) * e;
     if (k >= 1) {
       this.hop = null;
