@@ -7,7 +7,8 @@
 - 노트북: TV에 HDMI 연결. 브라우저 전체화면으로 `?mode=tv`. DJI 수신기를 USB로 직결해 오디오를 서버로 보낸다.
 - DJI Mic Mini: 아이별 무선 마이크. 스테레오 모드에서 송신기 두 개가 좌우 채널로 분리된다. 4명 = 2세트 = 4채널.
 - 폰 1 (출입구): `?mode=entrance`. 카메라로 아이를 알아보고 그 자리에서 인사. 등원 기록.
-- 폰 2 (TV 위): `?mode=camera`. 얼굴 위치를 보내 리본이 시선과 시차 효과에 쓴다.
+- TV 웹캠: TV 노트북에 꽂은 웹캠을 TV 화면(`?mode=tv`)이 직접 쓴다 (`src/tv/webcam.ts`, MediaPipe Face Landmarker). 얼굴 위치는 리본이 시선에, 얼굴 수는 "TV 앞에 누가 있나"에 쓴다. 켜기·장치·미리보기는 관리자 '설정' 탭. 영상은 TV 브라우저 밖으로 나가지 않는다.
+- (예전) 폰 2 (TV 위): `?mode=camera`. 얼굴 위치를 서버로 보내 TV 로 중계. 웹캠이 켜져 있으면 TV 는 이것을 무시한다.
 - 놀고 있는 DSLR: 작품 촬영용 (4단계).
 
 ## 핵심 원칙
@@ -80,7 +81,8 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `src/editor/` | 맵 편집기 (Character_Creator 배치 편집기 이식본) |
 | `src/debug/panel.ts` | 호출/발화/취소/등원 흉내, 마이크 장치 선택 |
 | `src/entrance/index.ts` | 출입구 폰 골격 |
-| `src/camera/index.ts` | TV 위 폰 골격 |
+| `src/tv/webcam.ts` | TV 웹캠: 얼굴 위치·수, 관리자 설정 탭과 상태 주고받기, TV 구석 미리보기 |
+| `src/camera/index.ts` | (예전) TV 위 폰 골격 |
 
 ## 대기열 규칙 (queue.py)
 

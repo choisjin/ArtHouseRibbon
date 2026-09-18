@@ -21,6 +21,11 @@ type Mode =
 /** 평소에 가끔 짓는 표정 */
 const IDLE_FACES: Expression[] = ["normal", "normal", "normal", "happy", "curious"];
 
+/** 아무도 없을 때 짓는 표정 (심심하고 졸리다) */
+const ALONE_FACES: Expression[] = ["sleepy", "sleepy", "normal", "curious"];
+/** TV 앞이 이만큼(초) 비어 있어야 "아무도 없다"로 친다 (잠깐 얼굴을 못 찾는 것은 무시) */
+const ALONE_S = 45;
+
 /** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
 const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
 
@@ -28,6 +33,7 @@ const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
  * 리본이 행동: 평소엔 맵을 자유롭게 돌아다니고(가구 사이, 그림 구경), 부르면(ribbon.state 가 idle 이 아니게 되면)
  * 그 자리에서 멈춰 TV 쪽으로 돌아 손을 흔들고, "부르면 오는 자리"(layout.doll_spot)로 걸어온다.
  * 대화가 끝나고 returnAfterS 가 지나면 다시 돌아다닌다.
+ * TV 웹캠이 켜져 있으면(audience) TV 앞이 오래 비었을 때 심심해하며 졸고, 누가 다시 오면 알아채고 손을 흔든다.
  * 듣는 중에는 맞장구(끄덕임), 그림 앞에서는 가리키기처럼 상황에 맞는 동작을 한 번씩 한다.
  *
  * 겹치지 않기
@@ -57,8 +63,12 @@ export class RibbonBrain {
   opts: BrainOptions = { wander: true, returnAfterS: 8 };
   /** 카메라(=TV 앞 아이들) 쪽. 매 프레임 index.ts 가 넣어 준다 */
   viewer = new THREE.Vector3();
-  /** 카메라 폰이 본 얼굴 쪽 (없으면 null) */
+  /** TV 카메라가 본 얼굴 쪽 (없으면 null) */
   faceTarget: THREE.Vector3 | null = null;
+  /** TV 앞에 보이는 얼굴 수. 웹캠이 꺼져 있으면 null (모름) */
+  audience: number | null = null;
+  private emptySince: number | null = null;
+  private welcomeUntil = 0;
   /** 같이 나온 다른 캐릭터 (겹치지 않게 자리를 피해 다닌다) */
   avoid: Ribbon3D | null = null;
   /** 부딪힐 것 같을 때 멈춰서 양보하는 쪽인가 (친구만 양보하고 리본이는 하던 일을 한다) */
@@ -282,6 +292,7 @@ export class RibbonBrain {
       }
     }
     if (this.state === "thinking" && now - this.thinkingSince > 6) this.face();      // 오래 생각하면 걱정
+    this.watchAudience(now);
 
     // 고개
     if (m.kind === "called" || m.kind === "linger") {
@@ -296,7 +307,10 @@ export class RibbonBrain {
       this.nextFace = now + 6 + Math.random() * 10;
       if (this.called) this.face();
       else if (m.kind === "sitting") this.body.setExpression(Math.random() < 0.4 ? "sleepy" : "normal");
-      else this.body.setExpression(IDLE_FACES[Math.floor(Math.random() * IDLE_FACES.length)]);
+      else {
+        const faces = this.alone ? ALONE_FACES : IDLE_FACES;
+        this.body.setExpression(faces[Math.floor(Math.random() * faces.length)]);
+      }
     }
 
     switch (m.kind) {
@@ -355,6 +369,31 @@ export class RibbonBrain {
     this.mode = { kind: "idle", until: this.clock + 5 };
   }
 
+  /** 한동안 TV 앞에 아무도 없었나 */
+  private get alone(): boolean {
+    return this.emptySince !== null && this.clock - this.emptySince > ALONE_S;
+  }
+
+  /** TV 앞이 비었다가 누가 오면 알아채고 반긴다 (걷거나 앉아 있으면 멈춘 뒤에) */
+  private watchAudience(now: number): void {
+    const n = this.audience;
+    if (n === null) { this.emptySince = null; return; }
+    if (n === 0) { this.emptySince ??= now; return; }
+    if (this.alone) this.welcomeUntil = now + 8;
+    this.emptySince = null;
+    if (now > this.welcomeUntil || this.called) return;
+    if (this.mode.kind === "sitting") { this.leaveSeat(); this.mode = { kind: "walk" }; return; }
+    if (this.body.moving || this.body.busy || this.body.climbing) return;
+    this.welcomeUntil = 0;
+    this.faceViewer();
+    this.body.lookAt(this.faceTarget ?? this.viewer);
+    this.gazeUntil = now + 4;
+    this.lastGreet = now;
+    this.showFor("surprised", 1);
+    setTimeout(() => { this.face("happy"); this.nextFace = this.clock + 4; this.body.greet(); }, 700);
+    this.mode = { kind: "idle", until: now + 5 };
+  }
+
   /** 아이가 나갈 때: 잠깐 아쉬운 표정 */
   farewell(): void {
     this.showFor("sad", 3);
@@ -362,7 +401,7 @@ export class RibbonBrain {
 
   private idleGaze(): THREE.Vector3 | null {
     const r = Math.random();
-    if (r < 0.3) return this.viewer;
+    if (r < 0.3) return this.faceTarget ?? this.viewer;     // 카메라에 보이는 아이 쪽
     if (r < 0.5) return null;
     const me = this.body.root.position;
     const a = Math.random() * Math.PI * 2;
@@ -383,7 +422,7 @@ export class RibbonBrain {
       this.mode = { kind: "idle", until: this.clock + 4 + Math.random() * 4 };
       return;
     }
-    if (r < 0.35 && this.clock - this.lastGreet > 30) {
+    if (r < 0.35 && this.clock - this.lastGreet > 30 && !this.alone) {
       // 가끔 TV 쪽으로 손 흔들기
       this.faceViewer();
       this.lastGreet = this.clock;

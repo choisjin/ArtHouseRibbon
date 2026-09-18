@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import json
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Set
 
@@ -492,7 +493,7 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
     elif t == "debug.utterance":
         _spawn(dialogue.on_utterance(int(msg.get("channel", 0)), str(msg.get("text", ""))))
     elif t == "device.status":
-        # TV 가 알려 온 소리 출력 장치 상태 → 관리자 '설정' 탭
+        # TV 가 알려 온 소리 출력 장치·웹캠 상태 → 관리자 '설정' 탭
         if devices.update(hub.agent(ws), str(msg.get("kind") or ""), hub.clients.get(ws, "?"),
                           ws.client.host if ws.client else "?", msg):
             await hub.broadcast(devices.snapshot(), roles={"admin"})
@@ -577,6 +578,8 @@ render_dir = renderer.dir
 render_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/world-render", StaticFiles(directory=str(render_dir)), name="world-render")   # TV 배경 렌더
 
+# TV 웹캠의 MediaPipe wasm: 맥 파이썬이 .wasm 형식을 모르면 브라우저가 느린 길로 읽는다
+mimetypes.add_type("application/wasm", ".wasm")
 dist = settings.client_dist_path()
 if dist.exists():
     app.mount("/", StaticFiles(directory=str(dist), html=True), name="client")

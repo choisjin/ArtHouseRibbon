@@ -23,3 +23,14 @@ def test_unknown_kind_is_ignored():
     b = DeviceBoard()
     assert b.update("x/mic", "mic", "mic", "h", {}) is False
     assert b.snapshot()["outputs"] == []
+
+
+def test_cameras_are_listed_apart_from_outputs():
+    b = DeviceBoard()
+    b.update("x/tv", "output", "tv", "h", {"current": ""})
+    b.update("x/tv", "camera", "tv", "h", {"on": True, "faces": 2})
+    snap = b.snapshot()
+    assert [d["kind"] for d in snap["outputs"]] == ["output"]
+    assert [(d["agent"], d["faces"]) for d in snap["cameras"]] == [("x/tv", 2)]
+    assert b.drop_agent("x/tv") is True
+    assert b.snapshot()["cameras"] == []

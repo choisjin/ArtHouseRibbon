@@ -20,6 +20,9 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const speaker = new Speaker(socket, { showLock: true });
   const { startOutputAgent } = await import("./output");
   startOutputAgent(speaker, socket);   // 출력 장치는 관리자 '설정' 탭에서 고른다
+  // TV 웹캠 (켜기·장치 고르기도 관리자 '설정' 탭). MediaPipe 가 커서 따로 읽는다
+  const { TvWebcam } = await import("./webcam");
+  const webcam = new TvWebcam(socket);
   // 어떤 캐릭터로 나올지는 관리자 설정에서 온다. 만들 때 정해야 해서 state 를 기다리지 않고 먼저 물어본다
   const cfg0 = await fetch("/api/config").then((r) => r.json()).catch(() => null);
   const character = String(cfg0?.ribbon?.character ?? "");
@@ -155,13 +158,15 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
         hud.showCaption(`${name}: ${msg.text}`, 4000);
         break;
       }
-      case "face.positions": faces = msg.faces; facesAt = performance.now(); break;
+      case "face.positions": if (!webcam.running) { faces = msg.faces; facesAt = performance.now(); } break;   // 예전 카메라 폰
       case "kid.enter": brain.celebrate(); break;   // 반가워하기. state 스냅샷이 뒤따라온다
       case "kid.leave": brain.farewell(); break;    // 아쉬운 표정
     }
   });
 
-  // 카메라 폰이 본 얼굴 → TV 앞 공간의 한 점 (화면 왼쪽 얼굴이면 카메라 왼쪽)
+  webcam.onFaces = (f) => { faces = f; facesAt = performance.now(); };
+
+  // TV 카메라가 본 얼굴 → TV 앞 공간의 한 점 (화면 왼쪽 얼굴이면 카메라 왼쪽)
   const right = new THREE.Vector3();
   const up = new THREE.Vector3();
   function faceTarget(): THREE.Vector3 | null {
@@ -178,10 +183,13 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     const dt = Math.min(clock.getDelta(), 0.1);
     brain.viewer.copy(stage.camera.position);
     brain.faceTarget = faceTarget();
+    brain.audience = webcam.running ? faces.length : null;
     if (placed) {
       brain.update(dt);
       if (friendBrain) {
         friendBrain.viewer.copy(stage.camera.position);
+        friendBrain.faceTarget = brain.faceTarget;
+        friendBrain.audience = brain.audience;
         friendBrain.update(dt);
       }
     }

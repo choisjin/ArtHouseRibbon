@@ -8,6 +8,8 @@ import { type AdminCtx, esc } from "./shared";
  *                 무선 마이크 수신기가 꽂힌 컴퓨터에서 관리자 페이지를 열어 두면 된다 (audio/mic.ts)
  *   TV 소리 출력 : TV 화면마다 출력 장치 고르기·삐 소리 시험. 출력 장치는 TV 컴퓨터에 달려 있어서
  *                 여기서 고르면 서버가 그 TV 로 전달한다 (device.control)
+ *   TV 카메라    : TV 화면마다 웹캠 고르기·켜기·끄기·미리보기 (tv/webcam.ts). 웹캠도 TV 컴퓨터에 달려 있어 같은 길로 전달한다.
+ *                 영상은 TV 밖으로 나오지 않고, 미리보기는 TV 화면 구석에 잠깐 뜬다
  *   화면 스타일  : 라이트 · 다크 · 기기 설정 따르기 (이 기기에만 저장)
  */
 type ThemePref = "light" | "dark" | "system";
@@ -49,6 +51,12 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
         <div id="outputs" class="agents"></div>
       </section>
       <section class="card">
+        <h2>📷 TV 카메라 <small class="hint">리본이가 아이들 쪽을 바라봅니다</small></h2>
+        <div id="cameras" class="agents"></div>
+        <p class="hint">TV 컴퓨터에 꽂은 웹캠으로 얼굴 위치만 찾습니다. 영상은 저장하거나 보내지 않습니다.
+          <b>미리보기</b>를 누르면 TV 화면 구석에 20초 동안 카메라 화면이 떠서 방향을 맞출 수 있습니다.</p>
+      </section>
+      <section class="card">
         <h2>화면 스타일</h2>
         <div class="theme-options">
           ${themes.map(([v, n, d]) => `<label class="theme-opt"><input type="radio" name="theme" value="${v}" /><b>${n}</b><span class="hint">${d}</span></label>`).join("")}
@@ -67,6 +75,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
 
   const micBox = el.querySelector("#mic") as HTMLElement;
   const outputs = el.querySelector("#outputs") as HTMLElement;
+  const cameras = el.querySelector("#cameras") as HTMLElement;
   let last: DevicesMsg | null = null;
   let pending: DevicesMsg | null = null;       // 목록을 고르는 중이면 다 고른 뒤에 다시 그린다
   const send = (m: object) => ctx.socket.sendJson({ type: "device.control", ...m });
@@ -158,12 +167,55 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
     });
   }
 
+  // ---- TV 카메라 ----
+  function renderCameras(d: DevicesMsg): void {
+    if (!d.cameras?.length) {
+      cameras.innerHTML = `<p class="hint">켜진 TV 화면이 없습니다. TV 컴퓨터에서 리본 TV 화면(<a href="/?mode=tv" target="_blank">/?mode=tv</a>)을 열어 두세요.</p>`;
+      return;
+    }
+    cameras.innerHTML = d.cameras.map((c) => {
+      const state = c.running ? `<span class="pill ok">켜짐 · 얼굴 ${c.faces}명</span>`
+        : c.on ? `<span class="pill warn">켜는 중이거나 실패</span>` : `<span class="pill">꺼짐</span>`;
+      return `<div class="agent" data-agent="${esc(c.agent)}">
+        <div class="row"><b>${ROLE_NAME[c.role] ?? c.role}</b><span class="hint">${esc(c.host)}</span><span class="grow"></span>${state}</div>
+        <label>카메라 <select ${c.supported ? "" : "disabled"}>
+          <option value="">아무 카메라</option>
+          ${c.devices.map((dv) => `<option value="${esc(dv.deviceId)}" ${dv.deviceId === c.current ? "selected" : ""}>${esc(dv.label)}</option>`).join("")}
+        </select></label>
+        ${c.running && c.using ? `<p class="hint">쓰는 중: ${esc(c.using)}</p>` : ""}
+        <div class="actions">
+          <button data-act="power" class="${c.on ? "" : "primary"}">${c.on ? "카메라 끄기" : "카메라 켜기"}</button>
+          <button data-act="preview" ${c.running ? "" : "disabled"}>📺 TV에 미리보기</button>
+          <button data-act="labels" title="TV 컴퓨터에서 카메라 권한을 물어볼 수 있습니다">장치 이름 보기</button>
+        </div>
+        ${c.supported ? "" : `<p class="hint warn-text">이 TV 브라우저는 카메라를 쓸 수 없습니다 (https 또는 localhost 주소로 열어야 합니다)</p>`}
+        ${c.msg ? `<p class="hint warn-text">${esc(c.msg)}</p>` : ""}
+      </div>`;
+    }).join("");
+    cameras.querySelectorAll<HTMLElement>(".agent").forEach((box) => {
+      const agent = box.dataset.agent!;
+      const cam = d.cameras.find((c) => c.agent === agent)!;
+      const sel = box.querySelector("select") as HTMLSelectElement;
+      sel.onchange = () => { send({ agent, kind: "camera", action: "set", deviceId: sel.value }); ctx.msg(`TV 카메라 → ${sel.selectedOptions[0]?.textContent}`); };
+      (box.querySelector("[data-act=power]") as HTMLButtonElement).onclick = () => {
+        send({ agent, kind: "camera", action: "power", on: !cam.on });
+        ctx.msg(cam.on ? "TV 카메라를 끕니다" : "TV 카메라를 켭니다. 처음이면 TV 컴퓨터에서 카메라 권한을 허용하세요");
+      };
+      (box.querySelector("[data-act=preview]") as HTMLButtonElement).onclick = () => send({ agent, kind: "camera", action: "preview" });
+      (box.querySelector("[data-act=labels]") as HTMLButtonElement).onclick = () => {
+        send({ agent, kind: "camera", action: "labels" });
+        ctx.msg("TV 컴퓨터에서 카메라 권한을 허용하면 장치 이름이 보입니다");
+      };
+    });
+  }
+
   function render(d: DevicesMsg): void {
     // 목록을 펼쳐 고르는 중에 다시 그리면 선택이 날아간다 → 포커스가 빠지면 그린다
     if (el.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") { pending = d; return; }
     pending = null;
     last = d;
     renderOutputs(d);
+    renderCameras(d);
   }
   el.addEventListener("focusout", () => setTimeout(() => { if (pending) render(pending); }, 0));
 
@@ -176,6 +228,6 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
     if (key !== kidsKey) { kidsKey = key; renderMic(); }                  // 음량 막대 아래 아이 이름
     if (!last?.outputs.length) ctx.socket.sendJson({ type: "devices.get" });   // 다시 연결됐을 때
   });
-  render({ type: "devices", outputs: [] });
+  render({ type: "devices", outputs: [], cameras: [] });
   ctx.socket.sendJson({ type: "devices.get" });
 }
