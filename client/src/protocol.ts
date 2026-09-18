@@ -129,6 +129,9 @@ export interface FacePositionsMsg {
 /** 관리자 "중단": TV 는 재생 중인 소리와 남은 문장을 버린다 */
 export interface SpeakStopMsg { type: "speak.stop" }
 
+/** 관리자가 누른 연출 → TV (peek: 화면에 바짝 붙어 들여다보기) */
+export interface ActMsg { type: "act"; action: "peek" }
+
 /** 관리자 조작에 대한 서버 알림 (예: 마이크가 없는 아이를 호출) */
 export interface AdminMsg { type: "admin.msg"; text: string; error?: boolean }
 
@@ -155,4 +158,4 @@ export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "o
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | AdminMsg | DevicesMsg | DeviceControlMsg;
+  | SpeakStopMsg | AdminMsg | DevicesMsg | DeviceControlMsg | ActMsg;

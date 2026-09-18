@@ -13,6 +13,7 @@ import { api, type AdminCtx, esc, kidLabel, toMin, ymd } from "./shared";
  *   Esc        중단 (지금 하던 말을 멈추고 다음 차례로)
  *   Shift+Esc  모두 멈춤 (기다리는 아이까지 모두 지움)
  *   M          호출 무시 켜기/끄기
+ *   P          화면에 바짝 붙어 보기 (연출 시험)
  */
 const CHANNELS = [0, 1, 2, 3];
 const STATE_NAME: Record<string, string> = { idle: "쉬는 중", listening: "듣는 중", thinking: "생각 중", speaking: "말하는 중" };
@@ -31,6 +32,10 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
             <button id="ctl-stop" title="Esc">⏹ 중단 <kbd>Esc</kbd></button>
             <button id="ctl-stop-all" class="danger" title="Shift+Esc">⏏ 모두 멈춤 <kbd>⇧Esc</kbd></button>
             <button id="ctl-ignore" title="M">🔕 호출 무시 <kbd>M</kbd></button>
+          </div>
+          <h3 class="sub-h">연출</h3>
+          <div class="ctl-buttons acts">
+            <button id="act-peek" title="P">👀 화면에 붙어 보기 <kbd>P</kbd></button>
           </div>
           <ol id="ctl-queue" class="queue"></ol>
           <p class="hint">호출: 아이 줄의 📣 버튼<span class="keys">, 또는 <kbd>1</kbd>~<kbd>4</kbd> (그 마이크를 쓰는 아이)</span>. 중단하면 기다리던 다음 아이 차례로 넘어갑니다.</p>
@@ -127,6 +132,12 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   $("#ctl-stop").onclick = () => stop(false);
   $("#ctl-stop-all").onclick = () => stop(true);
   $("#ctl-ignore").onclick = toggleIgnore;
+  const peek = () => {
+    if (last && last.ribbon !== "idle") { ctx.msg("대화 중에는 할 수 없어요. 대화가 끝난 뒤 눌러 주세요", true); return; }
+    send({ type: "admin.act", action: "peek" });
+    ctx.msg("TV: 화면에 바짝 붙으러 갑니다");
+  };
+  $("#act-peek").onclick = peek;
 
   window.addEventListener("keydown", (e) => {
     if (!isActive() || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -134,6 +145,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
     if (e.key === "Escape") { e.preventDefault(); stop(e.shiftKey); return; }
     if (e.key === "m" || e.key === "M" || e.key === "ㅡ") { e.preventDefault(); toggleIgnore(); return; }
+    if (e.key === "p" || e.key === "P" || e.key === "ㅔ") { e.preventDefault(); peek(); return; }
     const n = Number(e.key);
     if (n >= 1 && n <= CHANNELS.length) {
       const k = ctx.kids().find((x) => x.mic_channel === n - 1);

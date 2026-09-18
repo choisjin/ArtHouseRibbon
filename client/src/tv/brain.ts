@@ -458,7 +458,7 @@ export class RibbonBrain {
    * 유리창 층(glass.ts)에서 같은 캐릭터가 화면 아래로부터 크게 올라와 유리에 손을 짚고 두리번거린다.
    * 다 보면 내려가고, 방 캐릭터가 다시 걸어 들어온다. 같이 나온 친구도 가끔 옆에 같이 붙는다 (invited).
    */
-  peekAtGlass(preferX = this.frontCenter.x, invited = false): boolean {
+  peekAtGlass(preferX = this.frontCenter.x, invited = false, bringBuddy = false): boolean {
     const nav = this.nav;
     if (!nav || !this.glass || this.peekBack) return false;
     // 앞쪽에서 조금씩 뒤로 물러나며 설 수 있는 자리를 찾는다
@@ -486,14 +486,33 @@ export class RibbonBrain {
       });
     });
     this.mode = { kind: "walk" };
-    if (!invited) this.buddy?.joinPeek(stand.x);
+    if (!invited) this.buddy?.joinPeek(stand.x, bringBuddy);
     return true;
   }
 
-  /** 다른 캐릭터가 화면에 붙으러 갈 때: 가끔 옆에 같이 붙는다 */
-  joinPeek(x: number): void {
+  /**
+   * 관리자가 누른 "화면에 붙어 보기": 기다리지 않고 바로 (앉아 있으면 내려와서, 걷던 중이면 멈추고).
+   * 같이 나온 친구도 꼭 같이 붙는다. 대화 중이거나 이미 붙으러 가는 중이면 하지 않는다
+   */
+  peekNow(): boolean {
+    if (this.called || this.peekBack || !this.glass) return false;
+    const go = () => {
+      if (this.called || this.peekBack) return;
+      this.mode = { kind: "idle", until: this.clock + 1 };
+      if (this.peekAtGlass(this.frontCenter.x, false, true)) return;
+      this.peekAtGlass(this.body.pos.x, false, true);        // 가운데 앞이 막혔으면 내 앞쪽에서
+    };
+    if (this.body.sitting) { this.leaveSeat(go); return true; }
+    this.body.stop();
+    go();
+    return true;
+  }
+
+  /** 다른 캐릭터가 화면에 붙으러 갈 때: 가끔(force 면 꼭) 옆에 같이 붙는다 */
+  joinPeek(x: number, force = false): void {
     const m = this.mode.kind;
-    if (this.called || this.peekBack || m === "peek" || this.clock - this.lastPeek < 20 || Math.random() > 0.7) return;
+    if (this.called || this.peekBack || m === "peek") return;
+    if (!force && (this.clock - this.lastPeek < 20 || Math.random() > 0.7)) return;
     const side = x + (this.body.pos.x < x ? -1 : 1) * 2.4;       // 내가 있는 쪽 옆자리
     const go = () => { if (!this.called && !this.peekBack) this.peekAtGlass(side, true); };
     if (this.body.sitting) { this.leaveSeat(go); return; }

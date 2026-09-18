@@ -157,6 +157,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "ribbon.state": brain.setState(msg.state); break;
       case "speak": speaker.enqueue(msg); break;
       case "speak.stop": speaker.stop(); break;
+      case "act": if (msg.action === "peek") brain.peekNow(); break;   // 관리자 대시보드의 연출 버튼
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
         hud.showCaption(`${name}: ${msg.text}`, 4000);

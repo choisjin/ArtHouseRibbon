@@ -521,6 +521,16 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
             for p in processors.values():
                 p.stop_listening()
         _spawn(dialogue.stop(clear_queue=bool(msg.get("all"))))
+    elif t == "admin.act":
+        # 관리자가 누른 연출 (예: 화면에 바짝 붙어 보기) → TV 화면들로
+        action = str(msg.get("action") or "")
+        if action not in ("peek",):
+            return
+        if "tv" not in hub.clients.values():
+            await ws.send_text(json.dumps({"type": "admin.msg", "error": True, "text": "켜진 TV 화면이 없습니다"},
+                                          ensure_ascii=False))
+            return
+        await hub.broadcast({"type": "act", "action": action}, roles={"tv"})
     elif t == "admin.ignore":
         on = bool(msg.get("on"))
         if on:
