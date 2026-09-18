@@ -3,6 +3,7 @@ import type { RibbonState } from "../protocol";
 import type { NavGrid, P2 } from "../world/nav";
 import type { ArtSpot } from "../world/room";
 import { rad, SEATS, toFloor, type LayoutItem } from "../world/types";
+import type { Expression } from "./face";
 import type { Motion, Ribbon3D } from "./ribbon3d";
 
 export interface BrainOptions {
@@ -16,6 +17,9 @@ type Mode =
   | { kind: "called" }                       // 불려서 대화 중 (또는 오는 중)
   | { kind: "linger"; until: number }        // 대화 끝나고 잠깐 머무르기
   | { kind: "sitting"; until: number };      // 의자에 앉아 쉬는 중
+
+/** 평소에 가끔 짓는 표정 */
+const IDLE_FACES: Expression[] = ["normal", "normal", "normal", "happy", "wink", "curious"];
 
 /** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
 const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
@@ -31,6 +35,8 @@ export class RibbonBrain {
   private state: RibbonState = "idle";
   private lastGreet = -1e9;
   private nextReact = 0;
+  private nextFace = 0;
+  private thinkingSince = 0;
   private clock = 0;
   private gazeUntil = 0;
   nav: NavGrid | null = null;
@@ -92,6 +98,8 @@ export class RibbonBrain {
     const was = this.state;
     this.state = s;
     this.body.setState(s);
+    if (s === "thinking" && was !== "thinking") this.thinkingSince = this.clock;
+    this.face();
     if (s !== "idle" && was === "idle") this.onCalled();
     if (s === "idle" && was !== "idle") this.mode = { kind: "linger", until: this.clock + this.opts.returnAfterS };
   }
@@ -103,6 +111,7 @@ export class RibbonBrain {
     this.faceViewer();
     const greet = this.clock - this.lastGreet > 25;
     const go = () => { if (this.mode.kind === "called") this.comeHome(); };
+    this.showFor("happy", 3);               // 부르면 반갑게
     if (greet && this.state === "listening") {
       this.lastGreet = this.clock;
       // 돌아서는 시간을 조금 주고 손 흔들기
@@ -130,6 +139,7 @@ export class RibbonBrain {
     this.clock += dt;
     const m = this.mode;
     const now = this.clock;
+    if (this.state === "thinking" && now - this.thinkingSince > 6) this.face();      // 오래 생각하면 걱정
 
     // 고개
     if (m.kind === "called" || m.kind === "linger") {
@@ -137,6 +147,14 @@ export class RibbonBrain {
     } else if (now > this.gazeUntil) {
       this.gazeUntil = now + 1.5 + Math.random() * 3;
       this.body.lookAt(this.idleGaze());
+    }
+
+    // 평소에는 가끔 표정을 바꾸고, 대화 중에는 상황 표정을 유지한다
+    if (now > this.nextFace) {
+      this.nextFace = now + 6 + Math.random() * 10;
+      if (this.called) this.face();
+      else if (m.kind === "sitting") this.body.setExpression(Math.random() < 0.4 ? "sleepy" : "normal");
+      else this.body.setExpression(IDLE_FACES[Math.floor(Math.random() * IDLE_FACES.length)]);
     }
 
     switch (m.kind) {
@@ -160,6 +178,23 @@ export class RibbonBrain {
     this.body.update(dt);
   }
 
+  /** 지금 상황에 맞는 표정 */
+  private face(look?: Expression): void {
+    if (look) { this.body.setExpression(look); return; }
+    switch (this.state) {
+      case "listening": this.body.setExpression("normal"); return;
+      case "thinking": this.body.setExpression(this.clock - this.thinkingSince > 6 ? "worried" : "thinking"); return;
+      case "speaking": this.body.setExpression("talking"); return;
+      default: this.body.setExpression(this.mode.kind === "sitting" ? "sleepy" : "normal");
+    }
+  }
+
+  /** 아이가 나갈 때 등 잠깐 다른 표정을 지었다가 돌아온다 */
+  showFor(look: Expression, seconds: number): void {
+    this.face(look);
+    this.nextFace = this.clock + seconds;
+  }
+
   /** 대화 중 맞장구: 들을 때 끄덕임, 생각할 때 갸웃 */
   private react(now: number): void {
     if (now < this.nextReact || this.body.moving || this.body.busy) return;
@@ -168,13 +203,19 @@ export class RibbonBrain {
     else if (this.state === "thinking" && Math.random() < 0.5) this.body.play("LookUp");
   }
 
-  /** 아이가 들어왔을 때: 반가워하기 */
+  /** 아이가 들어왔을 때: 놀랐다가 반가워하기 */
   celebrate(): void {
     if (this.body.moving || this.body.busy) return;
     this.faceViewer();
     this.lastGreet = this.clock;
-    setTimeout(() => this.body.play(Math.random() < 0.5 ? "Clap" : "Jump"), 250);
-    this.mode = { kind: "idle", until: this.clock + 4 };
+    this.showFor("surprised", 1.2);
+    setTimeout(() => { this.face("happy"); this.nextFace = this.clock + 4; this.body.play(Math.random() < 0.5 ? "Clap" : "Jump"); }, 900);
+    this.mode = { kind: "idle", until: this.clock + 5 };
+  }
+
+  /** 아이가 나갈 때: 잠깐 아쉬운 표정 */
+  farewell(): void {
+    this.showFor("sad", 3);
   }
 
   private idleGaze(): THREE.Vector3 | null {
@@ -258,6 +299,7 @@ export class RibbonBrain {
         this.body.facePoint(toFloor(art.center));
         this.body.lookAt(art.center);
         this.gazeUntil = this.clock + 6;
+        this.showFor("curious", 6);          // 그림을 보며 궁금한 표정
         setTimeout(() => this.body.play(Math.random() < 0.6 ? "Point" : "Tilt"), 700);
       });
       this.mode = { kind: "walk" };

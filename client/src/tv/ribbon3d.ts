@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { RibbonState } from "../protocol";
 import { applyLook, loadDoll, type RibbonLook } from "../world/doll";
+import { Face, type Expression } from "./face";
 import type { P2 } from "../world/nav";
 import { toThree } from "../world/types";
 
@@ -60,6 +61,8 @@ export class Ribbon3D {
   private hipHeight = 0.46;       // 서 있을 때 골반(엉덩이)이 발바닥에서 얼마나 위인지
   private liftTarget = 0;
   private shadow: THREE.Mesh;
+  private face: Face | null = null;
+  private expression: Expression = "normal";
   private motionBlend = 1;
   private t = 0;
   state: RibbonState = "idle";
@@ -104,6 +107,8 @@ export class Ribbon3D {
       (p ? proxies.get(p.name)! : this.rig).add(proxies.get(node.name)!);
     }
     this.hipHeight = this.bones.get("pelvis")?.node.position.y ?? 0.46;
+    this.face = new Face(scene);
+    this.face.set(this.expression);
     const box = new THREE.Box3().setFromObject(scene);
     const size = box.getSize(new THREE.Vector3());
     this.height = size.y;
@@ -228,8 +233,18 @@ export class Ribbon3D {
     this.sitAction?.fadeOut(0.4);
   }
 
+  /** 표정 바꾸기 (face.ts) */
+  setExpression(e: Expression): void {
+    this.expression = e;
+    this.face?.set(e);
+  }
+  get currentExpression(): Expression { return this.expression; }
+
   setState(s: RibbonState): void { this.state = s; }
-  setMouthLevel(v: number): void { this.mouth = v; }
+  setMouthLevel(v: number): void {
+    this.mouth = v;
+    this.face?.setTalkLevel(v);
+  }
 
   update(dt: number): void {
     this.t += dt;
@@ -261,6 +276,7 @@ export class Ribbon3D {
     this.mixer?.update(dt);
     for (const b of this.bones.values()) { b.node.quaternion.copy(b.proxy.quaternion); b.node.position.copy(b.proxy.position); }
     this.procedural(dt);
+    this.face?.update(dt);
   }
 
   /** 경로를 따라 이동. 이번 프레임에 간 거리 */

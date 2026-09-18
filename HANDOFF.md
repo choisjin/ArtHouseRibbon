@@ -35,6 +35,7 @@ cd server && .venv\Scripts\activate && uvicorn ribbon.main:app --host 0.0.0.0 --
 - 클라이언트 `RibbonSocket.on()` 은 늦게 등록된 핸들러에 마지막 `state` 를 재전달.
 - 브라우저 오디오는 첫 클릭 전까지 잠김 → 화면 안내 표시 (TV 는 풀릴 때까지 "소리 켜기" 유지, 서버 창에 기록).
 - **브라우저는 Chrome 기준.** Safari 에서는 소리가 안 나는 사례가 있고 출력 장치 선택(AudioContext.setSinkId)도 없다.
+- 얼굴 조각(입·미간)은 Character_Creator `doll.py` 가 만든다. 입 구멍은 없애고 붙이는 조각으로 바꿨다 (2026-09-18).
 - three.js 애니메이션 값이 지난 프레임과 같으면 씬에 다시 쓰지 않는다 → 뼈를 직접 건드리면 자세를 유지하는 동작이 풀린다.
   그래서 액션은 뼈 사본(`Ribbon3D.rig`)에서 돌리고 결과만 실제 뼈에 복사한다.
 - doll.blend 의 뼈대는 DollSpot(방 속 위치) → DollMover(옆걸음) 아래에 있다. 내보낼 때 조상을 모두 원점으로 (`export_doll.py`). 안 그러면 몸이 발밑 그림자에서 떨어져 가구를 통과해 보인다.
