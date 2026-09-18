@@ -4,7 +4,7 @@ import type { Blocker, NavGrid, P2 } from "../world/nav";
 import type { ArtSpot } from "../world/room";
 import { rad, SEATS, toFloor, type LayoutItem } from "../world/types";
 import type { Expression } from "./face";
-import type { HopOver, Motion, Ribbon3D } from "./ribbon3d";
+import type { Motion, Ribbon3D } from "./ribbon3d";
 
 export interface BrainOptions {
   wander: boolean;
@@ -37,9 +37,9 @@ const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
  * 듣는 중에는 맞장구(끄덕임), 그림 앞에서는 가리키기처럼 상황에 맞는 동작을 한 번씩 한다.
  *
  * 겹치지 않기
- * - 가구: 길찾기 격자가 몸 반지름(머리·머리카락까지)만큼 막는다. 의자는 앞이나 옆에 섰다가 좌판으로 폴짝 올라앉고,
- *   일어날 때 그 자리로 폴짝 내려온다 (서서 걸어 들어가면 다리가 의자·책상을 뚫는다).
- *   앞은 책상, 양옆은 다른 의자로 막힌 의자(줄 가운데)는 뒤에 섰다가 등받이를 넘어 높이 뛰어 앉는다
+ * - 가구: 길찾기 격자가 몸 반지름(머리·머리카락까지)만큼 막는다. 의자는 옆(또는 앞)에 섰다가 좌판으로 천천히 올라앉고,
+ *   일어날 때 그 자리로 천천히 내려온다 (서서 걸어 들어가면 다리가 의자·책상을 뚫는다. 뛰지는 않는다: 아이들이 따라 한다).
+ *   앞은 책상, 양옆은 다른 의자로 막힌 의자(줄 가운데)는 뒤에서 조용히 들어간다 (잠깐 등받이와 겹쳐 보인다)
  * - 다른 캐릭터: 길을 찾을 때 그 자리(와 가는 곳)를 피해 가고, 걷다가 부딪힐 것 같으면 멈춘다.
  *   리본이는 잠깐 기다렸다가 돌아가는 길을 다시 찾고, 친구(yields)는 비켜선다. 리본이가 가려는 곳에 친구가 있어도 비켜선다.
  */
@@ -59,8 +59,7 @@ export class RibbonBrain {
   arts: ArtSpot[] = [];
   /** 앉을 수 있는 의자 (맵 배치에서 뽑는다) */
   chairs: LayoutItem[] = [];
-  /** 가구 종류별 바닥 윤곽·높이 (카탈로그 bbox, 장면 단위). 뒤에서 의자에 오를 때 넘을 등받이 */
-  shapes = new Map<string, { back: number; top: number }>();
+
   /** 1m 가 장면 단위로 몇인지 */
   unitPerM = 2.2222;
   /** 방 앞쪽(카메라 쪽) 가운데 바닥. 화면에 붙어 들여다볼 때 여기로 온다 */
@@ -75,8 +74,8 @@ export class RibbonBrain {
   /** 부딪힐 것 같을 때 멈춰서 양보하는 쪽인가 (친구만 양보하고 리본이는 하던 일을 한다) */
   yields = false;
   private yieldUntil = 0;
-  /** 의자에 올라앉기 전에 섰던 자리 (일어나면 여기로 폴짝 내려온다). 뒤에서 올랐으면 넘은 등받이도 */
-  private sitExit: { spot: P2; over?: HopOver } | null = null;
+  /** 의자에 올라앉기 전에 섰던 자리 (일어나면 여기로 내려온다) */
+  private sitExit: P2 | null = null;
   private blockedSince: number | null = null;
   private nextReplan = 0;
 
@@ -112,11 +111,11 @@ export class RibbonBrain {
   }
 
   /**
-   * 의자에 올라앉을 때 설 자리: 의자 앞이나 옆이 좋고 (낮게 폴짝), 둘 다 막혔으면 뒤 (등받이를 넘어 높이).
-   * 거기서 좌판까지 뛰는 길에 이 의자와 앉으면 원래 닿는 가구(책상) 말고 다른 가구가 없어야 한다.
-   * 책상 앞에 줄지어 놓인 의자는 앞이 책상, 양옆이 다른 의자라 보통 뒤에서 오른다
+   * 의자에 올라앉을 때 설 자리: 옆이나 앞이 좋고, 둘 다 막혔으면 뒤 (잠깐 등받이와 겹친다).
+   * 거기서 좌판까지 가는 길에 이 의자와 앉으면 원래 닿는 가구(책상) 말고 다른 가구가 없어야 한다.
+   * 책상 앞에 줄지어 놓인 의자는 앞이 책상, 양옆이 다른 의자라 보통 뒤에서 들어간다
    */
-  private approachSpot(chair: LayoutItem, seat: P2): { spot: P2; over?: HopOver } | null {
+  private approachSpot(chair: LayoutItem, seat: P2): P2 | null {
     const nav = this.nav!;
     const a = rad(chair.rot);
     const fx = Math.sin(a), fy = -Math.cos(a);          // 의자가 바라보는 쪽
@@ -126,16 +125,13 @@ export class RibbonBrain {
     for (const d of [1.1, 1.4, 1.8]) {
       for (const dir of dirs) {
         const p = { x: seat.x + dir.x * d, y: seat.y + dir.y * d };
-        if (nav.isFree(p) && nav.lineFits(p, seat, r, allowed)) return { spot: p };
+        if (nav.isFree(p) && nav.lineFits(p, seat, r, allowed)) return p;
       }
     }
-    // 뒤: 등받이(의자 뒤 끝) 위를 넘는다. 의자 높이는 카탈로그 bbox 꼭대기
-    const shape = this.shapes.get(chair.type);
-    if (!shape) return null;
-    const over = { at: { x: chair.x - fx * shape.back, y: chair.y - fy * shape.back }, height: shape.top };
+    // 뒤: 등받이 쪽에서 조용히 들어간다
     for (const d of [1.3, 1.6, 2.0]) {
       const p = { x: seat.x - fx * d, y: seat.y - fy * d };
-      if (nav.isFree(p) && nav.lineFits(p, seat, r, allowed)) return { spot: p, over };
+      if (nav.isFree(p) && nav.lineFits(p, seat, r, allowed)) return p;
     }
     return null;
   }
@@ -221,11 +217,11 @@ export class RibbonBrain {
     this.mode = { kind: "walk" };
   }
 
-  /** 의자에서 올라왔던 자리로 폴짝 내려온다 (그대로 걸어 나가면 의자·책상을 뚫는다) */
+  /** 의자에서 올라왔던 자리로 천천히 내려온다 (그대로 걸어 나가면 의자·책상을 뚫는다) */
   private leaveSeat(then?: () => void): void {
     const exit = this.sitExit;
     this.sitExit = null;
-    if (exit) this.body.hopOff(exit.spot, then, exit.over);
+    if (exit) this.body.climbOff(exit, then);
     else { this.body.standUp(); then?.(); }
   }
 
@@ -330,7 +326,7 @@ export class RibbonBrain {
         if (now > m.until) this.leaveGlass();
         break;
       case "walk":
-        if (!this.body.moving && !this.body.hopping) this.mode = { kind: "idle", until: now + 2 + Math.random() * 5 };
+        if (!this.body.moving && !this.body.climbing) this.mode = { kind: "idle", until: now + 2 + Math.random() * 5 };
         break;
       case "idle":
         if (now > m.until && !this.body.busy) this.nextActivity();
@@ -423,24 +419,24 @@ export class RibbonBrain {
     this.mode = { kind: "walk" };
   }
 
-  /** 의자에 가서 앉기: 의자 앞이나 옆까지 걸어가서 좌판으로 폴짝 올라앉는다 */
+  /** 의자에 가서 앉기: 의자 옆(앞·뒤)까지 걸어가서 좌판으로 천천히 올라앉는다 */
   private sitOnChair(): boolean {
     const nav = this.nav;
     if (!nav || !this.chairs.length) return false;
     for (const chair of [...this.chairs].sort(() => Math.random() - 0.5)) {
       const seat = this.seatOf(chair);
       if (this.occupied(seat)) continue;                  // 다른 캐릭터가 앉았거나 가는 중
-      const way = this.approachSpot(chair, seat);
-      if (!way || this.occupied(way.spot)) continue;
-      const path = this.pathTo(way.spot);
+      const spot = this.approachSpot(chair, seat);
+      if (!spot || this.occupied(spot)) continue;
+      const path = this.pathTo(spot);
       if (!path) continue;
       this.body.walkPath(path, () => {
         if (this.mode.kind !== "walk") return;
-        this.body.hopOnto(seat, () => {
+        this.body.climbOnto(seat, () => {
           if (this.mode.kind !== "walk") return;
           this.mode = { kind: "sitting", until: this.clock + 12 + Math.random() * 18 };
-        }, way.over);
-        this.sitExit = way;                                // 뛰는 중에 불려도 이리로 내려온다
+        });
+        this.sitExit = spot;                               // 올라가는 중에 불려도 이리로 내려온다
       });
       this.mode = { kind: "walk" };
       return true;

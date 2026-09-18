@@ -65,8 +65,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     brain.nav = stage.buildNav(Math.max(ribbon.radius, friend?.radius ?? 0), Math.max(ribbon.height, friend?.height ?? 0));
     brain.arts = stage.room.artSpots;
     brain.chairs = (stage.room.layout?.items ?? []).filter((e) => e.type in SEATS);
-    // 의자 뒤 끝(로컬 +Y, 등받이)과 꼭대기 높이
-    brain.shapes = new Map([...stage.room.types].map(([id, t]) => [id, { back: t.bbox.y1, top: t.bbox.z1 }]));
     brain.unitPerM = stage.room.U;
     const info = stage.room.room;
     if (info) brain.frontCenter = { x: 0, y: info.front_y };
@@ -76,7 +74,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       friendBrain.nav = brain.nav;
       friendBrain.arts = brain.arts;
       friendBrain.chairs = brain.chairs;
-      friendBrain.shapes = brain.shapes;
       friendBrain.unitPerM = brain.unitPerM;
       friendBrain.frontCenter = brain.frontCenter;
       // 친구는 리본이 자리에서 조금 떨어진 곳을 제 자리로 삼는다

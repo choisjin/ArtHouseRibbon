@@ -19,9 +19,6 @@ export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "P
 /** 앉을 자리: 바닥 좌표와 좌판 높이(장면 단위), 앉아서 바라보는 방향 */
 export interface Seat { x: number; y: number; height: number; yaw: number }
 
-/** 폴짝 뛰면서 넘어야 하는 것: 이 바닥 점을 지날 때 발이 height 보다 높아야 한다 (의자 등받이) */
-export interface HopOver { at: P2; height: number }
-
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (cur: number, target: number, k: number) => cur + (target - cur) * k;
 
@@ -65,9 +62,9 @@ export class Ribbon3D {
   private sitAction: THREE.AnimationAction | null = null;
   private seat: Seat | null = null;
   private held = false;           // 길은 그대로 두고 잠깐 멈춤 (앞에 다른 캐릭터가 있을 때)
-  /** 의자에 폴짝 올라앉기 / 내려오기: 좌판 높이보다 높게 포물선으로 옮겨 다리가 의자를 뚫지 않게 */
-  private hop: { from: P2; to: P2; t: number; dur: number; l0: number; l1: number; y0: number; y1: number; arc: number;
-                 done: (() => void) | null } | null = null;
+  /** 의자에 천천히 올라앉기 / 내려오기 (뛰지 않는다: 아이들이 따라 할 수 있다) */
+  private climb: { from: P2; to: P2; t: number; dur: number; l0: number; l1: number; y0: number; y1: number; up: boolean;
+                   done: (() => void) | null } | null = null;
   private lift = 0;               // 바닥에서 띄운 높이 (앉으면 좌판 높이 - 엉덩이 높이)
   private hipHeight = 0.46;       // 서 있을 때 골반(엉덩이)이 발바닥에서 얼마나 위인지
   private liftTarget = 0;
@@ -203,7 +200,7 @@ export class Ribbon3D {
     this.yaw = yaw;
     this.root.rotation.y = yaw;
     this.path = [];
-    this.hop = null;
+    this.climb = null;
     this.held = false;
   }
 
@@ -249,72 +246,53 @@ export class Ribbon3D {
   private seatLift(seat: Seat): number { return Math.max(0, seat.height - this.hipHeight + 0.04); }
 
   /**
-   * 의자 옆(또는 앞)에 서 있다가 좌판으로 폴짝 올라앉는다. 서서 좌판까지 걸어가면 다리가 의자·책상을 뚫는다.
-   * 뛰는 동안 앉은 자세로 바뀌고, 좌판을 보고 돌아앉는다.
+   * 의자 옆(또는 앞·뒤)에 서 있다가 좌판으로 천천히 올라앉는다. 서서 좌판까지 걸어가면 다리가 의자를 뚫으므로
+   * 좌판 쪽으로 옮겨 가면서 몸을 좌판 높이까지 먼저 올리고, 앉은 자세로 바꾸며 돌아앉는다. 위로 솟구치지 않는다.
    */
-  hopOnto(seat: Seat, onDone?: () => void, over?: HopOver): void {
+  climbOnto(seat: Seat, onDone?: () => void): void {
     if (!this.sitAction) { onDone?.(); return; }
     this.stop();
     this.seat = seat;
-    this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.3).play();
+    this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.8).play();
     const l1 = this.seatLift(seat);
     this.liftTarget = l1;
-    this.startHop(this.pos, { x: seat.x, y: seat.y }, this.lift, l1, this.yaw, seat.yaw, over, onDone);
+    this.climb = { from: this.pos, to: { x: seat.x, y: seat.y }, t: 0, dur: 1.1, l0: this.lift, l1, y0: this.yaw, y1: seat.yaw,
+                   up: true, done: onDone ?? null };
   }
 
-  /** 좌판에서 이 자리로 폴짝 내려온다 (올라왔던 자리). 내려오는 쪽을 보고 뛴다 */
-  hopOff(to: P2, onDone?: () => void, over?: HopOver): void {
+  /** 좌판에서 이 자리(올라왔던 곳)로 천천히 내려온다: 좌판에서 먼저 빠져나온 뒤 몸을 내린다 */
+  climbOff(to: P2, onDone?: () => void): void {
     this.stop();
     this.seat = null;
-    this.sitAction?.fadeOut(0.3);
+    this.sitAction?.fadeOut(0.8);
     this.liftTarget = 0;
     const me = this.pos;
     const y1 = Math.atan2(to.x - me.x, -(to.y - me.y));
-    this.startHop(me, to, this.lift, 0, this.yaw, y1, over, onDone);
+    this.climb = { from: me, to, t: 0, dur: 1.0, l0: this.lift, l1: 0, y0: this.yaw, y1, up: false, done: onDone ?? null };
   }
 
-  /**
-   * 포물선 뛰기 준비. 보통은 몸 키의 12% 만큼 떴다가 내려앉는다.
-   * over(등받이)가 있으면 그 위를 지날 때 발이 등받이보다 높도록 더 높이 (그만큼 조금 더 오래) 뛴다.
-   */
-  private startHop(from: P2, to: P2, l0: number, l1: number, y0: number, y1: number, over?: HopOver, done?: () => void): void {
-    let arc = this.height * 0.12;
-    if (over) {
-      const vx = to.x - from.x, vy = to.y - from.y;
-      const L = vx * vx + vy * vy;
-      const e = L > 1e-9 ? Math.min(0.95, Math.max(0.05, ((over.at.x - from.x) * vx + (over.at.y - from.y) * vy) / L)) : 0.5;
-      // e = smoothstep(k) 를 k 에 대해 풀기 (이분법)
-      let lo = 0, hi = 1;
-      for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (m * m * (3 - 2 * m) < e) lo = m; else hi = m; }
-      const k = (lo + hi) / 2;
-      const need = over.height + 0.08 - (l0 + (l1 - l0) * e);          // 그 순간 바닥에서 몸을 띄울 높이
-      arc = Math.max(arc, need / Math.max(0.3, Math.sin(Math.PI * k)));
-    }
-    const dur = 0.55 + 0.35 * Math.min(1, arc / (this.height * 0.5));   // 높이 뛸수록 조금 오래
-    this.hop = { from, to, t: 0, dur, l0, l1, y0, y1, arc, done: done ?? null };
-  }
-
-  /** 뛰는 중이면 한 프레임 진행 (자리·높이·방향). 뛰는 중이 아니면 false */
-  private stepHop(dt: number): boolean {
-    const h = this.hop;
-    if (!h) return false;
-    h.t += dt;
-    const k = Math.min(1, h.t / h.dur);
-    const e = k * k * (3 - 2 * k);                              // 부드럽게 출발·착지
-    this.root.position.x = h.from.x + (h.to.x - h.from.x) * e;
-    this.root.position.z = -(h.from.y + (h.to.y - h.from.y) * e);
-    // 좌판보다(뒤에서 오르면 등받이보다) 높이 떴다가 내려앉는다
-    this.lift = h.l0 + (h.l1 - h.l0) * e + Math.sin(Math.PI * k) * h.arc;
-    this.yaw = h.y0 + wrap(h.y1 - h.y0) * e;
+  /** 오르내리는 중이면 한 프레임 진행 (자리·높이·방향). 아니면 false */
+  private stepClimb(dt: number): boolean {
+    const c = this.climb;
+    if (!c) return false;
+    c.t += dt;
+    const k = Math.min(1, c.t / c.dur);
+    const ease = (x: number) => { const v = Math.min(1, Math.max(0, x)); return v * v * (3 - 2 * v); };
+    const e = ease(k);
+    this.root.position.x = c.from.x + (c.to.x - c.from.x) * e;
+    this.root.position.z = -(c.from.y + (c.to.y - c.from.y) * e);
+    // 올라갈 때는 높이를 먼저(앞 70% 동안), 내려올 때는 좌판에서 빠져나온 뒤에(뒤 70% 동안) 바꾼다
+    this.lift = c.l0 + (c.l1 - c.l0) * (c.up ? ease(k / 0.7) : ease((k - 0.3) / 0.7));
+    this.yaw = c.y0 + wrap(c.y1 - c.y0) * e;
     if (k >= 1) {
-      this.hop = null;
-      this.lift = h.l1;
+      this.climb = null;
+      this.lift = c.l1;
       this.targetYaw = null;
-      h.done?.();
+      c.done?.();
     }
     return true;
   }
-  get hopping(): boolean { return this.hop !== null; }
+  get climbing(): boolean { return this.climb !== null; }
 
   /** 의자에 앉기 (제자리). 몸이 좌판 높이로 올라가고 그림자는 바닥에 남는다 */
   sitOn(seat: Seat): void {
@@ -352,17 +330,17 @@ export class Ribbon3D {
 
   update(dt: number): void {
     this.t += dt;
-    const hopping = this.stepHop(dt);
-    const moved = hopping ? 0 : this.stepMove(dt);
+    const climbing = this.stepClimb(dt);
+    const moved = climbing ? 0 : this.stepMove(dt);
     // 앉고 일어설 때 몸만 오르내리고 그림자는 바닥에 둔다
-    if (!hopping) this.lift = approach(this.lift, this.liftTarget, 1 - Math.exp(-dt * 6));
+    if (!climbing) this.lift = approach(this.lift, this.liftTarget, 1 - Math.exp(-dt * 6));
     this.root.position.y = this.lift;
     this.shadow.position.y = 0.008 - this.lift;
     this.shadow.scale.setScalar(this.shadowR * (1.1 + this.lift * 0.5));
     (this.shadow.material as THREE.Material).opacity = 0.2 * Math.max(0.35, 1 - this.lift);
 
     // 몸 방향
-    if (this.targetYaw !== null && !this.path.length && !hopping) {
+    if (this.targetYaw !== null && !this.path.length && !climbing) {
       const d = wrap(this.targetYaw - this.yaw);
       const step = TURN_RATE * dt;
       this.yaw += Math.abs(d) <= step ? d : Math.sign(d) * step;
@@ -386,7 +364,7 @@ export class Ribbon3D {
 
   /** 경로를 따라 이동. 이번 프레임에 간 거리 */
   private stepMove(dt: number): number {
-    if (!this.path.length || this.playing || this.seat || this.held || this.hop) return 0;
+    if (!this.path.length || this.playing || this.seat || this.held || this.climb) return 0;
     const target = this.path[0];
     const me = this.pos;
     const dx = target.x - me.x, dy = target.y - me.y;
