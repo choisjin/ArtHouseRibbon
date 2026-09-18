@@ -16,10 +16,16 @@ type Mode =
   | { kind: "walk" }                         // 돌아다니는 중 (목적지로)
   | { kind: "called" }                       // 불려서 대화 중 (또는 오는 중)
   | { kind: "linger"; until: number }        // 대화 끝나고 잠깐 머무르기
-  | { kind: "sitting"; until: number };      // 의자에 앉아 쉬는 중
+  | { kind: "sitting"; until: number }       // 의자에 앉아 쉬는 중
+  | { kind: "peek"; until: number };         // 화면 코앞에 붙어 유리 너머로 우리를 보는 중
 
 /** 평소에 가끔 짓는 표정 */
 const IDLE_FACES: Expression[] = ["normal", "normal", "normal", "happy", "curious"];
+
+/** 화면(유리)에 붙을 때 방 앞면보다 얼마나 더 나가는지. 더 나가면 발이 화면 아래로 잘린다 */
+const GLASS_STEP = 0.55;
+/** 유리에 붙어 있는 시간 (초). 동작 클립 길이와 비슷하게 */
+const PEEK_HOLD = 5;
 
 /** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
 const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
@@ -39,6 +45,8 @@ export class RibbonBrain {
   private thinkingSince = 0;
   private clock = 0;
   private gazeUntil = 0;
+  private lastPeek = -1e9;
+  private peekBack: P2 | null = null;
   nav: NavGrid | null = null;
   home: P2 = { x: 0, y: 0 };
   arts: ArtSpot[] = [];
@@ -46,6 +54,8 @@ export class RibbonBrain {
   chairs: LayoutItem[] = [];
   /** 1m 가 장면 단위로 몇인지 */
   unitPerM = 2.2222;
+  /** 방 앞쪽(카메라 쪽) 가운데 바닥. 화면에 붙어 들여다볼 때 여기로 온다 */
+  frontCenter: P2 = { x: 0, y: 0 };
   opts: BrainOptions = { wander: true, returnAfterS: 8 };
   /** 카메라(=TV 앞 아이들) 쪽. 매 프레임 index.ts 가 넣어 준다 */
   viewer = new THREE.Vector3();
@@ -105,6 +115,7 @@ export class RibbonBrain {
   }
 
   private onCalled(): void {
+    if (this.peekBack) this.leaveGlass();     // 유리에 붙어 있었으면 먼저 방 안으로
     this.mode = { kind: "called" };
     this.body.standUp();
     this.body.stop();
@@ -142,7 +153,7 @@ export class RibbonBrain {
     if (this.state === "thinking" && now - this.thinkingSince > 6) this.face();      // 오래 생각하면 걱정
 
     // 고개
-    if (m.kind === "called" || m.kind === "linger") {
+    if (m.kind === "called" || m.kind === "linger" || m.kind === "peek") {
       this.body.lookAt(this.faceTarget ?? this.viewer);
     } else if (now > this.gazeUntil) {
       this.gazeUntil = now + 1.5 + Math.random() * 3;
@@ -154,6 +165,7 @@ export class RibbonBrain {
       this.nextFace = now + 6 + Math.random() * 10;
       if (this.called) this.face();
       else if (m.kind === "sitting") this.body.setExpression(Math.random() < 0.4 ? "sleepy" : "normal");
+      else if (m.kind === "peek") this.body.setExpression(Math.random() < 0.5 ? "curious" : "happy");
       else this.body.setExpression(IDLE_FACES[Math.floor(Math.random() * IDLE_FACES.length)]);
     }
 
@@ -167,6 +179,9 @@ export class RibbonBrain {
         break;
       case "sitting":
         if (now > m.until) { this.body.standUp(); this.mode = { kind: "idle", until: now + 1.2 }; }
+        break;
+      case "peek":
+        if (now > m.until) this.leaveGlass();
         break;
       case "walk":
         if (!this.body.moving) this.mode = { kind: "idle", until: now + 2 + Math.random() * 5 };
@@ -249,6 +264,7 @@ export class RibbonBrain {
       this.mode = { kind: "idle", until: this.clock + 5 };
       return;
     }
+    if (r < 0.32 && this.clock - this.lastPeek > 90 && this.peekAtGlass()) return;
     if (r < 0.4 && this.arts.length && this.visitArt()) return;
     if (r < 0.6 && this.body.canSit && this.sitOnChair()) return;
     const me = this.body.pos;
@@ -283,6 +299,52 @@ export class RibbonBrain {
       return true;
     }
     return false;
+  }
+
+  /**
+   * 화면 코앞으로 와서 유리 너머로 우리를 보기.
+   * 길찾기 격자는 벽 여백만큼 앞쪽을 비워 두므로, 격자 안에서 갈 수 있는 제일 앞자리까지 걸어간 뒤
+   * 마지막 한 걸음은 격자 밖(화면 바로 앞)으로 더 나간다. 다 보고 나면 그 자리로 되돌아온다.
+   */
+  peekAtGlass(): boolean {
+    const nav = this.nav;
+    if (!nav || !this.body.can("Peek")) return false;
+    const me = this.body.pos;
+    // 앞쪽 가운데부터 조금씩 뒤로 물러나며 설 수 있는 자리를 찾는다
+    let stand: P2 | null = null;
+    for (let back = 0; back < 3 && !stand; back += 0.3) {
+      for (const dx of [0, 0.8, -0.8, 1.6, -1.6]) {
+        const p = { x: this.frontCenter.x + dx, y: this.frontCenter.y + back };
+        if (nav.isFree(p)) { stand = p; break; }
+      }
+    }
+    const path = stand && nav.findPath(me, stand);
+    if (!path || !stand) return false;
+    this.lastPeek = this.clock;
+    this.peekBack = stand;
+    const glass = { x: this.frontCenter.x, y: this.frontCenter.y - GLASS_STEP };
+    this.body.walkPath([...path, glass], () => {
+      this.faceViewer();
+      // 돌아서는 시간을 조금 주고 유리에 손을 짚는다
+      setTimeout(() => {
+        if (this.called) { this.leaveGlass(); return; }
+        this.showFor("curious", PEEK_HOLD);
+        this.body.play("Peek");
+        this.mode = { kind: "peek", until: this.clock + PEEK_HOLD };
+      }, 350);
+    });
+    this.mode = { kind: "walk" };
+    return true;
+  }
+
+  /** 유리 앞에서 물러나 길찾기 격자 안으로 돌아온다 (밖에 서 있으면 다음 길을 못 찾는다) */
+  private leaveGlass(): void {
+    const back = this.peekBack;
+    this.peekBack = null;
+    this.mode = { kind: "idle", until: this.clock + 1 };
+    if (!back) return;
+    this.body.stop();
+    this.body.walkPath([back]);
   }
 
   /** 걸린 그림 앞에 가서 구경하기 */

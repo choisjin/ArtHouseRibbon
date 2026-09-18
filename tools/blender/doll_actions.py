@@ -147,6 +147,21 @@ def look_up(pbs, t):
     set_pose(pbs["spine"], axis_rot(X, math.radians(-3) * k))
 
 
+def peek(pbs, t):
+    """화면(유리) 코앞에 붙어 두 손을 짚고 들여다보기.
+    팔을 앞(-X)으로 크게 올려 얼굴 옆에 두고, 몸을 앞으로 기울인다. 붙잡고 있는 동안 아주 조금 흔들린다"""
+    k = ease(t / 0.16) * (1 - ease((t - 0.84) / 0.16))
+    sway = math.sin(2 * math.pi * t * 1.5) * k
+    for side, sign in (("L", 1), ("R", -1)):
+        # 얼굴 옆으로 손을 올린다 (+X 로 돌리면 큰 머리 뒤로 가 안 보인다)
+        set_pose(pbs[f"arm.{side}"],
+                 axis_rot(Z, math.radians(30 * sign) * k) @ axis_rot(X, math.radians(-118) * k))
+    set_pose(pbs["spine"], axis_rot(X, math.radians(-11) * k) @ axis_rot(Y, math.radians(2) * sway))
+    set_pose(pbs["head"], axis_rot(X, math.radians(7) * k) @ axis_rot(Y, math.radians(-3) * sway))
+    # 앞(-Y)으로 조금 기대고 까치발 들 듯 살짝 오르내린다
+    set_pose(pbs["pelvis"], None, Vector((0, -0.08 * k, 0.012 * abs(sway))))
+
+
 def sit(pbs, t):
     """의자에 앉아 있기 (반복). 몸통 위치는 코드가 좌판 높이에 맞추고, 여기서는 다리·팔 자세와 숨쉬기만"""
     b = math.sin(2 * math.pi * t)                     # 끝과 처음이 이어지도록 한 바퀴
@@ -170,6 +185,7 @@ ACTIONS = [
     ("Clap", 48, clap),
     ("Jump", 48, jump),
     ("LookUp", 60, look_up),
+    ("Peek", 120, peek),       # 화면에 붙어 들여다보기 (오래 붙잡고 있는다)
     ("Sit", 96, sit),          # 반복해서 트는 동작 (TV 가 loop 로 재생)
 ]
 

@@ -46,6 +46,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     brain.arts = stage.room.artSpots;
     brain.chairs = (stage.room.layout?.items ?? []).filter((e) => e.type in SEATS);
     brain.unitPerM = stage.room.U;
+    const info = stage.room.room;
+    if (info) brain.frontCenter = { x: 0, y: info.front_y };
     const spot = stage.room.layout?.doll_spot;
     if (spot) brain.home = { x: spot.x, y: spot.y };
     brain.reset(toHome || !placed);

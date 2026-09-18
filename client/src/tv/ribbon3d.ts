@@ -13,7 +13,8 @@ const BONES = ["pelvis", "spine", "head", "armL", "armR", "legL", "legR"] as con
 /** 인사는 오른팔만 (원래 액션의 고개 갸웃·몸 흔들기·통통 튀기는 빼고) */
 const GREET_TRACKS = /^armR\./;
 /** 한 번씩 재생하는 동작 (doll_actions.py). Greet 은 오른팔만 남겨 Wave 로 넣는다 */
-export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "Point" | "Clap" | "Jump" | "LookUp";
+export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "Point" | "Clap" | "Jump"
+  | "LookUp" | "Peek";        // Peek: 화면(유리) 코앞에 붙어 두 손을 짚고 들여다보기
 
 /** 앉을 자리: 바닥 좌표와 좌판 높이(장면 단위), 앉아서 바라보는 방향 */
 export interface Seat { x: number; y: number; height: number; yaw: number }
