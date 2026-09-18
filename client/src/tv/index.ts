@@ -96,7 +96,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
         break;
       }
       case "face.positions": faces = msg.faces; facesAt = performance.now(); break;
-      case "kid.enter": case "kid.leave": break; // state 스냅샷이 뒤따라온다
+      case "kid.enter": brain.celebrate(); break;   // 반가워하기. state 스냅샷이 뒤따라온다
+      case "kid.leave": break;
     }
   });
 

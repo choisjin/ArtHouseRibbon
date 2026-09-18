@@ -3,7 +3,8 @@
     blender -b <Character_Creator>/doll.blend --factory-startup -P tools/blender/export_doll.py -- [out.glb] [면 상한]
 
 doll.py 의 기본 내보내기는 메시당 최대 5000면으로 줄여서 머리카락·옷이 뭉툭하다.
-여기서는 상한을 크게(기본 24000면) 잡아 모양을 살린다. 액션(Walk, Greet)은 그대로.
+여기서는 상한을 크게(기본 24000면) 잡아 모양을 살리고, doll_actions.py 의 동작들(끄덕임·가리키기 등)을 더해 내보낸다.
+블렌더 파일(doll.blend)은 저장하지 않는다.
 """
 import os
 import sys
@@ -12,6 +13,7 @@ import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import doll_actions  # noqa: E402
 import game_export  # noqa: E402
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
@@ -47,6 +49,7 @@ while p is not None:
     p = p.parent
 bpy.context.view_layer.update()
 
+doll_actions.build(rig)
 bpy.context.view_layer.update()
 off = rig.matrix_world.translation
 if off.length > 1e-4:

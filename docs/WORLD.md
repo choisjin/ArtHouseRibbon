@@ -18,6 +18,7 @@ TV 화면은 **블렌더로 렌더한 방 사진 위에 three.js 로 리본이�
 | `tools/blender/room_map.py`, `game_export.py` | Character_Creator 에서 복사한 방·가구 생성 코드 (고치지 말고 sync) | 포함 |
 | `tools/blender/render_room.py` | 배치 → TV 배경 PNG + 환경 HDR 렌더 | 포함 |
 | `tools/blender/export_doll.py` | doll.blend → 고화질 doll.glb (메시당 24000면까지) | 포함 |
+| `tools/blender/doll_actions.py` | 리본이 동작(끄덕임·가리키기 등)을 만들어 glb 에 넣음 | 포함 |
 
 배치 파일 형식은 Character_Creator 의 `layout.json` / `layout_gallery.json` 과 같습니다. 서로 복사해서 쓸 수 있습니다 (블렌더 렌더에도 그대로).
 
@@ -61,6 +62,22 @@ Character_Creator 에서 가구 모양이나 인형을 고쳤으면 그쪽에서
 | 듣는 중 / 생각 중 | 머리 위 👂 / 💭, 고개 갸웃. 카메라 폰이 얼굴을 보면 그 얼굴 쪽을 봄 |
 | 말하는 중 | 음량에 맞춰 고개 끄덕임 (인형은 입이 움직이지 않음) |
 | 인사 | Greet 액션에서 오른팔 트랙만 씀 (고개 갸웃·몸 흔들기 없이 손만 흔들기) |
+
+## 동작 (`tools/blender/doll_actions.py`)
+
+doll.blend 에는 걷기·인사만 있어서, 내보낼 때 짧은 동작들을 만들어 넣는다. 고치면 `python tools/sync_world.py --doll` 로 다시 내보낸다.
+
+| 동작 | 언제 |
+|---|---|
+| Wave (Greet 오른팔) | 부를 때, 가끔 TV 쪽으로 |
+| Nod / Tilt | 듣는 중 맞장구, 궁금할 때 |
+| LookUp | 생각하는 중 |
+| Sway / Stretch | 가만히 있을 때 (심심함·기지개) |
+| Point | 그림 앞에 섰을 때 |
+| Clap / Jump | 아이가 들어왔을 때 (kid.enter) |
+| Shake | (아직 안 씀) 아니라고 할 때 |
+
+만들 때 주의: 팔을 X 축 **+** 로 돌리면 몸 뒤로 가서 큰 머리에 가려 안 보인다. 앞쪽(-X)으로 올리고 Z 로 벌린다.
 | 대화 끝 | `return_after_s`(기본 8초) 뒤 다시 돌아다님 |
 
 관리자 페이지에서 끌 수 있습니다: 돌아다니기(끄면 자리에 서 있음), 걷는 속도, 다시 돌아다니기까지 시간.

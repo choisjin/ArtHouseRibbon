@@ -11,6 +11,8 @@ const TURN_RATE = 5;              // rad/s
 const BONES = ["pelvis", "spine", "head", "armL", "armR", "legL", "legR"] as const;
 /** 인사는 오른팔만 (원래 액션의 고개 갸웃·몸 흔들기·통통 튀기는 빼고) */
 const GREET_TRACKS = /^armR\./;
+/** 한 번씩 재생하는 동작 (doll_actions.py). Greet 은 오른팔만 남겨 Wave 로 넣는다 */
+export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "Point" | "Clap" | "Jump" | "LookUp";
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (cur: number, target: number, k: number) => cur + (target - cur) * k;
@@ -28,8 +30,13 @@ export class Ribbon3D {
   private body = new THREE.Group();  // 숨쉬기·끄덕임을 얹는 층
   private mixer: THREE.AnimationMixer | null = null;
   private walk: THREE.AnimationAction | null = null;
-  private greetAction: THREE.AnimationAction | null = null;
-  private bones = new Map<string, { node: THREE.Object3D; rest: THREE.Quaternion; restPos: THREE.Vector3 }>();
+  private motions = new Map<string, THREE.AnimationAction>();
+  private playing: string | null = null;
+  private bones = new Map<string, { node: THREE.Object3D; proxy: THREE.Object3D }>();
+  /** 액션은 뼈 사본(proxy)에서 돌리고 결과만 실제 뼈에 옮긴다.
+   *  three.js 는 값이 지난 프레임과 같으면 다시 쓰지 않는데, 우리가 뼈를 직접 건드리면
+   *  자세를 유지하는 동작(가리키기 등)이 풀려 버리기 때문이다. */
+  private rig = new THREE.Group();
   private model: THREE.Object3D | null = null;
   private look: Partial<RibbonLook> | undefined;
   private path: P2[] = [];
@@ -37,14 +44,14 @@ export class Ribbon3D {
   private yaw = 0;
   private targetYaw: number | null = null;
   private walkWeight = 0;
-  private greeting = false;
-  private greetDone: (() => void) | null = null;
+  private motionDone: (() => void) | null = null;
   private gaze: THREE.Vector3 | null = null;
   private headYaw = 0;
   private headPitch = 0;
   private tilt = 0;
   private nod = 0;
   private mouth = 0;
+  private motionBlend = 1;
   private t = 0;
   state: RibbonState = "idle";
   loaded: Promise<void>;
@@ -68,10 +75,24 @@ export class Ribbon3D {
     this.body.add(scene);
     scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
-      if ((BONES as readonly string[]).includes(o.name)) {
-        this.bones.set(o.name, { node: o, rest: o.quaternion.clone(), restPos: o.position.clone() });
-      }
     });
+    // 뼈 사본 만들기 (같은 이름·같은 부모 구조)
+    const proxies = new Map<string, THREE.Object3D>();
+    const nodes: THREE.Object3D[] = [];
+    scene.traverse((o) => { if ((BONES as readonly string[]).includes(o.name)) nodes.push(o); });
+    for (const node of nodes) {
+      const proxy = new THREE.Object3D();
+      proxy.name = node.name;
+      proxy.position.copy(node.position);
+      proxy.quaternion.copy(node.quaternion);
+      proxies.set(node.name, proxy);
+      this.bones.set(node.name, { node, proxy });
+    }
+    for (const node of nodes) {
+      let p: THREE.Object3D | null = node.parent;
+      while (p && !proxies.has(p.name)) p = p.parent;
+      (p ? proxies.get(p.name)! : this.rig).add(proxies.get(node.name)!);
+    }
     const box = new THREE.Box3().setFromObject(scene);
     const size = box.getSize(new THREE.Vector3());
     this.height = size.y;
@@ -79,7 +100,7 @@ export class Ribbon3D {
     const shadow = this.root.getObjectByName("shadow")!;
     shadow.scale.setScalar(this.radius * 1.1);
 
-    this.mixer = new THREE.AnimationMixer(scene);
+    this.mixer = new THREE.AnimationMixer(this.rig);
     const clip = (n: string) => animations.find((a) => a.name === n);
     const walk = clip("Walk"), greet = clip("Greet");
     if (walk) {
@@ -87,16 +108,37 @@ export class Ribbon3D {
       this.walk.setEffectiveWeight(0).play();
     }
     if (greet) {
-      const wave = new THREE.AnimationClip("Wave", greet.duration, greet.tracks.filter((t) => GREET_TRACKS.test(t.name)));
-      this.greetAction = this.mixer.clipAction(wave);
-      this.greetAction.setLoop(THREE.LoopOnce, 1);
-      this.mixer.addEventListener("finished", (e) => {
-        if (e.action !== this.greetAction) return;
-        this.greetAction!.fadeOut(0.25);
-        this.greeting = false;
-        const cb = this.greetDone; this.greetDone = null; cb?.();
-      });
+      this.addMotion(new THREE.AnimationClip("Wave", greet.duration, greet.tracks.filter((t) => GREET_TRACKS.test(t.name))));
     }
+    for (const c of animations) {
+      if (c.name !== "Walk" && c.name !== "Greet") this.addMotion(c);
+    }
+    this.mixer.addEventListener("finished", (e) => {
+      const name = [...this.motions].find(([, a]) => a === e.action)?.[0];
+      if (!name || name !== this.playing) return;
+      e.action.fadeOut(0.25);
+      this.playing = null;
+      const cb = this.motionDone; this.motionDone = null; cb?.();
+    });
+  }
+
+  private addMotion(clip: THREE.AnimationClip): void {
+    const a = this.mixer!.clipAction(clip);
+    a.setLoop(THREE.LoopOnce, 1);
+    this.motions.set(clip.name, a);
+  }
+
+  /** 이 동작을 할 수 있는가 (인형 파일에 들어 있는가) */
+  can(name: Motion): boolean { return this.motions.has(name); }
+
+  /** 동작 한 번. 걷는 중이면 하지 않는다 */
+  play(name: Motion, onDone?: () => void): boolean {
+    const a = this.motions.get(name);
+    if (!a || this.moving || this.playing) { onDone?.(); return false; }
+    this.playing = name;
+    this.motionDone = onDone ?? null;
+    a.reset().setEffectiveWeight(1).fadeIn(0.2).play();
+    return true;
   }
 
   setLook(look: Partial<RibbonLook> | undefined): void {
@@ -106,7 +148,9 @@ export class Ribbon3D {
 
   get pos(): P2 { return { x: this.root.position.x, y: -this.root.position.z }; }
   get moving(): boolean { return this.path.length > 0; }
-  get busy(): boolean { return this.greeting; }
+  get busy(): boolean { return this.playing !== null; }
+  /** 지금 하는 동작 이름 */
+  get motion(): string | null { return this.playing; }
   get facing(): number { return this.yaw; }
   /** 머리 위 한 점 (말풍선 위치) */
   headTop(out = new THREE.Vector3()): THREE.Vector3 {
@@ -141,12 +185,7 @@ export class Ribbon3D {
   /** 고개만 이 점(three.js 월드)을 본다. null 이면 정면 */
   lookAt(p: THREE.Vector3 | null): void { this.gaze = p ? p.clone() : null; }
 
-  greet(onDone?: () => void): void {
-    if (!this.greetAction) { onDone?.(); return; }
-    this.greeting = true;
-    this.greetDone = onDone ?? null;
-    this.greetAction.reset().setEffectiveWeight(1).fadeIn(0.2).play();
-  }
+  greet(onDone?: () => void): void { this.play("Wave", onDone); }
 
   setState(s: RibbonState): void { this.state = s; }
   setMouthLevel(v: number): void { this.mouth = v; }
@@ -166,20 +205,20 @@ export class Ribbon3D {
 
     // 액션
     const turning = this.targetYaw !== null;
-    const wantWalk = (moved > 0 || turning) && !this.greeting ? 1 : 0;
+    const wantWalk = (moved > 0 || turning) && !this.playing ? 1 : 0;
     this.walkWeight = approach(this.walkWeight, wantWalk, 1 - Math.exp(-dt * 8));
     if (this.walk) {
       this.walk.setEffectiveWeight(this.walkWeight);
       this.walk.timeScale = moved > 0 ? (moved / dt) / ANIM_WALK_SPEED : 0.8;
     }
-    for (const b of this.bones.values()) { b.node.quaternion.copy(b.rest); b.node.position.copy(b.restPos); }
     this.mixer?.update(dt);
+    for (const b of this.bones.values()) { b.node.quaternion.copy(b.proxy.quaternion); b.node.position.copy(b.proxy.position); }
     this.procedural(dt);
   }
 
   /** 경로를 따라 이동. 이번 프레임에 간 거리 */
   private stepMove(dt: number): number {
-    if (!this.path.length || this.greeting) return 0;
+    if (!this.path.length || this.playing) return 0;
     const target = this.path[0];
     const me = this.pos;
     const dx = target.x - me.x, dy = target.y - me.y;
@@ -203,9 +242,10 @@ export class Ribbon3D {
     return step;
   }
 
-  /** 액션 위에 얹는 움직임 */
+  /** 액션 위에 얹는 움직임. 동작(Nod·Tilt 등)이 재생 중이면 고개는 그 동작에 맡긴다 */
   private procedural(dt: number): void {
     const k = 1 - Math.exp(-dt * 6);
+    this.motionBlend = approach(this.motionBlend, this.playing && this.playing !== "Wave" ? 0 : 1, 1 - Math.exp(-dt * 5));
     const s = this.state;
     // 고개: 보는 점 방향 (몸 기준 좌우 ±70°, 위아래 ±25°)
     let yaw = 0, pitch = 0;
@@ -224,16 +264,17 @@ export class Ribbon3D {
     const talking = s === "speaking" ? this.mouth : 0;
     this.nod = approach(this.nod, talking, 1 - Math.exp(-dt * 18));
 
+    const w = this.motionBlend;
     const head = this.bones.get("head")?.node;
     if (head) {
-      head.rotateY(this.headYaw);
-      head.rotateX(this.headPitch + this.nod * 0.18 + (s === "speaking" ? Math.sin(this.t * 9) * 0.03 * this.nod : 0));
-      head.rotateZ(this.tilt);
+      head.rotateY(this.headYaw * w);
+      head.rotateX((this.headPitch + this.nod * 0.18 + (s === "speaking" ? Math.sin(this.t * 9) * 0.03 * this.nod : 0)) * w);
+      head.rotateZ(this.tilt * w);
     }
     const spine = this.bones.get("spine")?.node;
     if (spine) {
-      spine.rotateY(this.headYaw * 0.25);
-      spine.rotateX(s === "listening" ? 0.08 : 0);
+      spine.rotateY(this.headYaw * 0.25 * w);
+      spine.rotateX(s === "listening" ? 0.08 * w : 0);
     }
     // 숨쉬기 + 말할 때 통통
     const breathe = Math.sin(this.t * 2.2) * 0.012;

@@ -3,7 +3,7 @@ import type { RibbonState } from "../protocol";
 import type { NavGrid, P2 } from "../world/nav";
 import type { ArtSpot } from "../world/room";
 import { toFloor } from "../world/types";
-import type { Ribbon3D } from "./ribbon3d";
+import type { Motion, Ribbon3D } from "./ribbon3d";
 
 export interface BrainOptions {
   wander: boolean;
@@ -16,15 +16,20 @@ type Mode =
   | { kind: "called" }                       // 불려서 대화 중 (또는 오는 중)
   | { kind: "linger"; until: number };       // 대화 끝나고 잠깐 머무르기
 
+/** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
+const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
+
 /**
  * 리본이 행동: 평소엔 맵을 자유롭게 돌아다니고(가구 사이, 그림 구경), 부르면(ribbon.state 가 idle 이 아니게 되면)
  * 그 자리에서 멈춰 TV 쪽으로 돌아 손을 흔들고, "부르면 오는 자리"(layout.doll_spot)로 걸어온다.
  * 대화가 끝나고 returnAfterS 가 지나면 다시 돌아다닌다.
+ * 듣는 중에는 맞장구(끄덕임), 그림 앞에서는 가리키기처럼 상황에 맞는 동작을 한 번씩 한다.
  */
 export class RibbonBrain {
   private mode: Mode = { kind: "idle", until: 0 };
   private state: RibbonState = "idle";
   private lastGreet = -1e9;
+  private nextReact = 0;
   private clock = 0;
   private gazeUntil = 0;
   nav: NavGrid | null = null;
@@ -104,6 +109,7 @@ export class RibbonBrain {
     switch (m.kind) {
       case "called":
         if (!this.body.moving && !this.body.busy && Math.random() < dt * 0.5) this.faceViewer();
+        this.react(now);
         break;
       case "linger":
         if (now > m.until) this.mode = { kind: "idle", until: now + 0.5 };
@@ -116,6 +122,23 @@ export class RibbonBrain {
         break;
     }
     this.body.update(dt);
+  }
+
+  /** 대화 중 맞장구: 들을 때 끄덕임, 생각할 때 갸웃 */
+  private react(now: number): void {
+    if (now < this.nextReact || this.body.moving || this.body.busy) return;
+    this.nextReact = now + 3 + Math.random() * 4;
+    if (this.state === "listening" && Math.random() < 0.7) this.body.play(Math.random() < 0.85 ? "Nod" : "Tilt");
+    else if (this.state === "thinking" && Math.random() < 0.5) this.body.play("LookUp");
+  }
+
+  /** 아이가 들어왔을 때: 반가워하기 */
+  celebrate(): void {
+    if (this.body.moving || this.body.busy) return;
+    this.faceViewer();
+    this.lastGreet = this.clock;
+    setTimeout(() => this.body.play(Math.random() < 0.5 ? "Clap" : "Jump"), 250);
+    this.mode = { kind: "idle", until: this.clock + 4 };
   }
 
   private idleGaze(): THREE.Vector3 | null {
@@ -137,7 +160,11 @@ export class RibbonBrain {
       return;
     }
     const r = Math.random();
-    if (r < 0.1 && this.clock - this.lastGreet > 30) {
+    if (r < 0.25 && this.body.play(IDLE_MOTIONS[Math.floor(Math.random() * IDLE_MOTIONS.length)])) {
+      this.mode = { kind: "idle", until: this.clock + 4 + Math.random() * 4 };
+      return;
+    }
+    if (r < 0.35 && this.clock - this.lastGreet > 30) {
       // 가끔 TV 쪽으로 손 흔들기
       this.faceViewer();
       this.lastGreet = this.clock;
@@ -169,7 +196,8 @@ export class RibbonBrain {
       this.body.walkPath(path, () => {
         this.body.facePoint(toFloor(art.center));
         this.body.lookAt(art.center);
-        this.gazeUntil = this.clock + 4;
+        this.gazeUntil = this.clock + 6;
+        setTimeout(() => this.body.play(Math.random() < 0.6 ? "Point" : "Tilt"), 700);
       });
       this.mode = { kind: "walk" };
       return true;
