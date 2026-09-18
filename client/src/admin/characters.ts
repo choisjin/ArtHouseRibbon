@@ -265,6 +265,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
   ctx.onState(() => {
     // 설정 페이지는 고치는 중일 수 있어 다시 그리지 않는다 (주인공이 바뀐 경우만 역할 표시를 위해 다시)
     if (current) {
+      if (!el.querySelector("#char-form")) { renderDetail(current); return; }   // 주소로 바로 열어 설정이 늦게 온 경우
       const badge = el.querySelector(".resume .badge");
       const role = roleOf(current);
       if (badge && badge.textContent !== ROLE[role]) renderDetail(current);
