@@ -81,13 +81,30 @@ export interface Layout {
   arts?: LayoutArt[];
 }
 
-/** 블렌더로 렌더한 TV 배경 (서버 world_render.py) */
-export interface WorldRender {
+/** 시간대(일출·아침·낮·일몰·밤) 하나의 배경 */
+export interface RenderPhase {
   bg: string;               // TV 시점 PNG
   env: string | null;       // 리본이 조명용 360° HDR
+}
+
+/** 블렌더로 렌더한 TV 배경 (서버 world_render.py) */
+export interface WorldRender extends RenderPhase {
+  /** 시간대별 배경 (없으면 bg/env 하나만 쓴다) */
+  phases?: Record<string, RenderPhase>;
+  /** [시작 시각(0~23), 시간대 이름] 목록. 시간 순서이고, 첫 시각 전이면 마지막 시간대(밤) */
+  schedule?: [number, string][];
   layout: Layout | null;    // 렌더에 쓴 배치 (가림막·길찾기는 이것으로)
   rendered_at: number;
   stale: boolean;           // 그 뒤로 배치가 바뀜 (다시 렌더 중이거나 대기)
+}
+
+/** 지금 시각에 맞는 배경을 고른다 (시간대별 렌더가 없으면 그대로) */
+export function renderNow(r: WorldRender | null | undefined, at = new Date()): WorldRender | null | undefined {
+  if (!r?.phases || !r.schedule?.length) return r;
+  let name = r.schedule[r.schedule.length - 1][1];     // 첫 시각(일출) 전이면 밤
+  for (const [h, n] of r.schedule) if (at.getHours() >= h) name = n;
+  const p = r.phases[name];
+  return p ? { ...r, bg: p.bg, env: p.env } : r;
 }
 
 /** state.config.world */

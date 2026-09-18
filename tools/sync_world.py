@@ -4,7 +4,7 @@
 
 가져오는 것
   - export/room_shell*.glb, catalog/*.glb, catalog.json  → client/public/world/
-  - room_map.py, game_export.py  → tools/blender/ (맥미니가 TV 배경을 렌더할 때 씀)
+  - room_map.py, game_export.py, phases.py  → tools/blender/ (맥미니가 TV 배경을 렌더할 때 씀)
   - --doll    : doll.blend 를 고화질로 다시 내보내 client/public/world/doll.glb (블렌더 필요)
   - --layouts : layout.json / layout_gallery.json → data/world/ (이미 있으면 덮어쓰기 전에 history 로 보관)
   - --artworks: artworks/*  → data/artworks/ (index.json 은 합친다)
@@ -47,7 +47,7 @@ def sync_models(src):
         copy(os.path.join(exp, f), os.path.join(PUBLIC, f))
     copy(cat, os.path.join(PUBLIC, "catalog.json"))
     print("블렌더 스크립트:")
-    for f in ("room_map.py", "game_export.py"):
+    for f in ("room_map.py", "game_export.py", "phases.py"):
         copy(os.path.join(src, f), os.path.join(ROOT, "tools", "blender", f))
 
 

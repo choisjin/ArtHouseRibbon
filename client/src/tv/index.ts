@@ -6,7 +6,7 @@ import { RibbonBrain } from "./brain";
 import { Hud } from "./hud";
 import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
-import { SEATS } from "../world/types";
+import { renderNow, SEATS, type WorldView } from "../world/types";
 
 export interface TvOptions { debug: boolean; demo: boolean; mic: boolean }
 
@@ -54,9 +54,13 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   }
 
   let applying = Promise.resolve();
+  let world: WorldView | null = null;      // 마지막으로 받은 방 (시간대가 바뀌면 배경만 다시 고른다)
+  let bgNow = "";
   function applyWorld(s: StateMsg): void {
     const w = s.config?.world;
     if (!w) return;
+    world = w;
+    const render = renderNow(w.render);
     applying = applying.then(async () => {
       if (placed && w.room !== stage.room.roomId) {
         // 다른 방으로: 새 방을 다 읽을 때까지 리본이를 멈추고 숨긴다 (옛 방 길로 걷지 않게)
@@ -64,10 +68,21 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
         ribbon.stop();
         ribbon.root.visible = false;
       }
-      const { changed, roomChanged } = await stage.setWorld(w.room, w.layout, w.render);
+      bgNow = render?.bg ?? "";
+      const { changed, roomChanged } = await stage.setWorld(w.room, w.layout, render);
       if (changed || !placed) await rebuildNav(roomChanged || !placed);
     }).catch((e) => { console.error("맵 적용 실패", e); placed = true; ribbon.root.visible = true; });
   }
+  // 시간대(일출·아침·낮·일몰·밤)가 바뀌면 배경과 조명만 슬쩍 갈아 끼운다
+  setInterval(() => {
+    if (!world || !placed) return;
+    const render = renderNow(world.render);
+    if (!render?.bg || render.bg === bgNow) return;
+    bgNow = render.bg;
+    const w = world;
+    applying = applying.then(() => stage.setWorld(w.room, w.layout, render).then(() => undefined))
+      .catch((e) => console.error("시간대 배경 바꾸기 실패", e));
+  }, 60000);
   let resizeTimer = 0;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);

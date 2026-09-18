@@ -14,8 +14,8 @@ TV 화면은 **블렌더로 렌더한 방 사진 위에 three.js 로 리본이�
 | `data/world/world.json` | TV 에 보여줄 방 (`active`) | 제외 |
 | `data/world/history/` | 저장 전 배치 (방마다 50개) | 제외 |
 | `data/artworks/` | 올린 그림 + `index.json` | 제외 |
-| `data/world/render/<방>.png`, `_env.hdr`, `.json` | TV 배경 렌더, 리본이 조명용 360° HDR, 렌더에 쓴 배치 | 제외 |
-| `tools/blender/room_map.py`, `game_export.py` | Character_Creator 에서 복사한 방·가구 생성 코드 (고치지 말고 sync) | 포함 |
+| `data/world/render/<방>_<시간대>.png`, `_env.hdr`, `<방>.json` | 시간대별 TV 배경 렌더, 리본이 조명용 360° HDR, 렌더에 쓴 배치 | 제외 |
+| `tools/blender/room_map.py`, `game_export.py`, `phases.py` | Character_Creator 에서 복사한 방·가구 생성 코드와 시간대 표 (고치지 말고 sync) | 포함 |
 | `tools/blender/render_room.py` | 배치 → TV 배경 PNG + 환경 HDR 렌더 | 포함 |
 | `tools/blender/export_doll.py` | doll.blend → 고화질 doll.glb (메시당 24000면까지) | 포함 |
 | `tools/blender/doll_actions.py` | 리본이 동작(끄덕임·가리키기 등)을 만들어 glb 에 넣음 | 포함 |
@@ -40,10 +40,20 @@ Character_Creator 에서 가구 모양이나 인형을 고쳤으면 그쪽에서
 1. 맵 편집기에서 저장하면 서버가 그 방을 블렌더 헤드리스로 렌더한다 (`RIBBON_RENDER_AUTO`, 한 번에 하나, 렌더 중 또 저장하면 끝난 뒤 한 번 더).
    편집기의 "🎬 배경 렌더" 로 직접 돌릴 수도 있다. 서버를 켤 때 렌더가 없거나 옛 배치인 방도 렌더한다.
 2. 결과: TV 시점 PNG (Cycles, AgX, 기본 1920x1080) + "부르면 오는 자리" 눈높이의 360° HDR.
+   미술실은 **시간대마다 한 장씩** 렌더한다 (`tools/blender/phases.py`: 일출 5시 / 아침 7시 / 낮 11시 / 일몰 17시 / 밤 20시).
+   방을 한 번만 짓고 조명만 바꿔 차례로 찍는다. 창이 없는 전시장은 한 장뿐.
+   TV 는 제 시계를 보고 1분마다 지금 시간대의 배경·환경광으로 갈아 끼운다 (방은 그대로).
 3. TV 는 **렌더에 쓴 배치**로 가구 모델을 "깊이만 그리는 가림막"으로 두고(가구 뒤로 가면 가려짐),
    바닥에는 그림자만 받는 판을 깐다. 리본이는 HDR 환경광 + 천 재질(sheen), 톤매핑은 블렌더와 같은 AgX.
    카메라가 블렌더와 같아야 해서 화면은 16:9 고정 (남는 곳은 검은 띠).
 4. 렌더가 끝나기 전까지 TV 는 옛 배경과 옛 배치 그대로. 블렌더가 없으면 방까지 실시간 3D 로 그린다.
+
+### 빛
+- 미술실을 밝히는 것은 **왼쪽 창으로 드는 자연광**이고, 천장 매립등(네 귀퉁이 LED 평판)은 어두울 때만 세진다.
+  시간대별 하늘빛·햇빛·천장등 세기·노출은 모두 `phases.py` 한 곳에 있다.
+- 오른쪽 유리벽 밖은 **상가 복도**(맞은편 점포 정면 + 복도 매립등)라 시간과 상관없이 늘 같은 밝기다.
+- 조명 오브젝트는 카메라·유리 너머로 보이지 않게 해서(`visible_camera/transmission/glossy = False`)
+  창에는 하늘빛만 비친다. 조명판이 하얗게 비치면 시간대가 구분되지 않는다.
 
 ## 편집
 

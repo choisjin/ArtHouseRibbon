@@ -1,9 +1,11 @@
 """TV 배경 렌더: 배치 파일대로 방을 만들어 TV 시점 PNG 와 방 안 환경광 HDR 을 렌더한다.
 
-    blender -b --factory-startup -P tools/blender/render_room.py -- <방> <배치.json> <데이터 폴더> <출력 폴더>
+    blender -b --factory-startup -P tools/blender/render_room.py -- <방> <배치.json> <데이터 폴더> <출력 폴더> [시간대...]
 
   <데이터 폴더> : 배치의 image("artworks/x.png") 를 찾는 기준 (리본 서버에서는 data/)
-  <출력 폴더>   : <방>.png (TV 배경), <방>_env.hdr (리본이 조명용 360° 환경)
+  <출력 폴더>   : <방>_<시간대>.png (TV 배경), <방>_<시간대>_env.hdr (리본이 조명용 360° 환경)
+  [시간대]      : phases.py 의 이름 (dawn/morning/day/sunset/night). 여러 개면 방을 한 번만 짓고
+                  조명만 바꿔 차례로 렌더한다. 빼면 그 방이 쓰는 시간대 전부
 환경변수
   RENDER_PCT      해상도 % (기본 50 → 1920x1080, 100 → 3840x2160)
   RENDER_SAMPLES  배경 샘플 수 (기본 96)
@@ -24,10 +26,13 @@ sys.path.insert(0, HERE)
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 if len(argv) < 4:
-    raise SystemExit("사용법: -- <방> <배치.json> <데이터 폴더> <출력 폴더>")
+    raise SystemExit("사용법: -- <방> <배치.json> <데이터 폴더> <출력 폴더> [시간대...]")
 ROOM, LAYOUT_FILE, DATA_DIR, OUT_DIR = argv[:4]
 os.environ["MAP_ROOM"] = ROOM
+import phases  # noqa: E402
 import room_map  # noqa: E402  (불러올 때 기본 배치를 읽지만 아래에서 바꾼다)
+
+PHASES = [p for p in argv[4:] if p in phases.PHASES] or room_map.room_phases(ROOM)
 
 room_map.PROJECT_DIR = os.path.abspath(DATA_DIR)          # 그림 파일 기준
 room_map.CURRENT_ROOM = ROOM
@@ -68,44 +73,51 @@ scene = bpy.context.scene
 coll = bpy.data.collections.new("Map")
 scene.collection.children.link(coll)
 room_map.build_room(coll.objects.link, layout=layout, room=ROOM)
-room_map.room_lights(coll.objects.link, room=ROOM)
 world = bpy.data.worlds.new("World")
 scene.world = world
 world.use_nodes = True
-world.node_tree.nodes["Background"].inputs["Color"].default_value = room_map.ROOM_WORLD
 use_gpu(scene)
 scene.cycles.use_denoising = True
-scene.view_settings.view_transform = "AgX"
-scene.view_settings.exposure = room_map.ROOM_EXPOSURE
 scene.render.film_transparent = False
 
-# 1) TV 배경
 cam = room_map.tv_camera(scene.collection.objects.link)
-scene.camera = cam
-scene.cycles.samples = SAMPLES
-scene.render.resolution_x, scene.render.resolution_y = room_map.TV_RES
-scene.render.resolution_percentage = PCT
-scene.render.image_settings.file_format = "PNG"
-scene.render.filepath = os.path.join(OUT_DIR, f"{ROOM}.png")
-bpy.ops.render.render(write_still=True)
-print("[render] saved", scene.render.filepath)
+env_cam = bpy.data.cameras.new("EnvCam")
+env_cam.type = "PANO"
+env_cam.panorama_type = "EQUIRECTANGULAR"
+env_obj = bpy.data.objects.new("EnvCam", env_cam)
+spot = layout.get("doll_spot") or {"x": 0.0, "y": 0.0}
+env_obj.location = (float(spot["x"]), float(spot["y"]), 1.6)
+env_obj.rotation_euler = (math.radians(90), 0, math.radians(-90))
+scene.collection.objects.link(env_obj)
 
-# 2) 환경광: 리본이 눈높이에서 본 360° (three.js 의 +X 가 그림 가운데가 되도록 +X 를 바라봄)
-if os.environ.get("RENDER_ENV", "1") != "0":
-    cd = bpy.data.cameras.new("EnvCam")
-    cd.type = "PANO"
-    cd.panorama_type = "EQUIRECTANGULAR"
-    env = bpy.data.objects.new("EnvCam", cd)
-    spot = layout.get("doll_spot") or {"x": 0.0, "y": 0.0}
-    env.location = (float(spot["x"]), float(spot["y"]), 1.6)
-    env.rotation_euler = (math.radians(90), 0, math.radians(-90))
-    scene.collection.objects.link(env)
-    scene.camera = env
-    scene.cycles.samples = max(16, SAMPLES // 3)
-    scene.render.resolution_x, scene.render.resolution_y = 1024, 512
-    scene.render.resolution_percentage = 100
-    scene.render.image_settings.file_format = "HDR"
-    scene.view_settings.view_transform = "Standard"     # 조명값 그대로 (톤매핑은 three.js 가)
-    scene.render.filepath = os.path.join(OUT_DIR, f"{ROOM}_env.hdr")
+lights = []
+for phase in PHASES:
+    for o in lights:                       # 시간대마다 조명을 새로 놓는다
+        bpy.data.objects.remove(o, do_unlink=True)
+    lights = room_map.room_lights(coll.objects.link, room=ROOM, phase=phase)
+    sky, exposure = room_map.apply_phase(phase, room=ROOM)
+    world.node_tree.nodes["Background"].inputs["Color"].default_value = sky
+    scene.view_settings.exposure = exposure
+
+    # 1) TV 배경
+    scene.camera = cam
+    scene.cycles.samples = SAMPLES
+    scene.render.resolution_x, scene.render.resolution_y = room_map.TV_RES
+    scene.render.resolution_percentage = PCT
+    scene.render.image_settings.file_format = "PNG"
+    scene.view_settings.view_transform = "AgX"
+    scene.render.filepath = os.path.join(OUT_DIR, f"{ROOM}_{phase}.png")
     bpy.ops.render.render(write_still=True)
     print("[render] saved", scene.render.filepath)
+
+    # 2) 환경광: 리본이 눈높이에서 본 360° (three.js 의 +X 가 그림 가운데가 되도록 +X 를 바라봄)
+    if os.environ.get("RENDER_ENV", "1") != "0":
+        scene.camera = env_obj
+        scene.cycles.samples = max(16, SAMPLES // 3)
+        scene.render.resolution_x, scene.render.resolution_y = 1024, 512
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "HDR"
+        scene.view_settings.view_transform = "Standard"   # 조명값 그대로 (톤매핑은 three.js 가)
+        scene.render.filepath = os.path.join(OUT_DIR, f"{ROOM}_{phase}_env.hdr")
+        bpy.ops.render.render(write_still=True)
+        print("[render] saved", scene.render.filepath)
