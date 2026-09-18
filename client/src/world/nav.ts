@@ -1,12 +1,19 @@
-import { FLOOR_LAYER, rad, type Layout, type RoomInfo, type TypeInfo } from "./types";
+import { FLOOR_LAYER, rad, type Layout, type LayoutItem, type RoomInfo, type TypeInfo } from "./types";
 
 /** 바닥 좌표 (배치 파일 단위, x 오른쪽 / y 화면 안쪽) */
 export interface P2 { x: number; y: number }
 
+/** 길을 찾을 때만 피하는 둥근 자리 (다른 캐릭터가 서 있는 곳) */
+export interface Blocker { p: P2; r: number }
+
+interface Box { e: LayoutItem; b: TypeInfo["bbox"]; c: number; s: number }
+
 /**
  * 리본이 걸어 다닐 수 있는 바닥 격자.
  * 벽·기둥·가구 바닥 윤곽을 몸 반지름만큼 부풀려 막고, A* 로 길을 찾은 뒤 직선으로 이을 수 있는 점은 건너뛴다.
+ * 칸 가운데만 보고 막힘을 정하므로, 칸 안 어디에 서도 닿지 않게 반 칸(대각선)만큼 더 부풀린다.
  * 추가로 isAllowed(보통 "TV 화면 안에 몸이 다 보이는가")로 목적지와 통로를 제한할 수 있다.
+ * 다른 캐릭터는 길을 찾을 때마다 blockers 로 넘겨 피해 간다 (격자에 굽지 않는다: 계속 움직이므로).
  */
 export class NavGrid {
   readonly cols: number;
@@ -14,6 +21,8 @@ export class NavGrid {
   private free: Uint8Array;
   private x0: number;
   private y0: number;
+  private boxes: Box[];
+  private dyn: Blocker[] = [];
 
   constructor(room: RoomInfo, types: Map<string, TypeInfo>, layout: Layout, readonly radius: number,
               readonly cell = 0.2, isAllowed: (p: P2) => boolean = () => true) {
@@ -23,24 +32,20 @@ export class NavGrid {
     this.cols = Math.max(1, Math.ceil((w.right - w.left) / cell));
     this.rows = Math.max(1, Math.ceil((w.back - room.front_y) / cell));
     this.free = new Uint8Array(this.cols * this.rows);
-    const r = radius;
-    const boxes = layout.items.flatMap((e) => {
+    const r = radius + cell * 0.71;
+    this.room = room;
+    const boxes: Box[] = layout.items.flatMap((e) => {
       const t = types.get(e.type);
       if (!t || FLOOR_LAYER.has(e.type) || t.bbox.z1 < 0.05) return [];
       return [{ e, b: t.bbox, c: Math.cos(rad(e.rot)), s: Math.sin(rad(e.rot)) }];
     });
+    this.boxes = boxes;
     for (let j = 0; j < this.rows; j++) {
       for (let i = 0; i < this.cols; i++) {
         const p = this.center(i, j);
         let ok = p.x > w.left + r && p.x < w.right - r && p.y > room.front_y + r && p.y < w.back - r;
         if (ok) ok = !room.obstacles.some((o) => p.x > o.x0 - r && p.x < o.x1 + r && p.y > o.y0 - r && p.y < o.y1 + r);
-        if (ok) {
-          ok = !boxes.some(({ e, b, c, s }) => {
-            const dx = p.x - e.x, dy = p.y - e.y;
-            const lx = c * dx + s * dy, ly = -s * dx + c * dy;      // 가구 로컬 좌표로 되돌림
-            return lx > b.x0 - r && lx < b.x1 + r && ly > b.y0 - r && ly < b.y1 + r;
-          });
-        }
+        if (ok) ok = !boxes.some((bx) => hitsBox(bx, p, r));
         if (ok) ok = isAllowed(p);
         this.free[j * this.cols + i] = ok ? 1 : 0;
       }
@@ -51,8 +56,39 @@ export class NavGrid {
   private cellOf(p: P2): [number, number] {
     return [Math.floor((p.x - this.x0) / this.cell), Math.floor((p.y - this.y0) / this.cell)];
   }
+  private readonly room: RoomInfo;
+
   private ok(i: number, j: number): boolean {
-    return i >= 0 && j >= 0 && i < this.cols && j < this.rows && this.free[j * this.cols + i] === 1;
+    if (!(i >= 0 && j >= 0 && i < this.cols && j < this.rows && this.free[j * this.cols + i] === 1)) return false;
+    if (!this.dyn.length) return true;
+    const c = this.center(i, j);
+    return !this.dyn.some((d) => Math.hypot(c.x - d.p.x, c.y - d.p.y) < d.r);
+  }
+
+  /**
+   * 이 점에 반지름 r 인 몸이 들어가는가 (벽·기둥·가구, ignore 가구는 빼고). 격자 칸이 아니라 정확한 모양으로 본다.
+   * 의자에 앉을 자리처럼 격자에서는 막혀 있는 곳(의자 위)을 따로 볼 때 쓴다.
+   */
+  fits(p: P2, r: number, ignore: LayoutItem | LayoutItem[] = []): boolean {
+    const skip = Array.isArray(ignore) ? ignore : [ignore];
+    const w = this.room.walls;
+    if (!(p.x > w.left + r && p.x < w.right - r && p.y > this.room.front_y - r && p.y < w.back - r)) return false;
+    if (this.room.obstacles.some((o) => p.x > o.x0 - r && p.x < o.x1 + r && p.y > o.y0 - r && p.y < o.y1 + r)) return false;
+    return !this.boxes.some((bx) => !skip.includes(bx.e) && hitsBox(bx, p, r));
+  }
+
+  /** 이 자리에 몸(r)을 두면 걸리는 가구들 */
+  itemsAt(p: P2, r: number): LayoutItem[] {
+    return this.boxes.filter((bx) => hitsBox(bx, p, r)).map((bx) => bx.e);
+  }
+
+  /** a→b 직선 위 어디에서도 몸(r)이 들어가는가 (ignore 가구는 빼고) */
+  lineFits(a: P2, b: P2, r: number, ignore: LayoutItem | LayoutItem[] = []): boolean {
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.1));
+    for (let k = 0; k <= n; k++) {
+      if (!this.fits({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n }, r, ignore)) return false;
+    }
+    return true;
   }
   isFree(p: P2): boolean { return this.ok(...this.cellOf(p)); }
   get freeCount(): number { return this.free.reduce((a, b) => a + b, 0); }
@@ -94,8 +130,13 @@ export class NavGrid {
     return true;
   }
 
-  /** from → to 경로 (from 은 빼고 to 포함). 못 가면 null */
-  findPath(from: P2, to: P2): P2[] | null {
+  /** from → to 경로 (from 은 빼고 to 포함). blockers(다른 캐릭터 자리)는 피해 간다. 못 가면 null */
+  findPath(from: P2, to: P2, blockers: Blocker[] = []): P2[] | null {
+    this.dyn = blockers;
+    try { return this.search(from, to); } finally { this.dyn = []; }
+  }
+
+  private search(from: P2, to: P2): P2[] | null {
     const start = this.nearestFree(from), goal = this.nearestFree(to);
     if (!start || !goal) return null;
     if (this.lineFree(start, goal)) return [goal];
@@ -146,6 +187,13 @@ export class NavGrid {
     }
     return out;
   }
+}
+
+/** 가구 바닥 윤곽(회전된 상자)을 r 만큼 부풀린 안에 p 가 있는가 */
+function hitsBox({ e, b, c, s }: Box, p: P2, r: number): boolean {
+  const dx = p.x - e.x, dy = p.y - e.y;
+  const lx = c * dx + s * dy, ly = -s * dx + c * dy;      // 가구 로컬 좌표로 되돌림
+  return lx > b.x0 - r && lx < b.x1 + r && ly > b.y0 - r && ly < b.y1 + r;
 }
 
 class MinHeap {

@@ -39,6 +39,10 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     friendBrain.yields = true;
     brain.avoid = friend;               // 리본이는 친구가 있는 쪽을 목적지로 고르지 않는다
   }
+  // 자동 확인용 (?probe=1): 캐릭터·길찾기를 밖에서 들여다본다 (겹침 검사 등)
+  if (new URLSearchParams(location.search).has("probe")) {
+    (window as unknown as Record<string, unknown>).__probe = { ribbon, friend, brain, friendBrain };
+  }
   const bubble = document.getElementById("bubble")!;
 
   let kids: KidInfo[] = [];
@@ -57,7 +61,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   async function rebuildNav(toHome: boolean): Promise<void> {
     await Promise.all([ribbon.loaded, friend?.loaded]);
     applySpeed();
-    brain.nav = stage.buildNav(ribbon.radius, ribbon.height);
+    // 두 캐릭터가 같은 격자를 쓰므로 더 큰 몸(머리·머리카락까지)에 맞춘다
+    brain.nav = stage.buildNav(Math.max(ribbon.radius, friend?.radius ?? 0), Math.max(ribbon.height, friend?.height ?? 0));
     brain.arts = stage.room.artSpots;
     brain.chairs = (stage.room.layout?.items ?? []).filter((e) => e.type in SEATS);
     brain.unitPerM = stage.room.U;

@@ -30,6 +30,7 @@ const approach = (cur: number, target: number, k: number) => cur + (target - cur
 export class Ribbon3D {
   readonly root = new THREE.Group();
   height = 2.4;
+  /** 몸이 차지하는 바닥 반지름: 머리·머리카락·팔까지 위에서 본 가장 먼 점 (가구·다른 캐릭터와 이만큼 떨어진다) */
   radius = 0.45;
   speed = 0.9;                       // 초당 단위
   private body = new THREE.Group();  // 숨쉬기·끄덕임을 얹는 층
@@ -60,10 +61,15 @@ export class Ribbon3D {
   private mouth = 0;
   private sitAction: THREE.AnimationAction | null = null;
   private seat: Seat | null = null;
+  private held = false;           // 길은 그대로 두고 잠깐 멈춤 (앞에 다른 캐릭터가 있을 때)
+  /** 의자에 폴짝 올라앉기 / 내려오기: 좌판 높이보다 높게 포물선으로 옮겨 다리가 의자를 뚫지 않게 */
+  private hop: { from: P2; to: P2; t: number; dur: number; l0: number; l1: number; y0: number; y1: number;
+                 done: (() => void) | null } | null = null;
   private lift = 0;               // 바닥에서 띄운 높이 (앉으면 좌판 높이 - 엉덩이 높이)
   private hipHeight = 0.46;       // 서 있을 때 골반(엉덩이)이 발바닥에서 얼마나 위인지
   private liftTarget = 0;
   private shadow: THREE.Mesh;
+  private shadowR = 0.45;
   private face: Face | null = null;
   private expression: Expression = "normal";
   private motionBlend = 1;
@@ -116,9 +122,12 @@ export class Ribbon3D {
     const box = new THREE.Box3().setFromObject(scene);
     const size = box.getSize(new THREE.Vector3());
     this.height = size.y;
-    this.radius = Math.max(size.x, size.z) * 0.4;   // 팔·치마 끝까지 넣으면 너무 넓다
+    // 큰 머리가 몸보다 넓다. 상자 폭의 일부만 쓰면 가구 옆을 지날 때 머리가 책상 위로 튀어나온다 →
+    // 꼭짓점들 중 몸 가운데 축에서 가장 먼 거리를 반지름으로 (어느 쪽으로 돌아서도 같다)
+    this.radius = horizontalRadius(scene) || Math.max(size.x, size.z) * 0.5;
+    this.shadowR = Math.max(size.x, size.z) * 0.4;   // 그림자는 발밑 크기로
     const shadow = this.root.getObjectByName("shadow")!;
-    shadow.scale.setScalar(this.radius * 1.1);
+    shadow.scale.setScalar(this.shadowR * 1.1);
 
     this.mixer = new THREE.AnimationMixer(this.rig);
     const clip = (n: string) => animations.find((a) => a.name === n);
@@ -173,6 +182,10 @@ export class Ribbon3D {
 
   get pos(): P2 { return { x: this.root.position.x, y: -this.root.position.z }; }
   get moving(): boolean { return this.path.length > 0; }
+  /** 가는 중인 곳 (마지막 점). 서 있으면 null */
+  get destination(): P2 | null { return this.path.length ? this.path[this.path.length - 1] : null; }
+  /** 다음에 밟을 점 */
+  get nextPoint(): P2 | null { return this.path[0] ?? null; }
   get busy(): boolean { return this.playing !== null; }
   /** 지금 하는 동작 이름 */
   get motion(): string | null { return this.playing; }
@@ -187,6 +200,8 @@ export class Ribbon3D {
     this.yaw = yaw;
     this.root.rotation.y = yaw;
     this.path = [];
+    this.hop = null;
+    this.held = false;
   }
 
   walkPath(path: P2[], onArrive?: () => void): void {
@@ -198,7 +213,18 @@ export class Ribbon3D {
   stop(): void {
     this.path = [];
     this.onArrive = null;
+    this.held = false;
   }
+
+  /** 도착하면 할 일은 두고 길만 바꾼다 (앞이 막혀 돌아갈 때) */
+  replacePath(path: P2[]): void {
+    this.path = [...path];
+    this.held = false;
+  }
+
+  /** 길은 그대로 두고 잠깐 멈춘다 / 다시 걷는다 */
+  hold(on: boolean): void { this.held = on; }
+  get holding(): boolean { return this.held; }
 
   /** 제자리에서 이 방향(three.js y 회전)으로 돌아선다 */
   faceYaw(yaw: number | null): void { this.targetYaw = yaw; }
@@ -216,16 +242,67 @@ export class Ribbon3D {
   get canSit(): boolean { return this.sitAction !== null; }
   get sitting(): boolean { return this.seat !== null; }
 
-  /** 의자에 앉기. 몸이 좌판 높이로 올라가고 그림자는 바닥에 남는다 */
+  /** 좌판에 앉았을 때 몸을 띄우는 높이: 발이 아니라 엉덩이가 좌판에 닿게 (+ 살짝 얹히게) */
+  private seatLift(seat: Seat): number { return Math.max(0, seat.height - this.hipHeight + 0.04); }
+
+  /**
+   * 의자 옆(또는 앞)에 서 있다가 좌판으로 폴짝 올라앉는다. 서서 좌판까지 걸어가면 다리가 의자·책상을 뚫는다.
+   * 뛰는 동안 앉은 자세로 바뀌고, 좌판을 보고 돌아앉는다.
+   */
+  hopOnto(seat: Seat, onDone?: () => void): void {
+    if (!this.sitAction) { onDone?.(); return; }
+    this.stop();
+    this.seat = seat;
+    this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.3).play();
+    const l1 = this.seatLift(seat);
+    this.liftTarget = l1;
+    this.hop = { from: this.pos, to: { x: seat.x, y: seat.y }, t: 0, dur: 0.6, l0: this.lift, l1, y0: this.yaw, y1: seat.yaw,
+                 done: onDone ?? null };
+  }
+
+  /** 좌판에서 이 자리로 폴짝 내려온다 (올라왔던 자리). 내려오는 쪽을 보고 뛴다 */
+  hopOff(to: P2, onDone?: () => void): void {
+    this.stop();
+    this.seat = null;
+    this.sitAction?.fadeOut(0.3);
+    this.liftTarget = 0;
+    const me = this.pos;
+    const y1 = Math.atan2(to.x - me.x, -(to.y - me.y));
+    this.hop = { from: me, to, t: 0, dur: 0.55, l0: this.lift, l1: 0, y0: this.yaw, y1, done: onDone ?? null };
+  }
+
+  /** 뛰는 중이면 한 프레임 진행 (자리·높이·방향). 뛰는 중이 아니면 false */
+  private stepHop(dt: number): boolean {
+    const h = this.hop;
+    if (!h) return false;
+    h.t += dt;
+    const k = Math.min(1, h.t / h.dur);
+    const e = k * k * (3 - 2 * k);                              // 부드럽게 출발·착지
+    this.root.position.x = h.from.x + (h.to.x - h.from.x) * e;
+    this.root.position.z = -(h.from.y + (h.to.y - h.from.y) * e);
+    // 좌판보다 높이 떴다가 내려앉는다 (몸 키의 12%)
+    this.lift = h.l0 + (h.l1 - h.l0) * e + Math.sin(Math.PI * k) * this.height * 0.12;
+    this.yaw = h.y0 + wrap(h.y1 - h.y0) * e;
+    if (k >= 1) {
+      this.hop = null;
+      this.lift = h.l1;
+      this.targetYaw = null;
+      h.done?.();
+    }
+    return true;
+  }
+  get hopping(): boolean { return this.hop !== null; }
+
+  /** 의자에 앉기 (제자리). 몸이 좌판 높이로 올라가고 그림자는 바닥에 남는다 */
   sitOn(seat: Seat): void {
     if (!this.sitAction) return;
     this.stop();
     this.seat = seat;
     // 발이 아니라 엉덩이가 좌판에 닿아야 한다 (안 그러면 의자 위에 올라선 모습이 된다).
     // 좌판에 살짝 얹히도록 아주 조금 띄운다
-    this.liftTarget = Math.max(0, seat.height - this.hipHeight + 0.04);
+    this.liftTarget = this.seatLift(seat);
     this.targetYaw = seat.yaw;
-    this.root.position.copy(toThree(seat.x, seat.y, 0));
+    this.root.position.copy(toThree(seat.x, seat.y, 0));   // brain 이 좌판 앞까지 걸어온 뒤라 거의 제자리
     this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.45).play();
   }
 
@@ -252,16 +329,17 @@ export class Ribbon3D {
 
   update(dt: number): void {
     this.t += dt;
-    const moved = this.stepMove(dt);
+    const hopping = this.stepHop(dt);
+    const moved = hopping ? 0 : this.stepMove(dt);
     // 앉고 일어설 때 몸만 오르내리고 그림자는 바닥에 둔다
-    this.lift = approach(this.lift, this.liftTarget, 1 - Math.exp(-dt * 6));
+    if (!hopping) this.lift = approach(this.lift, this.liftTarget, 1 - Math.exp(-dt * 6));
     this.root.position.y = this.lift;
     this.shadow.position.y = 0.008 - this.lift;
-    this.shadow.scale.setScalar(this.radius * (1.1 + this.lift * 0.5));
+    this.shadow.scale.setScalar(this.shadowR * (1.1 + this.lift * 0.5));
     (this.shadow.material as THREE.Material).opacity = 0.2 * Math.max(0.35, 1 - this.lift);
 
     // 몸 방향
-    if (this.targetYaw !== null && !this.path.length) {
+    if (this.targetYaw !== null && !this.path.length && !hopping) {
       const d = wrap(this.targetYaw - this.yaw);
       const step = TURN_RATE * dt;
       this.yaw += Math.abs(d) <= step ? d : Math.sign(d) * step;
@@ -285,7 +363,7 @@ export class Ribbon3D {
 
   /** 경로를 따라 이동. 이번 프레임에 간 거리 */
   private stepMove(dt: number): number {
-    if (!this.path.length || this.playing || this.seat) return 0;
+    if (!this.path.length || this.playing || this.seat || this.held || this.hop) return 0;
     const target = this.path[0];
     const me = this.pos;
     const dx = target.x - me.x, dy = target.y - me.y;
@@ -348,6 +426,30 @@ export class Ribbon3D {
     const bounce = this.nod * 0.03;
     this.body.scale.set(1 - breathe * 0.4, 1 + breathe + bounce, 1 - breathe * 0.4);
   }
+}
+
+/**
+ * 모델을 위에서 봤을 때 몸 가운데 축(원점)에서 꼭짓점까지의 거리 중 99% 지점.
+ * 맨 끝(리본 끝·머리카락 한 가닥)까지 넣으면 통로가 너무 좁아지고, 상자 폭의 일부만 쓰면 머리가 가구에 묻힌다.
+ */
+function horizontalRadius(model: THREE.Object3D): number {
+  model.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert();
+  const v = new THREE.Vector3();
+  const d: number[] = [];
+  model.traverse((o) => {
+    const m = o as THREE.Mesh;
+    const pos = m.isMesh && m.visible ? m.geometry.getAttribute("position") : null;
+    if (!pos) return;
+    const toModel = new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld);
+    for (let i = 0; i < pos.count; i += 3) {       // 셋 중 하나만 봐도 충분하다
+      v.fromBufferAttribute(pos, i).applyMatrix4(toModel);
+      d.push(Math.hypot(v.x, v.z));
+    }
+  });
+  if (!d.length) return 0;
+  d.sort((a, b) => a - b);
+  return d[Math.floor(d.length * 0.99)];
 }
 
 function shadowTexture(): THREE.Texture {
