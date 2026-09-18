@@ -79,6 +79,7 @@ export class Mic {
     try {
       await this.capture.start(uniq.map((d) => ({ deviceId: d.deviceId, channelOffset: d.channelOffset })));
     } catch (e) {
+      await this.capture.stop();      // 반쯤 열린 것을 닫는다 (안 그러면 실패했는데 "켜짐"으로 보인다)
       this.release?.();
       this.release = null;
       this.setMsg(`마이크 열기 실패: ${e}`);

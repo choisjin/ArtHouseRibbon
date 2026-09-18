@@ -63,6 +63,11 @@ export class FaceCam {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(this.saved)); } catch { /* 저장소 없음 */ }
   }
 
+  /** 켜기 전에 고른 장치를 기억해 둔다 (켜 두기 여부는 그대로) */
+  choose(deviceId: string): void {
+    this.save({ deviceId, label: this.devices.find((d) => d.deviceId === deviceId)?.label ?? "" });
+  }
+
   /** 카메라 목록 (처음엔 카메라 권한을 물어본다: 장치 이름을 보려면 필요) */
   async refresh(): Promise<void> {
     this.listed = true;

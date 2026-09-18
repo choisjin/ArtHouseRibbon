@@ -82,8 +82,10 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
 
   // ---- 마이크 (이 컴퓨터) ----
   const mic = ctx.mic;
+  let micStale = false;          // 고르는 중이라 다시 그리기를 미뤘다
   function renderMic(): void {
-    if (micBox.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") return;   // 고르는 중
+    if (micBox.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") { micStale = true; return; }   // 고르는 중
+    micStale = false;
     const kids = ctx.kids();
     const state = !mic.running ? `<span class="pill">꺼짐</span>`
       : mic.locked ? `<span class="pill warn">켜졌지만 잠김: 이 화면을 한 번 누르세요</span>`
@@ -114,8 +116,10 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
       .filter((x) => x.value)
       .map((x) => ({ deviceId: x.value, label: x.selectedOptions[0]?.textContent ?? "", channelOffset: Number(x.dataset.offset) }));
     micBox.querySelectorAll<HTMLSelectElement>("select").forEach((x) => {
-      x.onchange = () => { if (mic.running) { void mic.start(choice()); ctx.msg("새 장치로 다시 켭니다"); } };   // 켜져 있으면 바로 바꾼다
-      x.onblur = () => renderMic();
+      // 고른 것을 기억해 둔다 (다시 그려도 그대로). 켜져 있으면 바로 바꾼다
+      x.onchange = () => { if (mic.running) { void mic.start(choice()); ctx.msg("새 장치로 다시 켭니다"); } else mic.selected = choice(); };
+      // 미뤄 둔 것만 그린다. 그냥 다시 그리면 "마이크 켜기"를 누르는 순간 버튼이 바뀌어 클릭이 사라진다
+      x.onblur = () => { if (micStale) renderMic(); };
     });
     (micBox.querySelector("[data-act=toggle]") as HTMLButtonElement).onclick = () => {
       if (mic.running) { void mic.stop(); ctx.msg("마이크 끔 (다음에 열 때 자동으로 켜지 않습니다)"); return; }
@@ -137,8 +141,10 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
 
   // ---- 카메라 (이 컴퓨터) ----
   const cam = ctx.cam;
+  let camStale = false;
   function renderCam(): void {
-    if (camBox.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") return;   // 고르는 중
+    if (camBox.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") { camStale = true; return; }   // 고르는 중
+    camStale = false;
     const state = cam.running ? `<span class="pill ok">켜짐</span> <span class="hint">${esc(cam.using)}</span>` : `<span class="pill">꺼짐</span>`;
     if (!cam.listed) {
       camBox.innerHTML = `<div class="row"><b>이 컴퓨터</b><span class="grow"></span>${state}</div>
@@ -159,8 +165,8 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
       ${cam.running ? `<canvas class="cam-preview" style="width:100%;max-width:480px;border-radius:10px;background:#000;display:block;margin-top:8px"></canvas>` : ""}
       ${cam.msg ? `<p class="hint warn-text">${esc(cam.msg)}</p>` : ""}`;
     const sel = camBox.querySelector("select") as HTMLSelectElement;
-    sel.onchange = () => { if (cam.running) { void cam.start(sel.value); ctx.msg("새 카메라로 다시 켭니다"); } };
-    sel.onblur = () => renderCam();
+    sel.onchange = () => { if (cam.running) { void cam.start(sel.value); ctx.msg("새 카메라로 다시 켭니다"); } else cam.choose(sel.value); };
+    sel.onblur = () => { if (camStale) renderCam(); };
     (camBox.querySelector("[data-act=toggle]") as HTMLButtonElement).onclick = () => {
       if (cam.running) { void cam.stop(); ctx.msg("카메라 끔 (다음에 열 때 자동으로 켜지 않습니다)"); return; }
       if (!sel.value) { ctx.msg("카메라 장치를 먼저 고르세요", true); return; }
