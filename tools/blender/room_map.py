@@ -57,8 +57,7 @@ ROOM_H = ROOM_W * 9 / 16        # 높이 8.775 (약 3.9m): 입구가 16:9 → 38
 TV_RES = (3840, 2160)
 ROOM_WORLD = (0.62, 0.70, 0.80, 1.0)  # 왼쪽 창으로 보이는 하늘빛 (시간대에 따라 phases.py 가 바꾼다)
 ROOM_EXPOSURE = -0.9            # 렌더 노출(EV). 형광등처럼 쨍하지 않게 한 단계 낮춰 찍는다
-CORR_W = 6.5                    # 오른쪽 유리벽 밖 상가 복도 폭 (약 3m)
-CORR_H = 6.7                    # 복도 천장 높이 (약 3m, 방보다 낮다)
+CORR_W = 6.5                    # 오른쪽 유리벽 밖 상가 복도 폭 (약 3m). 천장 높이는 방과 같다
 SX = ROOM_W / 12.0             # 바닥 소품 위치를 가로 비율에 맞춰 늘리는 계수
 ROOM_D = LCAB_LEN + RCAB_LEN + PIL_W + 2 * PIER_W  # 약 16.5 (앞 벽기둥 + 좌측장 + 기둥 + 우측장 + 뒤 벽기둥)
 FRONT_Y = -ROOM_D / 2          # 열린 앞면
@@ -316,16 +315,14 @@ def make_materials():
         "yellow": mat_plain("ToyYellow", srgb(255, 210, 90)),
         "green": mat_plain("Leaf", srgb(110, 190, 120)),
         "pot": mat_plain("Pot", srgb(230, 150, 110), rough=0.6),
-        "panel": mat_plain("PanelLight", srgb(255, 250, 242), rough=0.35, sheen=0.0, emit=1.5),
+        "panel": mat_plain("PanelLight", srgb(255, 250, 242), rough=0.35, sheen=0.0, emit=2.0),
         # 오른쪽 유리벽 밖 상가 복도
         "corr_floor": mat_plain("CorridorFloor", srgb(214, 210, 204), rough=0.25, sheen=0.2),
         "corr_wall": mat_plain("CorridorWall", srgb(228, 226, 222), rough=0.8, sheen=0.1),
         "corr_ceil": mat_plain("CorridorCeiling", srgb(238, 236, 232), rough=0.9, sheen=0.0),
         "corr_light": mat_plain("CorridorLightPanel", srgb(255, 250, 240), rough=0.3, sheen=0.0, emit=2.2),
-        "shop_glass": mat_plain("ShopFrontGlass", srgb(255, 246, 228), rough=0.2, sheen=0.0, emit=1.1),
-        "shop_frame": mat_plain("ShopFrontFrame", srgb(120, 116, 112), rough=0.5, sheen=0.1),
-        "shop_sign": mat_plain("ShopSign", srgb(255, 208, 120), rough=0.4, sheen=0.0, emit=1.6),
-        "shop_sign2": mat_plain("ShopSign2", srgb(150, 205, 235), rough=0.4, sheen=0.0, emit=1.4),
+        # 복도 맞은편 통유리벽: 검은 시트지 (빛을 거의 안 통과시키고 살짝 비친다)
+        "film_glass": mat_plain("BlackFilmGlass", srgb(26, 26, 30), rough=0.12, sheen=0.0),
         "purple": mat_plain("ToyPurple", srgb(190, 160, 235)),
         "pillar_r": mat_plain("PillarRed", srgb(222, 78, 80), rough=0.7, sheen=0.3),
         "pillar_p": mat_plain("PillarPink", srgb(242, 150, 176), rough=0.7, sheen=0.3),
@@ -1125,36 +1122,31 @@ def build_right_glass_wall(B, M):
 
 def build_corridor(B, M):
     """오른쪽 유리벽 밖 상가 복도. 밖이 아니라 건물 안이라 시간과 상관없이 늘 같은 밝기다.
-    TV 카메라에서는 유리 너머로 비스듬히 보이므로 바닥·천장·맞은편 상가 정면만 간단히 만든다.
-    하늘이 새어 보이지 않게 앞뒤도 막는다."""
-    x0 = ROOM_W / 2 + WALL_T                      # 유리벽 바깥면
-    x1 = x0 + CORR_W                              # 맞은편 상가 벽
+    천장 높이는 미술실과 같게 맞춘다 (달라지면 유리벽 위에 띠가 생겨 어색하다).
+    맞은편도 미술실과 같은 통유리벽이고 검은 시트지가 붙어 있다. 하늘이 새어 보이지 않게 앞뒤도 막는다."""
+    H, T = ROOM_H, WALL_T
+    x0 = ROOM_W / 2 + T                           # 미술실 유리벽 바깥면
+    x1 = x0 + CORR_W                              # 맞은편 통유리벽
     y0, y1 = FRONT_Y - 5.0, BACK_Y + 2.0          # 방보다 앞뒤로 길게 (끝이 안 보이게)
     cy, cd = (y0 + y1) / 2, y1 - y0
     cx, cw = (x0 + x1) / 2, x1 - x0
-    B.box("CorrFloor", (cx, cy, -WALL_T / 2), (cw, cd, WALL_T), M["corr_floor"], bevel=0.0)
-    B.box("CorrCeil", (cx, cy, CORR_H + WALL_T / 2), (cw, cd, WALL_T), M["corr_ceil"], bevel=0.0)
-    B.box("CorrWall", (x1 + WALL_T / 2, cy, CORR_H / 2), (WALL_T, cd, CORR_H + 2 * WALL_T), M["corr_wall"], bevel=0.0)
-    B.box("CorrEndFront", (cx, y0 - WALL_T / 2, CORR_H / 2), (cw, WALL_T, CORR_H), M["corr_wall"], bevel=0.0)
-    B.box("CorrEndBack", (cx, y1 + WALL_T / 2, CORR_H / 2), (cw, WALL_T, CORR_H), M["corr_wall"], bevel=0.0)
-    # 방 유리벽 위쪽(천장~복도 천장 사이)을 막아 하늘이 보이지 않게
-    B.box("CorrHead", (cx, cy, (CORR_H + ROOM_H) / 2), (cw, cd, ROOM_H - CORR_H), M["corr_wall"], bevel=0.0)
+    B.box("CorrFloor", (cx, cy, -T / 2), (cw, cd, T), M["corr_floor"], bevel=0.0)
+    B.box("CorrCeil", (cx, cy, H + T / 2), (cw, cd, T), M["corr_ceil"], bevel=0.0)
+    B.box("CorrEndFront", (cx, y0 - T / 2, H / 2), (cw, T, H), M["corr_wall"], bevel=0.0)
+    B.box("CorrEndBack", (cx, y1 + T / 2, H / 2), (cw, T, H), M["corr_wall"], bevel=0.0)
     # 복도 천장 매립등 (길게 줄지어)
     n = max(3, int(cd / 3.2))
     for k in range(n):
         y = y0 + cd * (k + 0.5) / n
-        B.box(f"CorrLight{k}", (cx, y, CORR_H - mm(20)), (mm(900), mm(260), mm(40)), M["corr_light"], bevel=0.0)
-    # 맞은편 상가 정면: 유리 + 틀 + 간판
-    sh_z0, sh_h = 0.35, CORR_H * 0.62             # 유리 아래 단 / 유리 높이
-    nb = max(2, int(cd / 5.0))
-    for k in range(nb):
-        y = y0 + cd * (k + 0.5) / nb
-        wdt = cd / nb - 0.7
-        B.box(f"ShopGlass{k}", (x1 - 0.06, y, sh_z0 + sh_h / 2), (0.1, wdt, sh_h), M["shop_glass"], bevel=0.0)
-        B.box(f"ShopSill{k}", (x1 - 0.1, y, sh_z0 / 2), (0.16, wdt + 0.7, sh_z0), M["shop_frame"], bevel=0.0)
-        B.box(f"ShopMull{k}", (x1 - 0.12, y, sh_z0 + sh_h / 2), (0.14, 0.12, sh_h), M["shop_frame"], bevel=0.0)
-        B.box(f"ShopSign{k}", (x1 - 0.14, y, sh_z0 + sh_h + 0.5),
-              (0.12, wdt * 0.62, 0.62), M["shop_sign" if k % 2 == 0 else "shop_sign2"], bevel=0.02)
+        B.box(f"CorrLight{k}", (cx, y, H - mm(20)), (mm(900), mm(260), mm(40)), M["corr_light"], bevel=0.0)
+    # 맞은편 통유리벽 (검은 시트지) + 미술실 유리벽과 같은 모양의 틀·세로 샷시
+    B.box("CorrGlass", (x1, cy, H / 2), (0.05, cd, H), M["film_glass"], bevel=0.0)
+    B.box("CorrGlassTop", (x1 - 0.02, cy, H - 0.06), (0.2, cd, 0.12), M["trim"], 0.015)
+    B.box("CorrGlassBottom", (x1 - 0.02, cy, 0.05), (0.22, cd, 0.1), M["trim"], 0.015)
+    ns = max(1, round(cd / SASH))
+    for k in range(ns + 1):
+        y = min(max(y0 + cd * k / ns, y0 + 0.06), y1 - 0.06)
+        B.box(f"CorrSash{k}", (x1 - 0.02, y, H / 2), (0.16, 0.12 if 0 < k < ns else 0.1, H), M["trim"], 0.02)
 
 
 # =====================================================================
@@ -1795,11 +1787,11 @@ def room_lights(link, room=None, phase=None):
     specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 280 * SX * ph["top"], (8 * SX, ROOM_D * 0.7), (0, 0, 0), WARM),
              ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 90 * SX * ph["top"], (8 * SX, 3),
               (math.radians(80), 0, 0), WARM),
-             ("CeilingPanels", (0, 0.3, ROOM_H - 0.45), 380 * SX * ph["panel"], (7 * SX, ROOM_D * 0.6),
+             ("CeilingPanels", (0, 0.3, ROOM_H - 0.45), 560 * SX * ph["panel"], (7 * SX, ROOM_D * 0.6),
               (0, 0, 0), (1.0, 0.98, 0.95)),
              ("SunThroughGlass", (-ROOM_W / 2 - 3.0, 0.0, 5.0), ph["sun"], (4.5, ROOM_D),
               (0, math.radians(-65), 0), ph["sun_color"]),
-             ("CorridorLight", (ROOM_W / 2 + WALL_T + CORR_W * 0.5, 0.0, CORR_H - 0.5), 900,
+             ("CorridorLight", (ROOM_W / 2 + WALL_T + CORR_W * 0.5, 0.0, ROOM_H - 0.5), 1500,
               (CORR_W * 0.8, ROOM_D * 1.1), (0, 0, 0), (1.0, 0.96, 0.9)))
     if room == "gallery":
         a = math.radians(50)
@@ -1835,7 +1827,7 @@ def apply_phase(phase=None, room=None):
     if m and m.use_nodes:
         for nd in m.node_tree.nodes:
             if nd.type == "BSDF_PRINCIPLED":
-                nd.inputs["Emission Strength"].default_value = 1.5 * ph["panel"]
+                nd.inputs["Emission Strength"].default_value = 2.0 * ph["panel"]
     return (*ph["sky"], 1.0), ph["exposure"]
 
 
