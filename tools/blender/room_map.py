@@ -469,9 +469,9 @@ PIER_D = 0.55                # 앞쪽 끝 흰 벽기둥 깊이 (TV 시점에서 
 TRANSOM = 0.22               # 왼쪽 창 가로 프레임 위치 (윗단에서 창 높이 비율)
 STRIPES = 11                 # 기둥 정면 줄무늬 수 (홀수라 빨강으로 시작해 빨강으로 끝난다)
 CAB_H = mm(812)              # 수납장 높이 (도면)
-CAB_D = mm(397)              # 수납장 깊이 (도면)
+CAB_D = PIL_D                # 수납장 깊이: 줄무늬 기둥과 같게 (앞면이 기둥 앞면과 나란하다)
 BOARD = mm(18)               # 판 두께
-SILL_Z = CAB_H + 0.12        # 창 아랫단
+SILL_Z = CAB_H               # 창 아랫단 = 수납장 윗면 (단차 없이 이어진다)
 HEAD_Z = ROOM_H - 0.4        # 창 윗단
 
 
@@ -648,7 +648,6 @@ def build_left_wall(B, M):
     for tag, (y0, y1) in (("F", (y_front, pf)), ("B", (pb, BACK_Y - PIER_W))):
         yc, ly = (y0 + y1) / 2, y1 - y0
         B.box(f"Glass_{tag}", (xw - T / 2, yc, zc), (0.03, ly, win_h), M["glass"], bevel=0.0)
-        B.box(f"Sill_{tag}", (xw + 0.05, yc, SILL_Z - 0.03), (0.3, ly, 0.06), M["trim"], 0.015)
         B.box(f"WinHead_{tag}", (xw - 0.02, yc, HEAD_Z + 0.04), (0.2, ly, 0.08), M["trim"], 0.015)
         # 양 끝 세로 테두리 + 가운데 세로 프레임
         for k, (y, wdt) in enumerate(((y0 + 0.07, 0.14), (yc, 0.16), (y1 - 0.07, 0.14))):

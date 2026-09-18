@@ -2,7 +2,8 @@
 
     python tools/widen_layout.py [--dry]
 
-네 귀퉁이에 기둥을 세우면서 미술실 가로를 15.6 → 18.2 로 넓혔다 (양쪽 벽이 1.3 씩 바깥으로).
+네 귀퉁이에 기둥을 세우면서 미술실 가로를 15.6 → 18.2 로 넓혔고(양쪽 벽이 1.3 씩 바깥으로),
+왼쪽 벽 수납장 깊이를 줄무늬 기둥과 같게(0.88 → 1.3) 바꿨다.
 배치 파일(data/world/*.json)은 기기마다 따로라 git 으로 오지 않으므로, 이미 쓰던 배치가 있으면
 왼쪽 벽 수납장과 오른쪽 유리벽 쪽 물건이 벽에서 1.3 만큼 떠 보인다. 이 스크립트가 그만큼 옮긴다.
 싱크대·건조대는 정면벽 쪽이고 오른쪽 끝이 넓힌 뒤 기둥 왼쪽 면과 딱 맞아서 그대로 둔다.
@@ -16,7 +17,7 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data", "world")
-SHIFT = {"cabinet_left": -1.3, "cabinet_right": -1.3,      # 왼쪽 벽에 붙은 수납장
+SHIFT = {"cabinet_left": -1.09, "cabinet_right": -1.09,    # 왼쪽 벽 수납장 (넓힌 만큼 + 깊어진 만큼)
          "plant": 1.3, "cushion": 1.3, "easel": 1.3}       # 오른쪽 유리벽 쪽 물건
 
 
