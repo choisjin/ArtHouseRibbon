@@ -19,7 +19,7 @@ type Mode =
   | { kind: "sitting"; until: number };      // 의자에 앉아 쉬는 중
 
 /** 평소에 가끔 짓는 표정 */
-const IDLE_FACES: Expression[] = ["normal", "normal", "normal", "happy", "wink", "curious"];
+const IDLE_FACES: Expression[] = ["normal", "normal", "normal", "happy", "curious"];
 
 /** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
 const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];

@@ -8,7 +8,7 @@ import { Mouth, type MouthShape } from "./mouth";
  * 각 부품을 제 가운데를 중심으로 돌리고 늘리려고, 부품마다 가운데에 축(pivot)을 하나 끼워 넣는다.
  */
 export type Expression =
-  | "normal" | "happy" | "wink" | "surprised" | "sleepy" | "shy" | "curious" | "talking" | "thinking"
+  | "normal" | "happy" | "surprised" | "sleepy" | "shy" | "curious" | "talking" | "thinking"
   | "sad" | "upset" | "worried" | "annoyed";      // 부정적인 표정들
 
 interface EyeShape {
@@ -38,7 +38,6 @@ const both = (e: EyeShape, blush = 1, mouth: MouthShape = "open", blink = true):
 export const EXPRESSIONS: Record<Expression, Look> = {
   normal: both(eye(), 1, "smile"),                                   // 다물고 살짝 웃는 입
   happy: both(eye(0.34, 1.06, 0.34), 1.3, "grin"),                   // 웃는 눈 ^^ + 활짝
-  wink: { left: eye(0.12, 1.05, 0.34), right: eye(1.05), blush: 1.3, blink: false, mouth: "grin" },
   surprised: both(eye(1.22, 1.12, 0, 0.04), 0.85, "o"),              // 눈 동그랗게 + 동그란 입
   sleepy: both(eye(0.42, 1, -0.06, -0.12), 1, "line"),               // 반쯤 감은 눈 + 다문 입
   shy: both(eye(0.55, 0.95, 0.2, -0.05), 1.75, "smile"),             // 볼 빨개짐
@@ -46,7 +45,7 @@ export const EXPRESSIONS: Record<Expression, Look> = {
   upset: both(eye(0.62, 0.92, -0.42, -0.08), 1.35, "cry"),           // 울상 (많이 속상할 때)
   worried: both(eye(1.05, 0.98, -0.22, 0.02), 1, "wavy"),            // 걱정·난감
   annoyed: both(eye(0.5, 1.0, 0.26, -0.04), 1.05, "grim"),           // 뾰로통 (꾹 다문 입)
-  curious: { left: eye(1.12, 1.05), right: eye(0.72, 1, 0.18), blush: 1.1, blink: true, mouth: "o" },
+  curious: both(eye(1.1, 1.04, 0.08), 1.1, "o"),                     // 갸웃 (두 눈 같게)
   // 고민: 눈은 일자로 감고 미간에 주름, 입은 한쪽이 꺾인 선
   thinking: { left: eye(0.1, 1.06, 0), right: eye(0.1, 1.06, 0), blush: 1, blink: false, mouth: "bent", brow: true },
   talking: both(eye(0.9, 1.02, 0.12), 1.15, "open"),                 // 말할 때 (입을 크게 벌린 모양)

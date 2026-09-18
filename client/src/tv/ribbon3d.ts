@@ -310,16 +310,16 @@ export class Ribbon3D {
     const k = 1 - Math.exp(-dt * 6);
     this.motionBlend = approach(this.motionBlend, this.playing && this.playing !== "Wave" ? 0 : 1, 1 - Math.exp(-dt * 5));
     const s = this.state;
-    // 고개: 보는 점 방향 (몸 기준 좌우 ±70°, 위아래 ±25°)
+    // 고개: 보는 점 방향. 사람처럼 조금만 돌린다 (좌우 ±28°, 위아래 -17°~+11°)
     let yaw = 0, pitch = 0;
     if (this.gaze) {
       const head = this.bones.get("head")?.node;
       const from = head ? head.getWorldPosition(new THREE.Vector3()) : this.headTop();
       const d = this.gaze.clone().sub(from);
-      yaw = THREE.MathUtils.clamp(wrap(Math.atan2(d.x, d.z) - this.yaw), -1.2, 1.2);
-      pitch = THREE.MathUtils.clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.45, 0.35);
+      yaw = THREE.MathUtils.clamp(wrap(Math.atan2(d.x, d.z) - this.yaw), -0.49, 0.49);
+      pitch = THREE.MathUtils.clamp(-Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.3, 0.2);
     }
-    if (s === "thinking") { pitch -= 0.25; yaw += Math.sin(this.t * 0.8) * 0.15; }
+    if (s === "thinking") { pitch -= 0.18; yaw += Math.sin(this.t * 0.8) * 0.1; }
     this.headYaw = approach(this.headYaw, yaw, k);
     this.headPitch = approach(this.headPitch, pitch, k);
     const tilt = s === "listening" ? 0.2 : s === "thinking" ? -0.14 : 0;
@@ -336,7 +336,7 @@ export class Ribbon3D {
     }
     const spine = this.bones.get("spine")?.node;
     if (spine) {
-      spine.rotateY(this.headYaw * 0.25 * w);
+      spine.rotateY(this.headYaw * 0.4 * w);      // 고개만 꺾지 않고 몸도 같이 살짝 돌린다
       spine.rotateX(s === "listening" ? 0.08 * w : 0);
     }
     // 숨쉬기 + 말할 때 통통
