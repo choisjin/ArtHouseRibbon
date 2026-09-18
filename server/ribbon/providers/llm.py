@@ -2,17 +2,24 @@
 
 - MockLLM: 모델 없이 흐름 확인용 고정 답변
 - OpenAICompatLLM: Ollama, mlx-lm server, mlx-serve 등 OpenAI 호환 /chat/completions 스트리밍
+- OllamaLLM: Ollama 자체 API
+
+제공자 이름: mlx (맥미니 mlx-serve = OpenAI 호환 + 모델 자동 올리기) | ollama | openai | mock
 """
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator, Dict, List, Protocol
+from typing import Any, AsyncIterator, Dict, List, Optional, Protocol
 
 import httpx
 
 from ..config import Settings
 
 Message = Dict[str, str]
+
+#: 주소를 비워 두면 쓰는 제공자별 기본 주소
+DEFAULT_URLS = {"mlx": "http://localhost:11234/v1", "ollama": "http://localhost:11434/v1",
+                "openai": "http://localhost:8080/v1"}
 
 
 class LLM(Protocol):
@@ -142,8 +149,47 @@ class OllamaLLM:
         await self._client.aclose()
 
 
+def resolve(settings: Settings, provider: str, base_url: str = "", model: str = "") -> Settings:
+    """관리자가 고른 대화 모델(settings.json)을 .env 설정 위에 얹는다"""
+    provider = provider or settings.llm_provider
+    base = (base_url or DEFAULT_URLS.get(provider) or settings.llm_base_url).rstrip("/")
+    return settings.model_copy(update={
+        "llm_provider": provider, "llm_base_url": base, "llm_model": model or settings.llm_model,
+        "llm_autoload": settings.llm_autoload or provider == "mlx",
+    })
+
+
+async def list_models(provider: str, base_url: str) -> List[Dict[str, Any]]:
+    """그 서버에 있는 대화 모델 목록 [{id, loaded}] (관리자 화면의 고르기 칸). 연결이 안 되면 예외"""
+    base = (base_url or DEFAULT_URLS.get(provider, "")).rstrip("/")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as c:
+        if provider == "ollama":
+            root = base[:-3] if base.endswith("/v1") else base
+            r = await c.get(f"{root}/api/tags")
+            r.raise_for_status()
+            return [{"id": m["name"], "loaded": None} for m in r.json().get("models", [])]
+        r = await c.get(f"{base}/models")
+        r.raise_for_status()
+        out = []
+        for m in r.json().get("data", []):
+            caps = m.get("capabilities")
+            if caps is not None and "chat" not in caps:
+                continue                                 # mlx-serve 의 그림·목소리 모델은 빼고
+            out.append({"id": m["id"], "loaded": m.get("loaded")})
+        return out
+
+
+async def close_later(llm: Optional[LLM], delay_s: float = 90.0) -> None:
+    """바꾼 뒤 옛 모델 연결을 닫는다. 하던 답은 끝나도록 조금 기다린다"""
+    import asyncio
+    await asyncio.sleep(delay_s)
+    close = getattr(llm, "aclose", None)
+    if close:
+        await close()
+
+
 def make_llm(settings: Settings) -> LLM:
-    if settings.llm_provider == "openai":
+    if settings.llm_provider in ("openai", "mlx"):
         return OpenAICompatLLM(settings)
     if settings.llm_provider == "ollama":
         return OllamaLLM(settings)

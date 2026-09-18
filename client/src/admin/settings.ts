@@ -1,6 +1,6 @@
 import type { MicChoice } from "../audio/mic";
-import type { DevicesMsg, ServerMsg } from "../protocol";
-import { type AdminCtx, esc } from "./shared";
+import type { DevicesMsg, LLMConfig, ServerMsg } from "../protocol";
+import { type AdminCtx, api, esc } from "./shared";
 
 /**
  * 설정 탭.
@@ -10,6 +10,8 @@ import { type AdminCtx, esc } from "./shared";
  *                 웹캠이 꽂힌 컴퓨터(맥미니)에서 관리자 페이지를 열어 두면 된다. 얼굴 위치만 서버를 거쳐 TV 로 간다
  *   TV 소리 출력 : TV 화면마다 출력 장치 고르기·삐 소리 시험. 출력 장치는 TV 컴퓨터에 달려 있어서
  *                 여기서 고르면 서버가 그 TV 로 전달한다 (device.control)
+ *   대화 모델    : 리본이가 답할 때 쓰는 LLM (맥미니 mlx-serve / Ollama …). 저장하면 서버를 다시 켜지 않아도 다음 답부터 바뀐다.
+ *                 .env 의 RIBBON_LLM_* 는 처음 한 번 이 칸을 채우는 데만 쓴다
  *   화면 스타일  : 라이트 · 다크 · 기기 설정 따르기 (이 기기에만 저장)
  */
 type ThemePref = "light" | "dark" | "system";
@@ -40,6 +42,30 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
   ];
   el.innerHTML = `
     <div class="settings">
+      <section class="card">
+        <h2>🧠 대화 모델 <small class="hint">리본이가 답할 때 쓰는 AI</small></h2>
+        <div id="llm" class="agent">
+          <label>어디서 <select name="provider">
+            <option value="mlx">MLX (맥미니 mlx-serve)</option>
+            <option value="ollama">Ollama</option>
+            <option value="openai">기타 OpenAI 호환 서버</option>
+            <option value="mock">시험용 (모델 없이 정해진 답)</option>
+          </select></label>
+          <label>모델 <input name="model" list="llm-models" autocomplete="off" spellcheck="false" /></label>
+          <datalist id="llm-models"></datalist>
+          <details><summary class="hint">서버 주소 (보통은 비워 둡니다)</summary>
+            <label>주소 <input name="base_url" spellcheck="false" /></label>
+          </details>
+          <p class="hint" data-role="list"></p>
+          <div class="actions">
+            <button data-act="save" class="primary">저장</button>
+            <button data-act="test">💬 시험해 보기</button>
+            <button data-act="reload">모델 목록 다시 읽기</button>
+          </div>
+          <p class="hint" data-role="result"></p>
+        </div>
+        <p class="hint">저장하면 서버를 다시 켜지 않아도 리본이의 다음 대답부터 바뀝니다. 맥미니에서는 MLX 를 씁니다.</p>
+      </section>
       <section class="card">
         <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
         <div id="mic" class="agent"></div>
@@ -79,6 +105,75 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
   let last: DevicesMsg | null = null;
   let pending: DevicesMsg | null = null;       // 목록을 고르는 중이면 다 고른 뒤에 다시 그린다
   const send = (m: object) => ctx.socket.sendJson({ type: "device.control", ...m });
+
+  // ---- 대화 모델 ----
+  const llmBox = el.querySelector("#llm") as HTMLElement;
+  const provSel = llmBox.querySelector("[name=provider]") as HTMLSelectElement;
+  const modelIn = llmBox.querySelector("[name=model]") as HTMLInputElement;
+  const urlIn = llmBox.querySelector("[name=base_url]") as HTMLInputElement;
+  const listLine = llmBox.querySelector("[data-role=list]") as HTMLElement;
+  const result = llmBox.querySelector("[data-role=result]") as HTMLElement;
+  const datalist = el.querySelector("#llm-models") as HTMLDataListElement;
+  const URLS: Record<string, string> = { mlx: "http://localhost:11234/v1", ollama: "http://localhost:11434/v1", openai: "http://localhost:8080/v1" };
+  let llmShown = "";          // 화면에 채운 설정 (다른 곳에서 바뀌었을 때만 다시 채운다)
+  function fillLlm(c: LLMConfig): void {
+    provSel.value = c.provider;
+    modelIn.value = c.model;
+    urlIn.value = c.base_url;
+    urlIn.placeholder = URLS[c.provider] ?? "";
+    modelIn.disabled = urlIn.disabled = c.provider === "mock";
+  }
+  let listSeq = 0;            // 늦게 온 옛 목록 응답은 버린다 (제공자·주소를 연달아 바꿀 때)
+  async function loadModels(): Promise<void> {
+    const seq = ++listSeq;
+    const provider = provSel.value;
+    datalist.innerHTML = "";
+    if (provider === "mock") { listLine.textContent = ""; return; }
+    listLine.textContent = "모델 목록을 읽는 중…";
+    type R = { ok: boolean; models?: { id: string; loaded: boolean | null }[]; error?: string };
+    const q = new URLSearchParams({ provider, base_url: urlIn.value.trim() });
+    const r = await api<R>("GET", `/api/llm/models?${q}`).catch((e) => ({ ok: false, error: String(e) }) as R);
+    if (seq !== listSeq) return;
+    if (!r.ok) { listLine.innerHTML = `<span class="warn-text">서버에 연결하지 못했습니다: ${esc(r.error)}</span>`; return; }
+    const models = r.models ?? [];
+    datalist.innerHTML = models.map((m) => `<option value="${esc(m.id)}">${m.loaded ? "올라가 있음" : ""}</option>`).join("");
+    if (!modelIn.value && models.length) modelIn.value = (models.find((m) => m.loaded) ?? models[0]).id;
+    const known = models.some((m) => m.id === modelIn.value);
+    listLine.innerHTML = `모델 ${models.length}개를 찾았습니다.` +
+      (modelIn.value && !known ? ` <span class="warn-text">지금 적힌 모델은 이 서버에 없습니다.</span>` : "");
+  }
+  provSel.onchange = () => {
+    // 제공자를 바꾸면 주소·모델은 그 제공자 것으로 다시 고른다
+    fillLlm({ provider: provSel.value as LLMConfig["provider"], base_url: "", model: "" });
+    void loadModels();
+  };
+  urlIn.onchange = () => void loadModels();
+  (llmBox.querySelector("[data-act=reload]") as HTMLButtonElement).onclick = () => void loadModels();
+  (llmBox.querySelector("[data-act=save]") as HTMLButtonElement).onclick = async () => {
+    const body = { provider: provSel.value, base_url: urlIn.value.trim(), model: modelIn.value.trim() };
+    if (body.provider !== "mock" && !body.model) { ctx.msg("모델을 고르세요", true); return; }
+    try {
+      const saved = await api<LLMConfig>("PUT", "/api/config/llm", body);
+      llmShown = JSON.stringify(saved);
+      ctx.msg(`대화 모델 저장: ${saved.provider === "mock" ? "시험용" : saved.model}`);
+    } catch (e) { ctx.msg(`저장 실패: ${e}`, true); }
+  };
+  (llmBox.querySelector("[data-act=test]") as HTMLButtonElement).onclick = async () => {
+    result.textContent = "물어보는 중… (저장된 모델로)";
+    type R = { ok: boolean; text?: string; first_s?: number; total_s?: number; model?: string; error?: string };
+    const r = await api<R>("POST", "/api/llm/test").catch((e) => ({ ok: false, error: String(e) }) as R);
+    result.innerHTML = r.ok
+      ? `<b>${esc(r.text)}</b><br>첫 글자 ${r.first_s}초 · 전체 ${r.total_s}초 · ${esc(r.model)}`
+      : `<span class="warn-text">실패: ${esc(r.error)}</span>`;
+  };
+  ctx.onState((st) => {
+    const c = st.config?.llm;
+    if (!c || JSON.stringify(c) === llmShown || llmBox.contains(document.activeElement)) return;
+    const first = !llmShown;
+    llmShown = JSON.stringify(c);
+    fillLlm(c);
+    if (first) void loadModels();
+  });
 
   // ---- 마이크 (이 컴퓨터) ----
   const mic = ctx.mic;

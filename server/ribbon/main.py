@@ -25,6 +25,7 @@ from .config import settings
 from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
+from .providers import llm as llm_mod
 from .providers.llm import make_llm
 from .providers.stt import make_stt
 from .providers.tts import configure_tts, make_tts
@@ -82,7 +83,10 @@ kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
 schedule = sched.ScheduleStore(settings.schedule_path())
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
-llm = make_llm(settings)
+# 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다
+store.seed_llm(settings.llm_provider, settings.llm_base_url, settings.llm_model)
+llm_settings = llm_mod.resolve(settings, **store.config.llm.model_dump())
+llm = make_llm(llm_settings)
 stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
@@ -109,8 +113,9 @@ async def _ticker() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("kids=%d stt=%s llm=%s:%s tts=%s wakeword=%s", len(kids.all()), settings.stt_provider,
-             settings.llm_provider, settings.llm_model, settings.tts_provider, settings.wakeword_provider)
+    log.info("kids=%d stt=%s llm=%s:%s (%s) tts=%s wakeword=%s", len(kids.all()), settings.stt_provider,
+             llm_settings.llm_provider, llm_settings.llm_model, llm_settings.llm_base_url,
+             settings.tts_provider, settings.wakeword_provider)
     log.info("blender=%s (배경 자동 렌더 %s)", renderer.blender or "없음", "켬" if settings.render_auto else "끔")
     if renderer.available and settings.render_auto:
         # 렌더가 없거나 배치가 바뀐 방은 켜질 때 한 번 렌더
@@ -195,6 +200,52 @@ async def api_config_ribbon(data: dict = Body(...)):
              rc.voice, rc.speed, rc.steps, rc.pitch, rc.name, settings.tts_provider)
     await dialogue.notify_config_changed()
     return JSONResponse(rc.model_dump())
+
+
+# ---------- 대화 모델 (관리자 '설정' 탭) ----------
+
+@app.get("/api/llm/models")
+async def api_llm_models(provider: str, base_url: str = ""):
+    """그 서버에 있는 대화 모델 목록. 서버가 안 켜져 있으면 ok=false 와 이유"""
+    if provider == "mock":
+        return JSONResponse({"ok": True, "models": []})
+    try:
+        return JSONResponse({"ok": True, "models": await llm_mod.list_models(provider, base_url)})
+    except Exception as e:  # noqa: BLE001 - 연결 실패는 화면에 이유를 보인다
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"})
+
+
+@app.put("/api/config/llm")
+async def api_config_llm(data: dict = Body(...)):
+    """대화 모델 바꾸기. 다음 답부터 새 모델을 쓴다 (하던 답은 옛 모델로 끝낸다)"""
+    global llm_settings
+    cfg = store.update_llm(data)
+    llm_settings = llm_mod.resolve(settings, **cfg.model_dump())
+    old, dialogue.llm = dialogue.llm, make_llm(llm_settings)
+    _spawn(llm_mod.close_later(old))
+    log.info("대화 모델 바꿈: %s:%s (%s)", llm_settings.llm_provider, llm_settings.llm_model, llm_settings.llm_base_url)
+    await dialogue.notify_config_changed()
+    return JSONResponse(cfg.model_dump())
+
+
+@app.post("/api/llm/test")
+async def api_llm_test():
+    """지금 대화 모델에 짧게 물어본다 (첫 글자까지 걸린 시간, 전체 시간, 답)"""
+    from .persona import ribbon as persona_mod
+    rc = store.config.ribbon
+    messages = persona_mod.build_messages(None, [], "안녕! 한 문장으로 인사해 줘.", name=rc.name, extra=rc.persona_extra)
+    t0 = asyncio.get_running_loop().time()
+    first, text = None, ""
+    try:
+        async for d in dialogue.llm.stream(messages):
+            if first is None and d.strip():
+                first = asyncio.get_running_loop().time() - t0
+            text += d
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"})
+    total = asyncio.get_running_loop().time() - t0
+    return JSONResponse({"ok": True, "text": text.strip(), "first_s": round(first or total, 2), "total_s": round(total, 2),
+                         "model": llm_settings.llm_model})
 
 
 # ---------- 시간표 (대시보드). 정규 수업은 아이마다(KidInfo.schedule), 끌어 옮긴 건 그날만 ----------

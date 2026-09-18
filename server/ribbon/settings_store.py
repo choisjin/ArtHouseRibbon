@@ -2,12 +2,13 @@
 
 .env(Settings) 는 서버 기동 설정(포트, 제공자 종류)이고,
 여기(RibbonConfig) 는 운영 중 바꾸는 값(목소리, 성격, 겉모습, 돌아다니기)이다.
+대화 모델(LLMConfig)도 여기서 바꾼다. 처음엔 .env 값으로 채우고, 그 뒤로는 여기 값이 .env 보다 앞선다.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
 
@@ -73,9 +74,17 @@ _PROFILE_TO_RIBBON = {"name": "name", "personality": "persona_extra", "voice": "
                       "steps": "steps", "pitch": "pitch", "look": "look"}
 
 
+class LLMConfig(BaseModel):
+    """대화 모델 (관리자 '설정' 탭). 바꾸면 서버를 다시 켜지 않아도 다음 답부터 쓴다"""
+    provider: str = "mlx"        # mlx (맥미니 mlx-serve) | ollama | openai (기타 OpenAI 호환) | mock (시험용)
+    base_url: str = ""           # 비우면 제공자 기본 주소 (providers/llm.py DEFAULT_URLS)
+    model: str = ""
+
+
 class AppConfig(BaseModel):
     ribbon: RibbonConfig = Field(default_factory=RibbonConfig)
     characters: Dict[str, CharacterProfile] = Field(default_factory=dict)
+    llm: Optional[LLMConfig] = None
 
 
 class ConfigStore:
@@ -139,6 +148,19 @@ class ConfigStore:
         self._sync_main()
         self.save()
         return self.config.ribbon
+
+    def seed_llm(self, provider: str, base_url: str, model: str) -> LLMConfig:
+        """관리자가 대화 모델을 고른 적이 없으면 .env 값으로 채운다 (파일에는 고를 때 적는다)"""
+        if self.config.llm is None:
+            self.config.llm = LLMConfig(provider=provider, base_url=base_url, model=model)
+        return self.config.llm
+
+    def update_llm(self, data: Dict) -> LLMConfig:
+        merged = (self.config.llm or LLMConfig()).model_dump()
+        merged.update({k: str(v).strip() for k, v in data.items() if v is not None and k in LLMConfig.model_fields})
+        self.config.llm = LLMConfig(**merged)
+        self.save()
+        return self.config.llm
 
     def update_character(self, cid: str, data: Dict, save: bool = True) -> CharacterProfile:
         merged = self.profile(cid).model_dump()

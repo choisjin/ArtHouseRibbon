@@ -29,6 +29,15 @@ env_value() {   # server/.env 에서 RIBBON_<이름> 값 읽기 (없으면 기�
 
 PORT="$(env_value PORT 8765)"
 LLM="$(env_value LLM_PROVIDER mock)"
+LLM_URL="$(env_value LLM_BASE_URL "")"
+# 관리자 설정 탭에서 고른 대화 모델이 있으면 그것이 앞선다 (data/settings.json 의 llm)
+llm_setting() {
+  python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("llm") or {}).get(sys.argv[2], ""))'     "$ROOT/data/settings.json" "$1" 2>/dev/null
+}
+if [ -n "$(llm_setting provider)" ]; then
+  LLM="$(llm_setting provider)"
+  LLM_URL="$(llm_setting base_url)"
+fi
 OPEN="${RIBBON_OPEN:-admin}"
 
 # ---- 1. 최신 코드 ----
@@ -82,11 +91,12 @@ if [ "$LLM" = "ollama" ]; then
     for _ in $(seq 1 20); do curl -s -m 1 http://localhost:11434/api/tags >/dev/null && break; sleep 1; done
     curl -s -m 2 http://localhost:11434/api/tags >/dev/null || echo "Ollama 가 아직 응답하지 않습니다. 답이 안 나오면 ollama serve 를 확인하세요."
   fi
-elif [ "$LLM" = "openai" ]; then
+elif [ "$LLM" = "mlx" ] || [ "$LLM" = "openai" ]; then
   # mlx-serve 등 OpenAI 호환 서버는 따로 켜 둔다. 여기서는 응답하는지만 본다
-  LLM_URL="$(env_value LLM_BASE_URL http://localhost:11434/v1)"
+  [ -z "$LLM_URL" ] && [ "$LLM" = "mlx" ] && LLM_URL="http://localhost:11234/v1"
+  [ -z "$LLM_URL" ] && LLM_URL="http://localhost:8080/v1"
   if curl -s -m 3 "$LLM_URL/models" >/dev/null; then
-    echo "LLM 서버 응답 확인: $LLM_URL ($(env_value LLM_MODEL ?))"
+    echo "LLM 서버 응답 확인: $LLM ($LLM_URL)"
   else
     echo "주의: LLM 서버($LLM_URL)가 응답하지 않습니다. mlx-serve 가 켜져 있는지 확인하세요."
   fi

@@ -68,9 +68,17 @@ export interface CharacterProfile {
   look: import("./world/doll").RibbonLook;
 }
 
+/** 대화 모델 (관리자 '설정' 탭, 서버 settings_store.LLMConfig) */
+export interface LLMConfig {
+  provider: "mlx" | "ollama" | "openai" | "mock";
+  base_url: string;     // "" = 제공자 기본 주소
+  model: string;
+}
+
 export interface AppConfig {
   ribbon: RibbonConfig;
   characters?: Record<string, CharacterProfile>;
+  llm?: LLMConfig | null;
   /** TV 에 보여줄 방과 그 배치 (서버 world_store.tv_view) */
   world?: import("./world/types").WorldView;
 }

@@ -14,15 +14,16 @@ class Settings(BaseSettings):
     port: int = 8765
 
     stt_provider: str = "mock"          # mock | faster_whisper | mlx_whisper
-    llm_provider: str = "mock"          # mock | ollama | openai(OpenAI 호환: mlx-lm, vLLM 등)
+    # 대화 모델은 관리자 '설정' 탭에서 고른다 (data/settings.json). 여기 값은 처음 한 번 그 칸을 채우는 데만 쓴다
+    llm_provider: str = "mock"          # mlx (맥미니 mlx-serve) | ollama | openai(기타 OpenAI 호환) | mock
     tts_provider: str = "browser"       # browser | mac_say | supertonic
     tts_voice: str = "F1"               # supertonic 내장 음성: M1~M5, F1~F5
     tts_speed: float = 1.05             # supertonic 0.7 ~ 2.0
     tts_steps: int = 8                  # supertonic 품질 5(낮음) ~ 12(높음)
     wakeword_provider: str = "mock"     # mock | openwakeword
 
-    llm_base_url: str = "http://localhost:11434/v1"
-    llm_model: str = "gemma3:27b"       # 생각(thinking) 모드가 없어 아이 대화에 적합
+    llm_base_url: str = ""              # 비우면 제공자 기본 주소 (mlx 11234, ollama 11434)
+    llm_model: str = "ddalcu/Qwen3.6-35B-A3B-MLX-Serve-4bit"
     llm_api_key: str = "ollama"
     llm_max_tokens: int = 400
     llm_no_think: bool = True           # qwen3 계열의 생각(thinking) 모드 끄기
