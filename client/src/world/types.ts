@@ -103,5 +103,16 @@ export const toThree = (x: number, y: number, z = 0) => new THREE.Vector3(x, z, 
 export const toFloor = (p: THREE.Vector3) => ({ x: p.x, y: -p.z });
 export const rad = THREE.MathUtils.degToRad;
 
+/**
+ * 앉을 수 있는 의자: 좌판 높이(m)와 좌판 가운데에서 앞으로 얼마나 나와 앉는지(m).
+ * 값은 Character_Creator room_map.py 의 의자 만들기 함수(seat_z)에서 가져왔다.
+ * 의자는 back=(0,1) 이라 의자 좌표에서 앞은 -Y 쪽이다.
+ */
+export const SEATS: Record<string, { height: number; forward: number }> = {
+  junior_chair_red: { height: 0.52, forward: 0.05 },
+  junior_chair_black: { height: 0.52, forward: 0.05 },
+  windsor_chair: { height: 0.46, forward: 0.07 },
+};
+
 /** 바닥에 깔려 위를 지나가도 되는 것 */
 export const FLOOR_LAYER = new Set(["rug"]);

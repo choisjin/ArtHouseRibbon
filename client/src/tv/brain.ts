@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { RibbonState } from "../protocol";
 import type { NavGrid, P2 } from "../world/nav";
 import type { ArtSpot } from "../world/room";
-import { toFloor } from "../world/types";
+import { rad, SEATS, toFloor, type LayoutItem } from "../world/types";
 import type { Motion, Ribbon3D } from "./ribbon3d";
 
 export interface BrainOptions {
@@ -14,7 +14,8 @@ type Mode =
   | { kind: "idle"; until: number }          // 서서 쉬기
   | { kind: "walk" }                         // 돌아다니는 중 (목적지로)
   | { kind: "called" }                       // 불려서 대화 중 (또는 오는 중)
-  | { kind: "linger"; until: number };       // 대화 끝나고 잠깐 머무르기
+  | { kind: "linger"; until: number }        // 대화 끝나고 잠깐 머무르기
+  | { kind: "sitting"; until: number };      // 의자에 앉아 쉬는 중
 
 /** 가만히 있을 때 가끔 하는 동작 (doll_actions.py) */
 const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
@@ -35,6 +36,10 @@ export class RibbonBrain {
   nav: NavGrid | null = null;
   home: P2 = { x: 0, y: 0 };
   arts: ArtSpot[] = [];
+  /** 앉을 수 있는 의자 (맵 배치에서 뽑는다) */
+  chairs: LayoutItem[] = [];
+  /** 1m 가 장면 단위로 몇인지 */
+  unitPerM = 2.2222;
   opts: BrainOptions = { wander: true, returnAfterS: 8 };
   /** 카메라(=TV 앞 아이들) 쪽. 매 프레임 index.ts 가 넣어 준다 */
   viewer = new THREE.Vector3();
@@ -46,6 +51,7 @@ export class RibbonBrain {
   /** 길찾기 격자가 바뀌었을 때. toHome 이면 "부르면 오는 자리"에, 아니면 막힌 곳에 있을 때만 가까운 빈 곳으로 */
   reset(toHome: boolean): void {
     if (!this.nav) return;
+    this.body.standUp();
     const here = toHome ? this.home : this.body.pos;
     const p = this.nav.nearestFree(here) ?? here;
     if (toHome || !this.nav.isFree(here)) this.body.place(p, 0);
@@ -55,6 +61,32 @@ export class RibbonBrain {
   }
 
   private get called(): boolean { return this.state !== "idle"; }
+
+  /** 의자에 앉는 자리 (의자는 back=(0,1) 이라 앞이 -Y) */
+  private seatOf(chair: LayoutItem) {
+    const s = SEATS[chair.type];
+    const a = rad(chair.rot);
+    const fx = Math.sin(a), fy = -Math.cos(a);        // 의자가 바라보는 방향
+    return {
+      x: chair.x + fx * s.forward * this.unitPerM,
+      y: chair.y + fy * s.forward * this.unitPerM,
+      height: s.height * this.unitPerM,
+      yaw: Math.atan2(fx, -fy),
+    };
+  }
+
+  /** 의자 곁에 설 자리. 앞은 책상에 막혀 있을 때가 많아 옆·뒤도 본다 */
+  private standSpots(chair: LayoutItem): P2[] {
+    const a = rad(chair.rot);
+    const fx = Math.sin(a), fy = -Math.cos(a);
+    const d = 1.4;
+    return [
+      { x: chair.x + fx * d, y: chair.y + fy * d },      // 앞
+      { x: chair.x - fy * d, y: chair.y + fx * d },      // 옆
+      { x: chair.x + fy * d, y: chair.y - fx * d },      // 반대 옆
+      { x: chair.x - fx * d, y: chair.y - fy * d },      // 뒤
+    ];
+  }
 
   setState(s: RibbonState): void {
     const was = this.state;
@@ -66,6 +98,7 @@ export class RibbonBrain {
 
   private onCalled(): void {
     this.mode = { kind: "called" };
+    this.body.standUp();
     this.body.stop();
     this.faceViewer();
     const greet = this.clock - this.lastGreet > 25;
@@ -113,6 +146,9 @@ export class RibbonBrain {
         break;
       case "linger":
         if (now > m.until) this.mode = { kind: "idle", until: now + 0.5 };
+        break;
+      case "sitting":
+        if (now > m.until) { this.body.standUp(); this.mode = { kind: "idle", until: now + 1.2 }; }
         break;
       case "walk":
         if (!this.body.moving) this.mode = { kind: "idle", until: now + 2 + Math.random() * 5 };
@@ -173,6 +209,7 @@ export class RibbonBrain {
       return;
     }
     if (r < 0.4 && this.arts.length && this.visitArt()) return;
+    if (r < 0.6 && this.body.canSit && this.sitOnChair()) return;
     const me = this.body.pos;
     const dest = nav.randomFree((p) => Math.hypot(p.x - me.x, p.y - me.y) > 2.5);
     const path = dest && nav.findPath(me, dest);
@@ -181,6 +218,30 @@ export class RibbonBrain {
       if (Math.random() < 0.35) this.faceViewer();
     });
     this.mode = { kind: "walk" };
+  }
+
+  /** 의자에 가서 앉기 */
+  private sitOnChair(): boolean {
+    const nav = this.nav;
+    if (!nav || !this.chairs.length) return false;
+    for (const chair of [...this.chairs].sort(() => Math.random() - 0.5).slice(0, 4)) {
+      const seat = this.seatOf(chair);
+      const stand = this.standSpots(chair).find((p) => nav.isFree(p));
+      if (!stand) continue;
+      const path = nav.findPath(this.body.pos, stand);
+      if (!path) continue;
+      this.body.walkPath(path, () => {
+        this.body.facePoint(seat);          // 의자 쪽을 한 번 보고
+        setTimeout(() => {
+          if (this.mode.kind !== "walk" && this.mode.kind !== "idle") return;
+          this.body.sitOn(seat);
+          this.mode = { kind: "sitting", until: this.clock + 12 + Math.random() * 18 };
+        }, 700);
+      });
+      this.mode = { kind: "walk" };
+      return true;
+    }
+    return false;
   }
 
   /** 걸린 그림 앞에 가서 구경하기 */

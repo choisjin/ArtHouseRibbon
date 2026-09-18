@@ -147,6 +147,19 @@ def look_up(pbs, t):
     set_pose(pbs["spine"], axis_rot(X, math.radians(-3) * k))
 
 
+def sit(pbs, t):
+    """의자에 앉아 있기 (반복). 몸통 위치는 코드가 좌판 높이에 맞추고, 여기서는 다리·팔 자세와 숨쉬기만"""
+    b = math.sin(2 * math.pi * t)                     # 끝과 처음이 이어지도록 한 바퀴
+    for side, sign in (("L", 1), ("R", -1)):
+        # 다리는 좌판 앞으로 살짝 내밀어 대롱대롱
+        set_pose(pbs[f"leg.{side}"], axis_rot(X, math.radians(-14 + 4 * b * sign)))
+        # 팔은 몸 옆에서 조금 뒤로 (좌판을 짚은 느낌)
+        set_pose(pbs[f"arm.{side}"], axis_rot(X, math.radians(16)) @ axis_rot(Y, math.radians(6 * sign)))
+    set_pose(pbs["spine"], axis_rot(X, math.radians(4 + 1.5 * b)))
+    set_pose(pbs["head"], axis_rot(X, math.radians(-3 - 1.5 * b)))
+    set_pose(pbs["pelvis"], None, Vector((0, 0, 0.01 * b)))
+
+
 ACTIONS = [
     ("Nod", 30, nod),
     ("Shake", 30, shake),
@@ -157,6 +170,7 @@ ACTIONS = [
     ("Clap", 48, clap),
     ("Jump", 48, jump),
     ("LookUp", 60, look_up),
+    ("Sit", 96, sit),          # 반복해서 트는 동작 (TV 가 loop 로 재생)
 ]
 
 

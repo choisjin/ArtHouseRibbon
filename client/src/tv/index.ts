@@ -6,6 +6,7 @@ import { RibbonBrain } from "./brain";
 import { Hud } from "./hud";
 import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
+import { SEATS } from "../world/types";
 
 export interface TvOptions { debug: boolean; demo: boolean; mic: boolean }
 
@@ -43,6 +44,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     applySpeed();
     brain.nav = stage.buildNav(ribbon.radius, ribbon.height);
     brain.arts = stage.room.artSpots;
+    brain.chairs = (stage.room.layout?.items ?? []).filter((e) => e.type in SEATS);
+    brain.unitPerM = stage.room.U;
     const spot = stage.room.layout?.doll_spot;
     if (spot) brain.home = { x: spot.x, y: spot.y };
     brain.reset(toHome || !placed);

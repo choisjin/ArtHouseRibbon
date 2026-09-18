@@ -14,6 +14,9 @@ const GREET_TRACKS = /^armR\./;
 /** 한 번씩 재생하는 동작 (doll_actions.py). Greet 은 오른팔만 남겨 Wave 로 넣는다 */
 export type Motion = "Wave" | "Nod" | "Shake" | "Tilt" | "Sway" | "Stretch" | "Point" | "Clap" | "Jump" | "LookUp";
 
+/** 앉을 자리: 바닥 좌표와 좌판 높이(장면 단위), 앉아서 바라보는 방향 */
+export interface Seat { x: number; y: number; height: number; yaw: number }
+
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const approach = (cur: number, target: number, k: number) => cur + (target - cur) * k;
 
@@ -51,6 +54,11 @@ export class Ribbon3D {
   private tilt = 0;
   private nod = 0;
   private mouth = 0;
+  private sitAction: THREE.AnimationAction | null = null;
+  private seat: Seat | null = null;
+  private lift = 0;               // 바닥에서 띄운 높이 (앉으면 좌판 높이)
+  private liftTarget = 0;
+  private shadow: THREE.Mesh;
   private motionBlend = 1;
   private t = 0;
   state: RibbonState = "idle";
@@ -64,6 +72,7 @@ export class Ribbon3D {
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = 0.008;
     shadow.name = "shadow";
+    this.shadow = shadow;
     this.root.add(shadow);
     this.loaded = this.load();
   }
@@ -111,7 +120,12 @@ export class Ribbon3D {
       this.addMotion(new THREE.AnimationClip("Wave", greet.duration, greet.tracks.filter((t) => GREET_TRACKS.test(t.name))));
     }
     for (const c of animations) {
-      if (c.name !== "Walk" && c.name !== "Greet") this.addMotion(c);
+      if (c.name !== "Walk" && c.name !== "Greet" && c.name !== "Sit") this.addMotion(c);
+    }
+    const sitClip = clip("Sit");
+    if (sitClip) {
+      this.sitAction = this.mixer.clipAction(sitClip);    // 앉아 있는 동안 계속 도는 동작
+      this.sitAction.setLoop(THREE.LoopRepeat, Infinity);
     }
     this.mixer.addEventListener("finished", (e) => {
       const name = [...this.motions].find(([, a]) => a === e.action)?.[0];
@@ -187,12 +201,41 @@ export class Ribbon3D {
 
   greet(onDone?: () => void): void { this.play("Wave", onDone); }
 
+  /** 앉을 수 있는가 (인형 파일에 앉은 자세가 있는가) */
+  get canSit(): boolean { return this.sitAction !== null; }
+  get sitting(): boolean { return this.seat !== null; }
+
+  /** 의자에 앉기. 몸이 좌판 높이로 올라가고 그림자는 바닥에 남는다 */
+  sitOn(seat: Seat): void {
+    if (!this.sitAction) return;
+    this.stop();
+    this.seat = seat;
+    this.liftTarget = seat.height;
+    this.targetYaw = seat.yaw;
+    this.root.position.copy(toThree(seat.x, seat.y, 0));
+    this.sitAction.reset().setEffectiveWeight(1).fadeIn(0.45).play();
+  }
+
+  /** 일어서기 (바닥으로 내려옴) */
+  standUp(): void {
+    if (!this.seat) return;
+    this.seat = null;
+    this.liftTarget = 0;
+    this.sitAction?.fadeOut(0.4);
+  }
+
   setState(s: RibbonState): void { this.state = s; }
   setMouthLevel(v: number): void { this.mouth = v; }
 
   update(dt: number): void {
     this.t += dt;
     const moved = this.stepMove(dt);
+    // 앉고 일어설 때 몸만 오르내리고 그림자는 바닥에 둔다
+    this.lift = approach(this.lift, this.liftTarget, 1 - Math.exp(-dt * 6));
+    this.root.position.y = this.lift;
+    this.shadow.position.y = 0.008 - this.lift;
+    this.shadow.scale.setScalar(this.radius * (1.1 + this.lift * 0.5));
+    (this.shadow.material as THREE.Material).opacity = 0.2 * Math.max(0.35, 1 - this.lift);
 
     // 몸 방향
     if (this.targetYaw !== null && !this.path.length) {
@@ -218,7 +261,7 @@ export class Ribbon3D {
 
   /** 경로를 따라 이동. 이번 프레임에 간 거리 */
   private stepMove(dt: number): number {
-    if (!this.path.length || this.playing) return 0;
+    if (!this.path.length || this.playing || this.seat) return 0;
     const target = this.path[0];
     const me = this.pos;
     const dx = target.x - me.x, dy = target.y - me.y;
