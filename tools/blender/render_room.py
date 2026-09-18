@@ -76,6 +76,7 @@ world.node_tree.nodes["Background"].inputs["Color"].default_value = room_map.ROO
 use_gpu(scene)
 scene.cycles.use_denoising = True
 scene.view_settings.view_transform = "AgX"
+scene.view_settings.exposure = room_map.ROOM_EXPOSURE
 scene.render.film_transparent = False
 
 # 1) TV 배경

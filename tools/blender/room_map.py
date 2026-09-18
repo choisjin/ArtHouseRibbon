@@ -51,7 +51,8 @@ PIL_W, PIER_W = 1.8, 0.45      # 가운데 기둥 폭(처음 0.9의 2배) / 양 
 ROOM_W = 12.0 * 1.3             # 가로 15.6 (처음 12의 1.3배)
 ROOM_H = ROOM_W * 9 / 16        # 높이 8.775 (약 3.9m): 입구가 16:9 → 3840×2160 화면에 딱 맞음
 TV_RES = (3840, 2160)
-ROOM_WORLD = (0.82, 0.9, 0.97, 1.0)   # 창으로 보이는 옅은 하늘빛 배경색
+ROOM_WORLD = (0.62, 0.70, 0.80, 1.0)  # 창으로 보이는 옅은 하늘빛 배경색 (방 전체를 밝히는 환경광이기도 하다)
+ROOM_EXPOSURE = -0.9            # 렌더 노출(EV). 형광등처럼 쨍하지 않게 한 단계 낮춰 찍는다
 SX = ROOM_W / 12.0             # 바닥 소품 위치를 가로 비율에 맞춰 늘리는 계수
 ROOM_D = LCAB_LEN + RCAB_LEN + PIL_W + 2 * PIER_W  # 약 16.5 (앞 벽기둥 + 좌측장 + 기둥 + 우측장 + 뒤 벽기둥)
 FRONT_Y = -ROOM_D / 2          # 열린 앞면
@@ -309,7 +310,7 @@ def make_materials():
         "yellow": mat_plain("ToyYellow", srgb(255, 210, 90)),
         "green": mat_plain("Leaf", srgb(110, 190, 120)),
         "pot": mat_plain("Pot", srgb(230, 150, 110), rough=0.6),
-        "lamp": mat_plain("Lamp", srgb(255, 244, 210), emit=4.0),
+        "panel": mat_plain("PanelLight", srgb(255, 250, 242), rough=0.35, sheen=0.0, emit=1.5),
         "purple": mat_plain("ToyPurple", srgb(190, 160, 235)),
         "pillar_r": mat_plain("PillarRed", srgb(222, 78, 80), rough=0.7, sheen=0.3),
         "pillar_p": mat_plain("PillarPink", srgb(242, 150, 176), rough=0.7, sheen=0.3),
@@ -350,7 +351,7 @@ def make_materials():
         "gfloor": mat_planks("GalleryFloor", srgb(230, 220, 204), srgb(218, 206, 188)),
         "gskirt": mat_plain("GallerySkirt", srgb(226, 224, 219), rough=0.6, sheen=0.0),
         "track": mat_plain("TrackBlack", srgb(30, 30, 32), rough=0.4, sheen=0.0),
-        "skylight": mat_plain("Skylight", srgb(255, 253, 248), emit=1.2),
+        "skylight": mat_plain("Skylight", srgb(255, 253, 248), emit=0.5),
         "bench": mat_plain("BenchFabric", srgb(120, 124, 130), rough=0.95, sheen=0.6),
         "plinth": mat_plain("PlinthWhite", srgb(250, 250, 248), rough=0.5, sheen=0.0),
         "art_canvas": mat_plain("ArtCanvasEdge", srgb(244, 241, 234), rough=0.8, sheen=0.2),
@@ -411,8 +412,11 @@ def build_classroom_shell(B, M):
     build_right_glass_wall(B, M)
 
 
-    # 천장 조명
-    B.ball("CeilingLamp", (0, 0.3, H - 0.05), (0.6, 0.6, 0.25), M["lamp"])
+    # 천장 매립 조명: 천장에 묻힌 LED 평판 (1200x300). 밝기는 약하고, 방은 왼쪽 창빛이 주로 밝힌다
+    pw, pd, pt = mm(1200), mm(300), mm(25)
+    for i, gx in enumerate((-W * 0.26, 0.0, W * 0.26)):
+        for j, gy in enumerate((-D * 0.34, -D * 0.115, D * 0.115, D * 0.34)):
+            B.box(f"CeilingPanel_{i}{j}", (gx, gy + 0.3, H - pt / 2), (pw, pd, pt), M["panel"], bevel=0.0)
 
 
 def build_gallery_shell(B, M):
@@ -1725,19 +1729,20 @@ def room_info(room="classroom"):
 def room_lights(link, room=None):
     room = room or CURRENT_ROOM
     out = []
-    specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 1900 * SX, (8 * SX, ROOM_D * 0.7), (0, 0, 0)),
-             ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 420 * SX, (8 * SX, 3), (math.radians(80), 0, 0)),
-             ("SunThroughGlass", (-ROOM_W / 2 - 3.0, 0.0, 5.0), 2200, (4.5, ROOM_D),
+    # 천장(매립등)은 은은하게만, 왼쪽 창으로 들어오는 자연광이 방의 주광
+    specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 280 * SX, (8 * SX, ROOM_D * 0.7), (0, 0, 0)),
+             ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 90 * SX, (8 * SX, 3), (math.radians(80), 0, 0)),
+             ("SunThroughGlass", (-ROOM_W / 2 - 3.0, 0.0, 5.0), 2400, (4.5, ROOM_D),
               (0, math.radians(-65), 0)),
-             ("SkyThroughRight", (ROOM_W / 2 + 3.0, 0.0, 5.0), 1200, (4.5, ROOM_D),
+             ("SkyThroughRight", (ROOM_W / 2 + 3.0, 0.0, 5.0), 240, (4.5, ROOM_D),
               (0, math.radians(65), 0)))
     if room == "gallery":
         a = math.radians(50)
-        specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 1200 * SX, (8 * SX, ROOM_D * 0.7), (0, 0, 0)),
-                 ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 420 * SX, (8 * SX, 3), (math.radians(80), 0, 0)),
-                 ("WashLeft", (-ROOM_W / 2 + 2.5, 0.0, ROOM_H - 0.5), 450, (0.6, ROOM_D * 0.8), (0, a, 0)),
-                 ("WashRight", (ROOM_W / 2 - 2.5, 0.0, ROOM_H - 0.5), 450, (0.6, ROOM_D * 0.8), (0, -a, 0)),
-                 ("WashBack", (0.0, BACK_Y - 2.5, ROOM_H - 0.5), 450, (ROOM_W * 0.8, 0.6), (a, 0, 0)))
+        specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 300 * SX, (8 * SX, ROOM_D * 0.7), (0, 0, 0)),
+                 ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 90 * SX, (8 * SX, 3), (math.radians(80), 0, 0)),
+                 ("WashLeft", (-ROOM_W / 2 + 2.5, 0.0, ROOM_H - 0.5), 210, (0.6, ROOM_D * 0.8), (0, a, 0)),
+                 ("WashRight", (ROOM_W / 2 - 2.5, 0.0, ROOM_H - 0.5), 210, (0.6, ROOM_D * 0.8), (0, -a, 0)),
+                 ("WashBack", (0.0, BACK_Y - 2.5, ROOM_H - 0.5), 210, (ROOM_W * 0.8, 0.6), (a, 0, 0)))
     for name, loc, energy, (sx, sy), rot in specs:
         ld = bpy.data.lights.new(name, "AREA")
         ld.shape = "RECTANGLE"
