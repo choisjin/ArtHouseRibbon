@@ -12,7 +12,7 @@
 - 책상: 235×100×74cm 트레슬 책상 (원목 상판 + 검정 다리), 긴 쪽이 줄무늬 벽과 수직, 가까운 끝이 벽에서 1.5m
   의자: 긴 쪽마다 4개 = 어린이 높은 의자(빨강 2, 검정 2) 양 끝 + 검정 윈저 의자 4개 가운데
 - DOLL_SPOT: 방 장면에서 인형이 서고 걷는 자리 (doll.py 가 사용)
-- 왼쪽 벽 (참고 left_wall.jpg): 수납장 위로 큰 유리창 + 흰 세로 창살, 가운데 빨강/초록 줄무늬 기둥,
+- 왼쪽 벽 (참고 left_wall.jpg): 수납장 위로 큰 유리창 + 흰 세로 창살, 가운데 빨강/분홍 줄무늬 기둥,
   앞쪽 끝과 정면벽 쪽 모서리에 흰 벽기둥 (창밖 배경 없음, 창으로는 옅은 하늘빛 배경색만 보임)
 - 수납장은 도면 치수 그대로 (1m = 2.22):
   벽을 바라보고 왼쪽(방 앞쪽) = 좌측장.pdf: 벽기둥 쪽부터 위가 열린 수납칸 722mm / 손가락홈 서류 트레이 573mm /
@@ -312,7 +312,8 @@ def make_materials():
         "lamp": mat_plain("Lamp", srgb(255, 244, 210), emit=4.0),
         "purple": mat_plain("ToyPurple", srgb(190, 160, 235)),
         "pillar_r": mat_plain("PillarRed", srgb(222, 78, 80), rough=0.7, sheen=0.3),
-        "pillar_g": mat_plain("PillarGreen", srgb(74, 160, 106), rough=0.7, sheen=0.3),
+        "pillar_p": mat_plain("PillarPink", srgb(242, 150, 176), rough=0.7, sheen=0.3),
+        "tree_g": mat_plain("TreeGreen", srgb(74, 160, 106), rough=0.7, sheen=0.3),
         "glass": mat_glass("WindowGlass"),
         "cab": mat_plain("CabinetWood", srgb(214, 140, 64), rough=0.45, sheen=0.1),
         "cab_door": mat_plain("CabinetDoor", srgb(226, 176, 122), rough=0.5, sheen=0.1),
@@ -449,7 +450,7 @@ def build_gallery_shell(B, M):
 PIL_D = 1.3                  # 가운데 기둥이 방 안쪽으로 튀어나온 깊이 (수납장보다 깊음)
 PIER_D = 0.55                # 앞쪽 끝 흰 벽기둥 깊이 (TV 시점에서 가리지 않게 얕게)
 TRANSOM = 0.22               # 왼쪽 창 가로 프레임 위치 (윗단에서 창 높이 비율)
-STRIPES = 12                 # 기둥 정면 줄무늬 수 (줄 폭은 그대로, 기둥이 2배라 12줄)
+STRIPES = 11                 # 기둥 정면 줄무늬 수 (홀수라 빨강으로 시작해 빨강으로 끝난다)
 CAB_H = mm(812)              # 수납장 높이 (도면)
 CAB_D = mm(397)              # 수납장 깊이 (도면)
 BOARD = mm(18)               # 판 두께
@@ -608,20 +609,20 @@ def build_left_wall(B, M):
     B.box("LPierBack", (xw + PIER_D / 2 - T / 2, BACK_Y - PIER_W / 2 + T / 2, H / 2),
           (PIER_D + T, PIER_W + T, H), M["trim"], 0.03)
 
-    # 가운데 기둥: 빨강/초록 세로 줄무늬 (정면 + 옆면)
+    # 가운데 기둥: 빨강/분홍 세로 줄무늬 (정면 + 옆면). 양 끝은 빨강
     sw = PIL_W / STRIPES
     xf = xw + PIL_D
     for i in range(STRIPES):
         y = pf + sw * (i + 0.5)
         B.box(f"Pillar_{i}", ((xw - T + xf) / 2, y, H / 2), (xf - xw + T, sw, H),
-              M["pillar_r" if i % 2 == 0 else "pillar_g"], bevel=0.0)
+              M["pillar_r" if i % 2 == 0 else "pillar_p"], bevel=0.0)
     n_side = max(2, round(PIL_D / sw))
     sd = PIL_D / n_side
     for s, yy in ((-1, pf - 0.006), (1, pb + 0.006)):
         for i in range(n_side):
             x = xw + sd * (i + 0.5)
-            first = "pillar_r" if s < 0 else ("pillar_r" if STRIPES % 2 else "pillar_g")
-            other = "pillar_g" if first == "pillar_r" else "pillar_r"
+            first = "pillar_r" if s < 0 else ("pillar_r" if STRIPES % 2 else "pillar_p")
+            other = "pillar_p" if first == "pillar_r" else "pillar_r"
             B.box(f"PillarSide_{'F' if s < 0 else 'B'}_{i}", (x, yy, H / 2),
                   (sd, 0.012, H), M[other if i % 2 == 0 else first], bevel=0.0)
 
@@ -1473,7 +1474,7 @@ def _it_easel_pro(B, M):
     B.ball("ProPaintHill", (mm(-40), mm(fy - 1), mm(1100)), (mm(240), mm(1.5), mm(90)), M["purple"])
     B.ball("ProPaintSun", (mm(160), mm(fy - 2), mm(1400)), (mm(50), mm(1.5), mm(50)), M["yellow"])
     bx("ProPaintTrunk", (-190, fy - 3, 1010), (18, 2, 130), M["cab_in"], bevel=0.0)
-    B.ball("ProPaintTree", (mm(-190), mm(fy - 4), mm(1100)), (mm(60), mm(1.5), mm(75)), M["pillar_g"])
+    B.ball("ProPaintTree", (mm(-190), mm(fy - 4), mm(1100)), (mm(60), mm(1.5), mm(75)), M["tree_g"])
     bx("ProPaintHouse", (120, fy - 3, 940), (150, 2, 110), M["red"], bevel=0.0)
     B.prism("ProPaintRoof", [(mm(35), mm(0)), (mm(205), mm(0)), (mm(120), mm(70))], mm(fy - 5), mm(2),
             mm(995), M["cab_in"], bevel=0.0)
