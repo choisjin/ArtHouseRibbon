@@ -6,6 +6,12 @@
   - 저장할 때마다 이전 파일은 data/world/history/ 에 보관한다.
   - TV 에 보여줄 방은 data/world/world.json 의 active.
 그림 파일은 data/artworks/ (index.json 이 목록), 배치의 image 는 "artworks/<파일>" 로 적는다.
+
+아이별 전시실
+  - 아이마다 방 하나: "kid-<아이 id>". 가구는 gallery 방 것을 그대로 쓰고, 걸린 그림만 아이마다 다르다.
+  - 그림은 data/world/kid-<아이 id>.json 에 arts 만 저장한다.
+  - 배경 렌더는 아이마다 만들지 않는다. 그림을 뺀 전시실을 "kidbase" 로 한 장만 렌더해 같이 쓰고,
+    그림은 TV 가 three.js 로 그 위에 그린다 (arts_live). 그래서 그림을 올리면 렌더를 기다리지 않는다.
 """
 from __future__ import annotations
 
@@ -23,6 +29,9 @@ from typing import Any, Callable, Dict, List, Optional
 log = logging.getLogger("ribbon.world")
 
 ART_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+KID_ROOM = "kid-"          # 아이 전시실 방 id 접두어 (kid-<아이 id>)
+KID_BASE = "kidbase"       # 아이 전시실이 같이 쓰는 배경 (그림을 뺀 전시실)
+KID_SHELL = "gallery"      # 아이 전시실의 방 모양·가구는 전시장 것을 쓴다
 MAX_UPLOAD = 60 * 1024 * 1024
 HISTORY_KEEP = 50
 
@@ -46,6 +55,8 @@ class WorldStore:
         self.catalog_path = catalog_path
         self.dir = data_dir
         self.art_dir = art_dir
+        # 아이 명단을 보는 함수 (main.py 가 넣어 준다). 아이 전시실이 있는 방인지 확인할 때 쓴다
+        self.kid_ids: Callable[[], List[str]] = lambda: []
         self._lock = threading.Lock()
         self._catalog: Optional[Dict[str, Any]] = None
         self._catalog_mtime = 0.0
@@ -66,20 +77,57 @@ class WorldStore:
         return self._catalog
 
     def rooms(self) -> List[str]:
+        """편집기에서 고를 수 있는 방 (아이 전시실은 뺀다)"""
         return list((self.catalog.get("rooms") or {}).keys())
 
+    # ---------- 아이 전시실 ----------
+    @staticmethod
+    def kid_room(kid_id: str) -> str:
+        return f"{KID_ROOM}{kid_id}"
+
+    @staticmethod
+    def kid_of(room: str) -> Optional[str]:
+        return room[len(KID_ROOM):] if room.startswith(KID_ROOM) else None
+
+    def shell_room(self, room: str) -> str:
+        """그 방의 모양·조명을 어디서 가져오는가 (블렌더 렌더가 쓴다)"""
+        if room == KID_BASE or self.kid_of(room):
+            return KID_SHELL
+        return room
+
+    def forget_kid_room(self, room: str) -> None:
+        """아이를 지울 때 그 아이 전시실 파일도 지운다 (그림 파일 자체는 artworks 에 남는다)"""
+        path = self.layout_path(room)
+        if path.exists():
+            path.unlink()
+        if (_read_json(self.dir / "world.json", {}) or {}).get("active") == room:
+            _write_json(self.dir / "world.json", {"active": self.rooms()[0] if self.rooms() else "classroom"})
+
+    def render_rooms(self) -> List[str]:
+        """배경을 렌더해 두어야 하는 방 (아이 전시실은 kidbase 한 장을 같이 쓴다)"""
+        return self.rooms() + [KID_BASE]
+
     def check_room(self, room: str) -> str:
+        kid = self.kid_of(room)
+        if kid is not None:
+            if kid not in self.kid_ids():
+                raise ValueError(f"없는 아이입니다: {kid}")
+            return room
+        if room == KID_BASE:
+            return room
         if room not in self.rooms():
             raise ValueError(f"알 수 없는 방: {room}")
         return room
 
     @property
     def active(self) -> str:
+        """TV 에 보여 줄 방. 아이 전시실도 될 수 있다 (그 아이가 지워졌으면 첫 방으로)"""
         rooms = self.rooms()
         room = (_read_json(self.dir / "world.json", {}) or {}).get("active")
-        if room in rooms:
-            return room
-        return rooms[0] if rooms else "classroom"
+        try:
+            return self.check_room(str(room))
+        except ValueError:
+            return rooms[0] if rooms else "classroom"
 
     def set_active(self, room: str) -> str:
         self.check_room(room)
@@ -95,6 +143,17 @@ class WorldStore:
         return (cat.get("default_layouts") or {}).get(room) or cat.get("default_layout")
 
     def layout(self, room: str) -> Optional[Dict[str, Any]]:
+        if room == KID_BASE:                    # 그림을 뺀 전시실 (아이 전시실 배경용)
+            base = self.layout(KID_SHELL)
+            return {**base, "room": KID_BASE, "shell": KID_SHELL, "arts": []} if base else None
+        kid = self.kid_of(room)
+        if kid is not None:                     # 가구는 전시실 것, 그림은 그 아이 것
+            base = self.layout(KID_SHELL)
+            if base is None:
+                return None
+            mine = _read_json(self.layout_path(room), {}) or {}
+            # shell: 방 모양·벽(그림 거는 면)을 어디서 가져오는지 TV 에 알려 준다
+            return {**base, "room": room, "shell": KID_SHELL, "kid_id": kid, "arts": mine.get("arts", [])}
         return _read_json(self.layout_path(room)) or self.default_layout(room)
 
     def has_layout(self, room: str) -> bool:
@@ -137,6 +196,14 @@ class WorldStore:
 
     def save_layout(self, room: str, data: Any) -> Dict[str, Any]:
         self.check_room(room)
+        kid = self.kid_of(room)
+        if kid is not None:                     # 아이 전시실은 걸린 그림만 저장한다
+            data = self.validate({**(self.layout(KID_SHELL) or {"items": []}), "arts": data.get("arts", [])})
+            saved = {"room": room, "kid_id": kid, "arts": data["arts"]}
+            with self._lock:
+                _write_json(self.layout_path(room), saved)
+            log.info("kid gallery saved: %s arts=%d", room, len(saved["arts"]))
+            return self.layout(room) or saved
         data = self.validate(data)
         data["room"] = room
         path = self.layout_path(room)
@@ -162,8 +229,11 @@ class WorldStore:
     def tv_view(self) -> Dict[str, Any]:
         """state 브로드캐스트에 실리는 값: TV 가 그릴 방과 배치, 배경 렌더(있으면)"""
         room = self.active
-        return {"room": room, "layout": self.layout(room), "render": self.render_info(room),
+        view = {"room": room, "layout": self.layout(room), "render": self.render_info(room),
                 "rendering": self.render_busy()}
+        if self.kid_of(room):
+            view["kid_id"] = self.kid_of(room)
+        return view
 
     # ---------- 그림 ----------
     def _art_file(self, rel: str) -> Optional[Path]:
@@ -172,8 +242,9 @@ class WorldStore:
         p = (self.art_dir / rel[len("artworks/"):]).resolve()
         return p if p.parent == self.art_dir.resolve() else None
 
-    def artworks(self) -> List[Dict[str, Any]]:
-        return _read_json(self.art_dir / "index.json", []) or []
+    def artworks(self, kid_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        items = _read_json(self.art_dir / "index.json", []) or []
+        return [a for a in items if a.get("kid_id") == kid_id] if kid_id else items
 
     def add_artwork(self, body: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         data_url = str(body.get("data", ""))
@@ -202,6 +273,7 @@ class WorldStore:
                 return found, True
             name = os.path.splitext(os.path.basename(str(body.get("name") or fname)))[0][:80]
             entry = {"file": rel, "name": name, "width": w, "height": h,
+                     "kid_id": str(body["kid_id"]) if body.get("kid_id") else None,
                      "added": datetime.datetime.now().isoformat(timespec="seconds")}
             items.append(entry)
             _write_json(self.art_dir / "index.json", items)
@@ -209,7 +281,7 @@ class WorldStore:
 
     def art_usage(self, rel: str) -> List[str]:
         used = []
-        for room in self.rooms():
+        for room in self.rooms() + [self.kid_room(k) for k in self.kid_ids()]:
             lay = _read_json(self.layout_path(room), {}) or {}
             if any(a.get("image") == rel for a in lay.get("arts", [])):
                 used.append(room)

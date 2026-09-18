@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Set
 
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -67,6 +67,7 @@ renderer = WorldRenderer(world, settings.blender_exe, settings.render_pct, setti
                          on_change=dialogue.notify_config_changed)
 world.render_info = renderer.info
 world.render_busy = lambda: renderer.running
+world.kid_ids = lambda: [k.id for k in kids.all()]
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
@@ -88,7 +89,7 @@ async def lifespan(app: FastAPI):
     log.info("blender=%s (배경 자동 렌더 %s)", renderer.blender or "없음", "켬" if settings.render_auto else "끔")
     if renderer.available and settings.render_auto:
         # 렌더가 없거나 배치가 바뀐 방은 켜질 때 한 번 렌더
-        for r in world.rooms():
+        for r in world.render_rooms():
             info = renderer.info(r)
             if info is None or info["stale"]:
                 renderer.request(r)
@@ -126,8 +127,10 @@ async def api_kid_upsert(kid_id: str | None = None, data: dict = Body(...)):
 
 @app.delete("/api/kids/{kid_id}")
 async def api_kid_delete(kid_id: str):
+    room = world.kid_room(kid_id)
     if not kids.remove(kid_id):
         raise HTTPException(404, "없는 아이")
+    world.forget_kid_room(room)          # 전시실에 걸어 둔 그림 목록도 같이 지운다 (사진 파일은 남는다)
     await dialogue.notify_config_changed()
     return JSONResponse({"ok": True})
 
@@ -171,7 +174,8 @@ async def api_world_layout_put(room: str, data: dict = Body(...)):
         world.save_layout(r, data)
     except (ValueError, TypeError, KeyError) as e:
         raise HTTPException(400, str(e))
-    rendering = settings.render_auto and renderer.request(r)
+    # 아이 전시실은 배경을 같이 쓰므로 다시 렌더하지 않는다 (그림은 TV 가 실시간으로 그린다)
+    rendering = bool(settings.render_auto and world.kid_of(r) is None and renderer.request(r))
     if r == world.active:
         await dialogue.notify_config_changed()
     return JSONResponse({"ok": True, "rendering": rendering})
@@ -211,14 +215,70 @@ async def api_world_active(data: dict = Body(...)):
     return JSONResponse({"ok": True, "active": r})
 
 
+@app.get("/api/kids/{kid_id}/gallery")
+async def api_kid_gallery(kid_id: str):
+    """아이 전시실: 걸린 그림이 든 배치 + 그 아이가 올린 그림 목록 + 벽 정보(카탈로그)"""
+    if not kids.get(kid_id):
+        raise HTTPException(404, "없는 아이입니다")
+    room = world.kid_room(kid_id)
+    return JSONResponse({"room": room, "kid": kids.get(kid_id).model_dump(), "layout": world.layout(room),
+                         "artworks": world.artworks(kid_id), "catalog": world.catalog})
+
+
+@app.post("/api/world/visit")
+async def api_world_visit(data: dict = Body(...)):
+    """TV 가 잠깐 아이 전시실을 보러 간다. seconds 뒤에 원래 방(보통 교실)으로 돌아온다.
+    seconds 가 0 이면 돌아오지 않는다 (계속 그 방)."""
+    kid_id = str(data.get("kid_id") or "")
+    room = world.kid_room(kid_id) if kid_id else str(data.get("room") or "")
+    seconds = float(data.get("seconds", 60))
+    try:
+        world.check_room(room)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    await _visit(room, seconds)
+    return JSONResponse({"ok": True, "active": world.active, "seconds": seconds})
+
+
+_visit_back: Dict[str, Any] = {"task": None, "room": None}
+
+
+async def _visit(room: str, seconds: float) -> None:
+    task = _visit_back.get("task")
+    if task and not task.done():
+        task.cancel()
+    back = _visit_back.get("room") or world.active     # 나들이 중에 또 부르면 원래 방은 그대로
+    if world.kid_of(back):
+        back = world.rooms()[0] if world.rooms() else "classroom"
+    world.set_active(room)
+    log.info("TV 전시실 나들이: %s (%s초 뒤 %s 로)", room, seconds, back)
+    await dialogue.notify_config_changed()
+    if seconds <= 0:
+        _visit_back.update(task=None, room=None)
+        return
+    _visit_back["room"] = back
+
+    async def come_back() -> None:
+        try:
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            return
+        world.set_active(back)
+        _visit_back.update(task=None, room=None)
+        log.info("TV 나들이 끝: %s 로 돌아옴", back)
+        await dialogue.notify_config_changed()
+
+    _visit_back["task"] = asyncio.create_task(come_back())
+
+
 @app.get("/api/artworks")
-async def api_artworks():
-    return JSONResponse({"artworks": world.artworks()})
+async def api_artworks(kid_id: str | None = None):
+    return JSONResponse({"artworks": world.artworks(kid_id)})
 
 
 @app.post("/api/artworks")
 async def api_artwork_upload(data: dict = Body(...)):
-    """{"name", "data": dataURL, "width", "height"} → data/artworks/"""
+    """{"name", "data": dataURL, "width", "height", "kid_id"} → data/artworks/"""
     try:
         entry, new = world.add_artwork(data)
     except (ValueError, TypeError) as e:

@@ -2,7 +2,7 @@
 
 export type RibbonState = "idle" | "listening" | "thinking" | "speaking";
 export type TurnState = "waiting" | "active" | "done" | "cancelled" | "expired";
-export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin" | "editor" | "mic";
+export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin" | "editor" | "art" | "mic";
 
 export interface KidInfo {
   id: string;

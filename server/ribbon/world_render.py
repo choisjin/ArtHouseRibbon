@@ -32,6 +32,7 @@ sys.path.insert(0, str(BLENDER_DIR))
 import phases  # noqa: E402  (블렌더 없이도 읽히는 시간대 표. room_map.py 와 같은 파일을 본다)
 
 DAYLIGHT_ROOMS = {"classroom"}          # 창이 있어 시간대별로 렌더하는 방 (room_map.ROOMS 의 daylight 와 같게)
+                                        # 방 모양 이름(shell)으로 본다: 아이 전시실·kidbase 는 gallery 껍데기
 
 
 def room_phases(room: str) -> List[str]:
@@ -78,7 +79,14 @@ class WorldRenderer:
 
     # ---------- 조회 ----------
     def info(self, room: str) -> Optional[Dict[str, Any]]:
-        """렌더가 있으면 TV 가 쓸 주소(시간대별)와 그때의 배치"""
+        """렌더가 있으면 TV 가 쓸 주소(시간대별)와 그때의 배치.
+        아이 전시실은 그림을 뺀 공용 배경(kidbase)을 쓰고, 걸린 그림은 TV 가 실시간으로 그린다."""
+        kid = self.world.kid_of(room)
+        if kid is not None:
+            shared = self.info("kidbase")
+            if not shared:
+                return None
+            return {**shared, "layout": self.world.layout(room), "arts_live": True, "stale": False}
         meta = _read_json(self.dir / f"{room}.json")
         if not meta:
             return None
@@ -110,7 +118,7 @@ class WorldRenderer:
 
     def status(self) -> Dict[str, Any]:
         rooms: Dict[str, Any] = {}
-        for r in self.world.rooms():
+        for r in self.world.render_rooms():
             i = self.info(r)
             rooms[r] = {"rendered_at": i["rendered_at"], "stale": i["stale"]} if i else None
         return {
@@ -173,10 +181,12 @@ class WorldRenderer:
         work.mkdir(parents=True, exist_ok=True)
         lay_file = work / "layout.json"
         _write_json(lay_file, layout)
-        want = room_phases(room)
+        shell = self.world.shell_room(room)
+        want = room_phases(shell)
         cmd = [self.blender, "-b", "--factory-startup", "-P", str(SCRIPT), "--",
                room, str(lay_file), str(self.world.art_dir.parent), str(work), *want]
-        env = dict(os.environ, PYTHONUNBUFFERED="1", RENDER_PCT=str(self.pct), RENDER_SAMPLES=str(self.samples))
+        env = dict(os.environ, PYTHONUNBUFFERED="1", RENDER_PCT=str(self.pct), RENDER_SAMPLES=str(self.samples),
+                   RENDER_SHELL_ROOM=shell)
         log.info("배경 렌더 시작: %s (%s%%, %s samples, 시간대 %s)", room, self.pct, self.samples, ", ".join(want))
         self.dir.mkdir(parents=True, exist_ok=True)
 

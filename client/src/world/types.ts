@@ -74,6 +74,8 @@ export interface LayoutArt {
 export interface Layout {
   version?: number;
   room?: string;
+  /** 방 모양·벽(그림 거는 면)을 가져올 카탈로그 방. 아이 전시실이 전시장 것을 빌려 쓴다 */
+  shell?: string;
   unit_per_m?: number;
   doll_spot: { x: number; y: number };   // 리본이 "부르면 오는 자리"
   items: LayoutItem[];
@@ -89,6 +91,8 @@ export interface RenderPhase {
 
 /** 블렌더로 렌더한 TV 배경 (서버 world_render.py) */
 export interface WorldRender extends RenderPhase {
+  /** 걸린 그림이 배경에 찍혀 있지 않고 실시간으로 그려야 하는가 (아이 전시실) */
+  arts_live?: boolean;
   /** 시간대별 배경 (없으면 bg/env 하나만 쓴다) */
   phases?: Record<string, RenderPhase>;
   /** [시작 시각(0~23), 시간대 이름] 목록. 시간 순서이고, 첫 시각 전이면 마지막 시간대(밤) */
@@ -108,7 +112,13 @@ export function renderNow(r: WorldRender | null | undefined, at = new Date()): W
 }
 
 /** state.config.world */
-export interface WorldView { room: string; layout: Layout | null; render?: WorldRender | null; rendering?: string | null }
+export interface WorldView {
+  room: string;
+  layout: Layout | null;
+  render?: WorldRender | null;
+  rendering?: string | null;
+  kid_id?: string;              // 아이 전시실이면 그 아이
+}
 
 export interface ArtworkInfo { file: string; name: string; width: number; height: number }
 

@@ -10,6 +10,7 @@ import type { ClientRole } from "./protocol";
  *   /?mode=admin     관리자 페이지. 아이 목록, 리본이 목소리·겉모습, TV 에 보여줄 방
  *   /?mode=mic       마이크 화면. 무선 마이크가 꽂힌 컴퓨터에서 켜 둔다 (TV 에서 받으려면 /?mode=tv&mic=1)
  *   /?mode=editor    맵 편집기. 가구 배치와 벽에 거는 그림 (Character_Creator 배치 편집기)
+ *   /?mode=art       아이 전시실 꾸미기. 작품 사진을 올리고(배경 지우기) 전시실 벽에 건다
  */
 const params = new URLSearchParams(location.search);
 const mode = (params.get("mode") ?? "tv") as ClientRole;
@@ -18,6 +19,11 @@ async function boot(): Promise<void> {
   if (mode === "editor") {
     const { startEditor } = await import("./editor/index");
     await startEditor();
+    return;
+  }
+  if (mode === "art") {
+    const { startArt } = await import("./art/index");
+    await startArt();
     return;
   }
   const socket = new RibbonSocket(mode === "debug" ? "tv" : mode);

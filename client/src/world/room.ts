@@ -104,7 +104,9 @@ export class RoomModel {
 
   /** 방/배치가 바뀌었으면 다시 짓는다. 바뀌었으면 true */
   async setLayout(roomId: string, layout: Layout | null): Promise<boolean> {
-    const room = this.catalog.rooms[roomId] ?? Object.values(this.catalog.rooms)[0];
+    // 아이 전시실처럼 남의 방 모양을 빌려 쓰는 방은 layout.shell 이 진짜 방을 가리킨다
+    const room = this.catalog.rooms[layout?.shell ?? roomId] ?? this.catalog.rooms[roomId]
+      ?? Object.values(this.catalog.rooms)[0];
     if (!room) return false;
     const lay = layout ?? this.catalog.default_layouts?.[room.id] ?? this.catalog.default_layout ?? null;
     if (!lay) return false;

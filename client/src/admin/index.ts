@@ -91,6 +91,11 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
           <label>마이크 채널 <select name="mic_channel"><option value="">없음</option><option>0</option><option>1</option><option>2</option><option>3</option></select></label>
           <div class="actions"><button type="submit">저장</button><button type="button" id="kid-delete" class="danger">삭제</button></div>
         </form>
+        <div id="kid-gallery" hidden class="actions">
+          <a id="gallery-edit" class="btn">🖼 전시실 꾸미기</a>
+          <button type="button" id="gallery-show">TV 에서 보기</button>
+          <span id="gallery-count" class="hint" style="align-self:center"></span>
+        </div>
       </section>
       <section class="card">
         <h2>리본이</h2>
@@ -181,10 +186,34 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     set("age", k?.age != null ? String(k.age) : "");
     set("mic_channel", k?.mic_channel != null ? String(k.mic_channel) : "");
     $("#kid-delete").hidden = !k;
+    $("#kid-gallery").hidden = !k;
+    if (k) {
+      ($("#gallery-edit") as HTMLAnchorElement).href = `/?mode=art&kid=${encodeURIComponent(k.id)}`;
+      $("#gallery-count").textContent = "";
+      void showGalleryCount(k.id);
+    }
     renderKidList();
   }
 
   $("#kid-new").onclick = () => selectKid(null);
+
+  /** 그 아이 전시실에 몇 점 걸려 있는지 (아이를 고를 때마다 물어본다) */
+  async function showGalleryCount(kidId: string): Promise<void> {
+    try {
+      const d = await api<{ layout: { arts: unknown[] } | null; artworks: unknown[] }>(
+        "GET", `/api/kids/${encodeURIComponent(kidId)}/gallery`);
+      if (selected?.id !== kidId) return;
+      $("#gallery-count").textContent = `작품 ${d.artworks.length}점 · 벽에 ${(d.layout?.arts ?? []).length}점`;
+    } catch { /* 전시실 정보는 없어도 그만 */ }
+  }
+
+  $("#gallery-show").onclick = async () => {
+    if (!selected) return;
+    try {
+      await api("POST", "/api/world/visit", { kid_id: selected.id, seconds: 120 });
+      msg(`TV 가 ${selected.name} 전시실을 보러 갑니다 (2분 뒤 교실로)`);
+    } catch (e) { msg(String(e), true); }
+  };
 
   kf.onsubmit = async (e) => {
     e.preventDefault();

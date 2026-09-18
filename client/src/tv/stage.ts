@@ -21,12 +21,20 @@ const OCCLUDER = new THREE.MeshBasicMaterial({ colorWrite: false });
  *   카메라가 블렌더와 똑같아야 하므로 화면은 16:9 로 고정(남는 곳은 검은 띠).
  * - **실시간**(렌더가 없을 때): 방까지 three.js 로 그린다.
  */
+/** 걸린 그림(액자·그림면)의 부품인가. 그림 무리에 userData.art 가 붙어 있다 (world/room.ts) */
+function isArt(o: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) if (p.userData.art) return true;
+  return false;
+}
+
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 500);
   readonly room: RoomModel;
   mode: "render" | "live" = "live";
+  /** 걸린 그림을 배경 위에 실시간으로 그린다 (아이 전시실: 배경은 그림 없는 전시실 한 장을 같이 쓴다) */
+  liveArts = false;
   private hemi = new THREE.HemisphereLight(0xffffff, 0xcdbba8, 2.4);
   private sun = new THREE.DirectionalLight(0xffffff, 1.6);
   private shadowFloor: THREE.Mesh;
@@ -109,12 +117,14 @@ export class Stage {
   async setWorld(roomId: string, layout: Layout | null, render: WorldRender | null | undefined): Promise<{ changed: boolean; roomChanged: boolean }> {
     const useRender = !!render?.bg;
     const lay = useRender ? render!.layout ?? layout : layout;
+    const liveArts = useRender && !!render!.arts_live;
     const roomChanged = !!this.room.roomId && roomId !== this.room.roomId;
     const [bg, env] = useRender
       ? await Promise.all([this.loadBackground(render!.bg), this.loadEnvironment(render!.env)])
       : [null, null];
     const changed = await this.room.setLayout(roomId, lay);
-    const modeChanged = (useRender ? "render" : "live") !== this.mode;
+    const modeChanged = (useRender ? "render" : "live") !== this.mode || liveArts !== this.liveArts;
+    this.liveArts = liveArts;
     if (useRender) {
       if (bg !== this.renderBg) { this.renderBg?.dispose(); this.renderBg = bg; }
       if (env !== this.renderEnv) { this.renderEnv?.dispose(); this.renderEnv = env; }
@@ -169,7 +179,9 @@ export class Stage {
     this.room.group.traverse((o) => {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
-      if (render) {
+      // 배경에 이미 찍혀 있는 것은 깊이만 그리는 가림막으로. 실시간으로 그릴 그림은 그대로 둔다
+      const occlude = render && !(this.liveArts && isArt(m));
+      if (occlude) {
         if (!m.userData.liveMaterial) {
           m.userData.liveMaterial = m.material;
           m.userData.liveVisible = m.visible;       // 그림이 걸린 이젤은 원래 캔버스가 숨겨져 있다
