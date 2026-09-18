@@ -493,7 +493,7 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
     elif t == "debug.utterance":
         _spawn(dialogue.on_utterance(int(msg.get("channel", 0)), str(msg.get("text", ""))))
     elif t == "device.status":
-        # TV 가 알려 온 소리 출력 장치·웹캠 상태 → 관리자 '설정' 탭
+        # TV 가 알려 온 소리 출력 장치 상태 → 관리자 '설정' 탭
         if devices.update(hub.agent(ws), str(msg.get("kind") or ""), hub.clients.get(ws, "?"),
                           ws.client.host if ws.client else "?", msg):
             await hub.broadcast(devices.snapshot(), roles={"admin"})

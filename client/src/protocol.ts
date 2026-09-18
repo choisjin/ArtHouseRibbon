@@ -146,28 +146,12 @@ export interface OutputStatus {
   msg: string;
 }
 
-/** TV 웹캠 (tv/webcam.ts). 영상은 TV 브라우저 밖으로 나가지 않고 상태만 알린다 */
-export interface CameraStatus {
-  agent: string; role: string; host: string;
-  supported: boolean;
-  on: boolean;          // 켜 두기로 했는가 (이 TV 브라우저에 기억)
-  running: boolean;     // 실제로 얼굴을 찾는 중인가
-  current: string;      // 고른 장치 ("" = 아무 카메라)
-  using: string;        // 지금 쓰는 장치 이름
-  devices: DeviceRef[];
-  faces: number;        // 지금 보이는 얼굴 수
-  msg: string;
-}
-
-export interface DevicesMsg { type: "devices"; outputs: OutputStatus[]; cameras: CameraStatus[] }
+export interface DevicesMsg { type: "devices"; outputs: OutputStatus[] }
 
 /** 관리자 → (서버) → 그 TV */
-export type DeviceControlMsg = { type: "device.control"; agent: string } & (
-  | { kind: "output"; action: "set"; deviceId: string }
-  | { kind: "output"; action: "beep" | "labels" }
-  | { kind: "camera"; action: "set"; deviceId: string }
-  | { kind: "camera"; action: "power"; on: boolean }
-  | { kind: "camera"; action: "preview" | "labels" }
+export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "output" } & (
+  | { action: "set"; deviceId: string }
+  | { action: "beep" | "labels" }
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg

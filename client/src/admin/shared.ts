@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Mic } from "../audio/mic";
+import type { FaceCam } from "../camera/facecam";
 import type { AppConfig, KidInfo, StateMsg } from "../protocol";
 import type { RibbonSocket } from "../ws";
 import { Ribbon3D } from "../tv/ribbon3d";
@@ -11,6 +12,8 @@ export interface AdminCtx {
   socket: RibbonSocket;
   /** 이 컴퓨터의 마이크 (설정 탭에서 고르고 켠다. 켜 둔 적 있는 브라우저면 열자마자 켜진다) */
   mic: Mic;
+  /** 이 컴퓨터의 웹캠 (마이크처럼 설정 탭에서 고르고 켠다) */
+  cam: FaceCam;
   kids(): KidInfo[];
   config(): AppConfig | null;
   state(): StateMsg | null;
@@ -19,6 +22,8 @@ export interface AdminCtx {
   msg(text: string, err?: boolean): void;
   /** 마이크 상태가 바뀔 때 (index.ts 가 채운다) */
   onMic(fn: () => void): void;
+  /** 카메라 상태가 바뀔 때 */
+  onCam(fn: () => void): void;
   /** 다른 탭으로 옮기기 (예: 대시보드에서 아이 설정으로) */
   go(hash: string): void;
 }

@@ -1,6 +1,7 @@
 import "./style.css";
 import type { AppConfig, KidInfo, ServerMsg, StateMsg } from "../protocol";
 import { Mic } from "../audio/mic";
+import { FaceCam } from "../camera/facecam";
 import type { RibbonSocket } from "../ws";
 import { mountCharacters } from "./characters";
 import { mountDashboard } from "./dashboard";
@@ -50,9 +51,11 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   const listeners: ((s: StateMsg) => void)[] = [];
   let toastTimer = 0;
   const mic = new Mic(socket, { autoStart: true });
+  const cam = new FaceCam(socket, { autoStart: true });
   const ctx: AdminCtx = {
     socket,
     mic,
+    cam,
     kids: (): KidInfo[] => state?.kids ?? [],
     config: () => (state?.config as AppConfig | undefined) ?? null,
     state: () => state,
@@ -65,6 +68,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
       toastTimer = window.setTimeout(() => { el.className = "toast"; }, err ? 6000 : 3000);
     },
     onMic: () => undefined,           // 아래에서 채운다
+    onCam: () => undefined,
     go(hash) { location.hash = hash; },
   };
 
@@ -107,6 +111,9 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   const micListeners: (() => void)[] = [showMic];
   mic.onChange = () => micListeners.forEach((f) => f());
   ctx.onMic = (f) => { micListeners.push(f); };
+  const camListeners: (() => void)[] = [];
+  cam.onChange = () => camListeners.forEach((f) => f());
+  ctx.onCam = (f) => { camListeners.push(f); };
   showMic();
 
   window.addEventListener("hashchange", route);

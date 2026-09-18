@@ -33,7 +33,7 @@ const IDLE_MOTIONS: Motion[] = ["Sway", "Stretch", "Tilt", "Sway", "LookUp"];
  * 리본이 행동: 평소엔 맵을 자유롭게 돌아다니고(가구 사이, 그림 구경), 부르면(ribbon.state 가 idle 이 아니게 되면)
  * 그 자리에서 멈춰 TV 쪽으로 돌아 손을 흔들고, "부르면 오는 자리"(layout.doll_spot)로 걸어온다.
  * 대화가 끝나고 returnAfterS 가 지나면 다시 돌아다닌다.
- * TV 웹캠이 켜져 있으면(audience) TV 앞이 오래 비었을 때 심심해하며 졸고, 누가 다시 오면 알아채고 손을 흔든다.
+ * 카메라가 켜져 있으면(audience) TV 앞이 오래 비었을 때 심심해하며 졸고, 누가 다시 오면 알아채고 손을 흔든다.
  * 듣는 중에는 맞장구(끄덕임), 그림 앞에서는 가리키기처럼 상황에 맞는 동작을 한 번씩 한다.
  *
  * 겹치지 않기
@@ -63,9 +63,9 @@ export class RibbonBrain {
   opts: BrainOptions = { wander: true, returnAfterS: 8 };
   /** 카메라(=TV 앞 아이들) 쪽. 매 프레임 index.ts 가 넣어 준다 */
   viewer = new THREE.Vector3();
-  /** TV 카메라가 본 얼굴 쪽 (없으면 null) */
+  /** 카메라가 본 얼굴 쪽 (없으면 null) */
   faceTarget: THREE.Vector3 | null = null;
-  /** TV 앞에 보이는 얼굴 수. 웹캠이 꺼져 있으면 null (모름) */
+  /** TV 앞에 보이는 얼굴 수. 카메라가 꺼져 있으면 null (모름) */
   audience: number | null = null;
   private emptySince: number | null = null;
   private welcomeUntil = 0;
