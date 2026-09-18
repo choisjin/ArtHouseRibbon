@@ -33,6 +33,10 @@ python tools/sync_world.py --layouts --artworks  # 배치·그림까지 (기존 
 Character_Creator 에서 가구 모양이나 인형을 고쳤으면 그쪽에서 "블렌더 미리보기"(카탈로그 내보내기)를 한 번 한 뒤 위 명령을 다시 돌리고 `npm run build`.
 경로가 다르면 `--src` 또는 환경변수 `CHARACTER_CREATOR`.
 
+배치 파일(`data/world/*.json`)은 기기마다 따로라 git 으로 오지 않습니다. 방 크기를 바꾼 커밋을 받은 뒤에는
+이미 쓰던 배치에서 벽에 붙어 있던 가구가 떠 보일 수 있습니다. 미술실을 넓힌 커밋(네 귀퉁이 기둥)에는
+`python tools/widen_layout.py` 를 한 번 돌리면 맞습니다 (`--dry` 로 먼저 확인).
+
 > Character_Creator 의 `tools/layout_server.py` 도 기본 포트가 8765 라서 리본 서버와 동시에 켜면 충돌합니다. 둘 중 하나를 `--port` 로 바꾸세요.
 
 ## TV 배경 렌더 (`server/ribbon/world_render.py`)
