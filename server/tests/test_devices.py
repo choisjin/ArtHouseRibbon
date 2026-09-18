@@ -1,27 +1,25 @@
 from ribbon.devices import DeviceBoard
 
 
-def test_level_only_updates_are_not_changes():
+def test_same_status_is_not_a_change():
     b = DeviceBoard()
-    st = {"running": True, "devices": [{"deviceId": "a", "label": "DJI"}], "levels": [0.1, 0, 0, 0]}
-    assert b.update("x/mic", "mic", "mic", "10.0.0.2", st) is True
-    assert b.update("x/mic", "mic", "mic", "10.0.0.2", {**st, "levels": [0.5, 0.2, 0, 0]}) is False
-    assert b.update("x/mic", "mic", "mic", "10.0.0.2", {**st, "running": False}) is True
+    st = {"current": "", "devices": [{"deviceId": "a", "label": "HDMI"}], "locked": True}
+    assert b.update("x/tv", "output", "tv", "10.0.0.2", st) is True
+    assert b.update("x/tv", "output", "tv", "10.0.0.2", dict(st)) is False
+    assert b.update("x/tv", "output", "tv", "10.0.0.2", {**st, "current": "a"}) is True
 
 
-def test_snapshot_splits_kinds_and_drop_removes_agent():
+def test_snapshot_and_drop():
     b = DeviceBoard()
-    b.update("x/mic", "mic", "mic", "h", {"running": False})
     b.update("x/tv", "output", "tv", "h", {"current": ""})
-    b.update("x/tv", "mic", "tv", "h", {"running": True})     # TV 에서 마이크도 받는 경우
-    snap = b.snapshot()
-    assert [d["agent"] for d in snap["mics"]] == ["x/mic", "x/tv"]
-    assert [d["agent"] for d in snap["outputs"]] == ["x/tv"]
+    b.update("y/tv", "output", "tv", "h2", {"current": ""})
+    assert [d["agent"] for d in b.snapshot()["outputs"]] == ["x/tv", "y/tv"]
     assert b.drop_agent("x/tv") is True
-    assert b.snapshot()["outputs"] == [] and len(b.snapshot()["mics"]) == 1
+    assert [d["agent"] for d in b.snapshot()["outputs"]] == ["y/tv"]
+    assert b.drop_agent("x/tv") is False
 
 
 def test_unknown_kind_is_ignored():
     b = DeviceBoard()
-    assert b.update("x/mic", "camera", "mic", "h", {}) is False
-    assert b.snapshot()["mics"] == []
+    assert b.update("x/mic", "mic", "mic", "h", {}) is False
+    assert b.snapshot()["outputs"] == []

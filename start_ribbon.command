@@ -8,7 +8,7 @@
 #   3. .env 가 Ollama 를 쓰면 Ollama 켜기
 #   4. 같은 포트에 떠 있는 옛 서버 끄기
 #   5. 서버 실행 + 브라우저로 마이크 화면 열기 (무선 마이크 수신기가 이 맥에 꽂혀 있을 때)
-#      RIBBON_OPEN=mic|admin|tv|editor|none (쉼표로 여러 개, 기본 mic,admin)
+#      RIBBON_OPEN=admin|tv|editor|none (쉼표로 여러 개, 기본 admin. 관리자 페이지가 마이크도 받는다)
 
 cd "$(dirname "$0")" || exit 1
 ROOT="$(pwd)"
@@ -29,7 +29,7 @@ env_value() {   # server/.env 에서 RIBBON_<이름> 값 읽기 (없으면 기�
 
 PORT="$(env_value PORT 8765)"
 LLM="$(env_value LLM_PROVIDER mock)"
-OPEN="${RIBBON_OPEN:-mic,admin}"
+OPEN="${RIBBON_OPEN:-admin}"
 
 # ---- 1. 최신 코드 ----
 if [ -z "$RIBBON_NO_PULL" ] && [ -d .git ]; then
@@ -98,8 +98,7 @@ fi
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname -s)"
 say_step "리본 서버 시작"
 cat <<EOF
-  마이크    : http://localhost:$PORT/?mode=mic   ← 켜 두어야 리본이가 소리를 듣습니다
-  관리자    : http://localhost:$PORT/?mode=admin
+  관리자    : http://localhost:$PORT/?mode=admin   ← 켜 두어야 리본이가 소리를 듣습니다 (설정 탭에서 마이크)
   TV(노트북): http://$HOST_NAME.local:$PORT/?mode=tv
   맵 편집기 : http://$HOST_NAME.local:$PORT/?mode=editor
   디버그    : http://$HOST_NAME.local:$PORT/?mode=debug

@@ -39,6 +39,11 @@
   display: inline-flex; gap: 6px; align-items: center; }
 #admin nav a:hover { background: var(--soft); color: var(--text); }
 #admin nav a.on { background: var(--accent); color: var(--on-accent); }
+#admin .mic-badge { margin-left: auto; font-size: 12px; padding: 4px 10px; border-radius: 99px; text-decoration: none; white-space: nowrap;
+  color: var(--ok); border: 1px solid var(--ok); }
+#admin .mic-badge.warn { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 700; }
+#admin .mic-badge[hidden] { display: none; }
+#admin .mic-badge:not([hidden]) + .live { margin-left: 0; }
 #admin .live { margin-left: auto; color: #888; font-size: 12px; }
 #admin .live.on { color: var(--ok); }
 #admin .tab { padding: 18px 20px 60px; }

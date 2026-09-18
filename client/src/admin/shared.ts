@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import type { Mic } from "../audio/mic";
 import type { AppConfig, KidInfo, StateMsg } from "../protocol";
 import type { RibbonSocket } from "../ws";
 import { Ribbon3D } from "../tv/ribbon3d";
@@ -8,12 +9,16 @@ import type { RibbonLook } from "../world/doll";
 /** 탭들이 같이 쓰는 것: 서버 소켓, 마지막 상태, 알림 */
 export interface AdminCtx {
   socket: RibbonSocket;
+  /** 이 컴퓨터의 마이크 (설정 탭에서 고르고 켠다. 켜 둔 적 있는 브라우저면 열자마자 켜진다) */
+  mic: Mic;
   kids(): KidInfo[];
   config(): AppConfig | null;
   state(): StateMsg | null;
   /** state 가 올 때마다 (처음 등록할 때 마지막 state 로 한 번 부른다) */
   onState(fn: (s: StateMsg) => void): void;
   msg(text: string, err?: boolean): void;
+  /** 마이크 상태가 바뀔 때 (index.ts 가 채운다) */
+  onMic(fn: () => void): void;
   /** 다른 탭으로 옮기기 (예: 대시보드에서 아이 설정으로) */
   go(hash: string): void;
 }

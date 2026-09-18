@@ -479,8 +479,6 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         hub.ids[ws] = str(msg.get("client_id") or "")
         if hub.clients[ws] == "admin":
             await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))
-        if hub.clients[ws] == "mic":
-            log.info("마이크 화면 연결됨 (%s)", ws.client.host if ws.client else "?")
         await ws.send_text(json.dumps(dialogue.snapshot().model_dump(), ensure_ascii=False))
     elif t == "tts.done":
         dialogue.mark_spoken(msg.get("utterance_id", ""))
@@ -494,16 +492,10 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
     elif t == "debug.utterance":
         _spawn(dialogue.on_utterance(int(msg.get("channel", 0)), str(msg.get("text", ""))))
     elif t == "device.status":
-        # 마이크 화면·TV 가 알려 온 장치 상태 → 관리자 '설정' 탭
-        aid = hub.agent(ws)
-        changed = devices.update(aid, str(msg.get("kind") or ""), hub.clients.get(ws, "?"),
-                                 ws.client.host if ws.client else "?", msg)
-        snap = devices.snapshot()
-        if changed:
-            await hub.broadcast(snap, roles={"admin"})
-        else:   # 음량만 바뀜: 가볍게
-            await hub.broadcast({"type": "devices.levels", "agent": aid, "levels": msg.get("levels")},
-                                roles={"admin"})
+        # TV 가 알려 온 소리 출력 장치 상태 → 관리자 '설정' 탭
+        if devices.update(hub.agent(ws), str(msg.get("kind") or ""), hub.clients.get(ws, "?"),
+                          ws.client.host if ws.client else "?", msg):
+            await hub.broadcast(devices.snapshot(), roles={"admin"})
     elif t == "devices.get":
         await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))   # 관리자 '설정' 탭을 열 때
     elif t == "device.control":

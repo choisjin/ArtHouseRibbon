@@ -132,27 +132,13 @@ export interface SpeakStopMsg { type: "speak.stop" }
 /** 관리자 조작에 대한 서버 알림 (예: 마이크가 없는 아이를 호출) */
 export interface AdminMsg { type: "admin.msg"; text: string; error?: boolean }
 
-// ---- 장치 (마이크를 받는 화면·소리를 내는 TV ↔ 관리자 '설정' 탭, 서버 devices.py 가 중계) ----
+// ---- TV 소리 출력 (TV ↔ 관리자 '설정' 탭, 서버 devices.py 가 중계) ----
 
 export interface DeviceRef { deviceId: string; label: string }
-/** 고른 마이크: 이 장치의 0번 채널이 논리 채널 몇 번인지 (1세트 0, 2세트 2) */
-export interface MicChoice extends DeviceRef { channelOffset: number }
-
-/** 장치를 가진 화면 하나 ("브라우저 id/역할"). role 은 mic(마이크 화면) 또는 tv */
-interface AgentInfo { agent: string; role: string; host: string }
-
-export interface MicStatus {
-  running: boolean;
-  /** 켰지만 브라우저가 소리 입력을 막고 있음 (그 화면을 한 번 클릭해야 함) */
-  locked: boolean;
-  devices: DeviceRef[];
-  selected: MicChoice[];
-  opened: { label: string; channelCount: number; channelOffset: number }[];
-  levels: number[];
-  msg: string;
-}
 
 export interface OutputStatus {
+  /** 장치를 가진 화면 하나 ("브라우저 id/역할") */
+  agent: string; role: string; host: string;
   supported: boolean;   // AudioContext.setSinkId (Chrome 110+)
   locked: boolean;      // TV 화면을 한 번 클릭해야 소리가 남
   current: string;      // "" = 시스템 기본 출력
@@ -160,16 +146,13 @@ export interface OutputStatus {
   msg: string;
 }
 
-export interface DevicesMsg { type: "devices"; mics: (MicStatus & AgentInfo)[]; outputs: (OutputStatus & AgentInfo)[] }
-export interface DevicesLevelsMsg { type: "devices.levels"; agent: string; levels: number[] }
+export interface DevicesMsg { type: "devices"; outputs: OutputStatus[] }
 
-/** 관리자 → (서버) → 그 화면 */
-export type DeviceControlMsg = { type: "device.control"; agent: string } & (
-  | { kind: "mic"; action: "start"; devices: MicChoice[] }
-  | { kind: "mic"; action: "stop" | "refresh" }
-  | { kind: "output"; action: "set"; deviceId: string }
-  | { kind: "output"; action: "beep" | "labels" }
+/** 관리자 → (서버) → 그 TV */
+export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "output" } & (
+  | { action: "set"; deviceId: string }
+  | { action: "beep" | "labels" }
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | AdminMsg | DevicesMsg | DevicesLevelsMsg | DeviceControlMsg;
+  | SpeakStopMsg | AdminMsg | DevicesMsg | DeviceControlMsg;

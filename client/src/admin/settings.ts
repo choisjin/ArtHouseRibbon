@@ -1,16 +1,18 @@
-import type { DevicesMsg, MicChoice, ServerMsg } from "../protocol";
+import type { MicChoice } from "../audio/mic";
+import type { DevicesMsg, ServerMsg } from "../protocol";
 import { type AdminCtx, esc } from "./shared";
 
 /**
  * 설정 탭.
- *   마이크      : 마이크를 받는 화면(마이크 화면 ?mode=mic, 또는 TV ?mic=1)마다 장치 고르기·켜기·끄기·음량
- *   TV 소리 출력 : TV 화면마다 출력 장치 고르기·삐 소리 시험
+ *   마이크      : 이 컴퓨터에서 마이크 받기 (예전 마이크 화면 ?mode=mic 의 기능 전부). 장치 고르기·켜기·끄기·음량.
+ *                 무선 마이크 수신기가 꽂힌 컴퓨터에서 관리자 페이지를 열어 두면 된다 (audio/mic.ts)
+ *   TV 소리 출력 : TV 화면마다 출력 장치 고르기·삐 소리 시험. 출력 장치는 TV 컴퓨터에 달려 있어서
+ *                 여기서 고르면 서버가 그 TV 로 전달한다 (device.control)
  *   화면 스타일  : 라이트 · 다크 · 기기 설정 따르기 (이 기기에만 저장)
- * 장치는 그 화면이 켜진 컴퓨터에 달려 있어서, 여기서 고르면 서버가 그 화면으로 전달한다 (device.control).
  */
 type ThemePref = "light" | "dark" | "system";
 const THEME_KEY = "ribbon.admin.theme";
-const ROLE_NAME: Record<string, string> = { mic: "마이크 화면", tv: "TV" };
+const ROLE_NAME: Record<string, string> = { tv: "TV" };
 const SETS = [{ offset: 0, name: "1세트 (마이크 1·2)" }, { offset: 2, name: "2세트 (마이크 3·4)" }];
 
 function readPref(): ThemePref {
@@ -37,8 +39,10 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
   el.innerHTML = `
     <div class="settings">
       <section class="card">
-        <h2>🎙 마이크</h2>
-        <div id="mics" class="agents"></div>
+        <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <div id="mic" class="agent"></div>
+        <p class="hint">무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 관리자 페이지를 열어 두세요. 한 번 켜 두면 이 브라우저가 기억해서
+          다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 듣지 못합니다.</b> 다른 탭으로 옮겨도 계속 받습니다.</p>
       </section>
       <section class="card">
         <h2>🔈 TV 소리 출력</h2>
@@ -61,72 +65,66 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
     };
   });
 
-  const mics = el.querySelector("#mics") as HTMLElement;
+  const micBox = el.querySelector("#mic") as HTMLElement;
   const outputs = el.querySelector("#outputs") as HTMLElement;
   let last: DevicesMsg | null = null;
   let pending: DevicesMsg | null = null;       // 목록을 고르는 중이면 다 고른 뒤에 다시 그린다
   const send = (m: object) => ctx.socket.sendJson({ type: "device.control", ...m });
 
-  // ---- 마이크 ----
-  function renderMics(d: DevicesMsg): void {
-    if (!d.mics.length) {
-      mics.innerHTML = `<p class="hint">마이크를 받는 화면이 없습니다. 무선 마이크 수신기가 꽂힌 컴퓨터에서
-        <a href="/?mode=mic" target="_blank">/?mode=mic</a> 를 열어 두세요 (TV 컴퓨터에 꽂혀 있으면 TV 주소에 <code>&amp;mic=1</code>).</p>`;
+  // ---- 마이크 (이 컴퓨터) ----
+  const mic = ctx.mic;
+  function renderMic(): void {
+    if (micBox.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") return;   // 고르는 중
+    const kids = ctx.kids();
+    const state = !mic.running ? `<span class="pill">꺼짐</span>`
+      : mic.locked ? `<span class="pill warn">켜졌지만 잠김: 이 화면을 한 번 누르세요</span>`
+      : `<span class="pill ok">켜짐</span> <span class="hint">${esc(mic.capture.opened.map((o) => `${o.label} (${o.channelCount}ch)`).join(", "))}</span>`;
+    if (!mic.listed) {
+      micBox.innerHTML = `<div class="row"><b>이 컴퓨터</b><span class="grow"></span>${state}</div>
+        <p class="hint">마이크 장치를 찾으려면 브라우저가 마이크 권한을 물어봅니다.</p>
+        <div class="actions"><button data-act="find" class="primary">마이크 장치 찾기</button></div>`;
+      (micBox.querySelector("[data-act=find]") as HTMLButtonElement).onclick = () => void mic.refresh();
       return;
     }
-    const kids = ctx.kids();
-    mics.innerHTML = d.mics.map((m) => {
-      const state = !m.running ? `<span class="pill">꺼짐</span>`
-        : m.locked ? `<span class="pill warn">켜졌지만 잠김: 그 화면을 한 번 클릭하세요</span>`
-        : `<span class="pill ok">켜짐</span> <span class="hint">${esc(m.opened.map((o) => `${o.label} (${o.channelCount}ch)`).join(", "))}</span>`;
-      const sel = (offset: number) => {
-        const cur = m.selected.find((s) => s.channelOffset === offset)?.deviceId ?? "";
-        return `<select data-offset="${offset}"><option value="">(사용 안 함)</option>${m.devices.map((dv) =>
-          `<option value="${esc(dv.deviceId)}" ${dv.deviceId === cur ? "selected" : ""}>${esc(dv.label)}</option>`).join("")}</select>`;
-      };
-      return `<div class="agent" data-agent="${esc(m.agent)}">
-        <div class="row"><b>${ROLE_NAME[m.role] ?? m.role}</b><span class="hint">${esc(m.host)}</span><span class="grow"></span>${state}</div>
-        <div class="cols">${SETS.map((s) => `<label>${s.name} ${sel(s.offset)}</label>`).join("")}</div>
-        <div class="actions">
-          <button data-act="toggle" class="${m.running ? "" : "primary"}">${m.running ? "마이크 끄기" : "마이크 켜기"}</button>
-          <button data-act="refresh">장치 다시 찾기</button>
-        </div>
-        <div class="vu">${[0, 1, 2, 3].map((c) => `<div><div class="bar"><i data-ch="${c}"></i></div>
-          <span>${c + 1} ${esc(kids.find((k) => k.mic_channel === c)?.name ?? "-")}</span></div>`).join("")}</div>
-        ${m.msg ? `<p class="hint warn-text">${esc(m.msg)}</p>` : ""}
-      </div>`;
-    }).join("");
-    mics.querySelectorAll<HTMLElement>(".agent").forEach((box) => {
-      const agent = box.dataset.agent!;
-      const m = d.mics.find((x) => x.agent === agent)!;
-      const choice = (): MicChoice[] => [...box.querySelectorAll<HTMLSelectElement>("select")]
-        .filter((s) => s.value)
-        .map((s) => ({ deviceId: s.value, label: s.selectedOptions[0]?.textContent ?? "", channelOffset: Number(s.dataset.offset) }));
-      box.querySelectorAll<HTMLSelectElement>("select").forEach((s) => {
-        s.onchange = () => {
-          // 켜져 있으면 바로 새 장치로 다시 켠다. 꺼져 있으면 '켜기'를 누를 때 쓴다
-          if (m.running) { send({ agent, kind: "mic", action: "start", devices: choice() }); ctx.msg("새 장치로 다시 켭니다"); }
-        };
-      });
-      (box.querySelector("[data-act=toggle]") as HTMLButtonElement).onclick = () => {
-        if (m.running) { send({ agent, kind: "mic", action: "stop" }); ctx.msg("마이크 끔"); return; }
-        const list = choice();
-        if (!list.length) { ctx.msg("마이크 장치를 먼저 고르세요", true); return; }
-        send({ agent, kind: "mic", action: "start", devices: list });
-        ctx.msg("마이크 켜는 중…");
-      };
-      (box.querySelector("[data-act=refresh]") as HTMLButtonElement).onclick = () => send({ agent, kind: "mic", action: "refresh" });
-      setLevels(agent, m.levels);
+    const sel = (offset: number) => {
+      const cur = mic.selected.find((x) => x.channelOffset === offset)?.deviceId ?? "";
+      return `<select data-offset="${offset}"><option value="">(사용 안 함)</option>${mic.devices.map((dv) =>
+        `<option value="${esc(dv.deviceId)}" ${dv.deviceId === cur ? "selected" : ""}>${esc(dv.label)}</option>`).join("")}</select>`;
+    };
+    micBox.innerHTML = `
+      <div class="row"><b>이 컴퓨터</b><span class="grow"></span>${state}</div>
+      <div class="cols">${SETS.map((x) => `<label>${x.name} ${sel(x.offset)}</label>`).join("")}</div>
+      <div class="actions">
+        <button data-act="toggle" class="${mic.running ? "" : "primary"}">${mic.running ? "마이크 끄기" : "마이크 켜기"}</button>
+        <button data-act="refresh">장치 다시 찾기</button>
+      </div>
+      <div class="vu">${[0, 1, 2, 3].map((c) => `<div><div class="bar"><i data-ch="${c}"></i></div>
+        <span>${c + 1} ${esc(kids.find((k) => k.mic_channel === c)?.name ?? "-")}</span></div>`).join("")}</div>
+      ${mic.msg ? `<p class="hint warn-text">${esc(mic.msg)}</p>` : ""}`;
+    const choice = (): MicChoice[] => [...micBox.querySelectorAll<HTMLSelectElement>("select")]
+      .filter((x) => x.value)
+      .map((x) => ({ deviceId: x.value, label: x.selectedOptions[0]?.textContent ?? "", channelOffset: Number(x.dataset.offset) }));
+    micBox.querySelectorAll<HTMLSelectElement>("select").forEach((x) => {
+      x.onchange = () => { if (mic.running) { void mic.start(choice()); ctx.msg("새 장치로 다시 켭니다"); } };   // 켜져 있으면 바로 바꾼다
+      x.onblur = () => renderMic();
     });
+    (micBox.querySelector("[data-act=toggle]") as HTMLButtonElement).onclick = () => {
+      if (mic.running) { void mic.stop(); ctx.msg("마이크 끔 (다음에 열 때 자동으로 켜지 않습니다)"); return; }
+      const list = choice();
+      if (!list.length) { ctx.msg("마이크 장치를 먼저 고르세요", true); return; }
+      void mic.start(list);
+    };
+    (micBox.querySelector("[data-act=refresh]") as HTMLButtonElement).onclick = () => void mic.refresh();
   }
-
-  function setLevels(agent: string, levels: number[] | undefined): void {
-    const box = [...mics.querySelectorAll<HTMLElement>(".agent")].find((b) => b.dataset.agent === agent);
-    if (!box || !levels) return;
-    box.querySelectorAll<HTMLElement>(".vu i").forEach((bar) => {
-      bar.style.height = `${Math.round((levels[Number(bar.dataset.ch)] ?? 0) * 100)}%`;
+  ctx.onMic(renderMic);
+  renderMic();
+  // 음량 막대 (보일 때만)
+  setInterval(() => {
+    if (!micBox.isConnected || micBox.offsetParent === null) return;
+    micBox.querySelectorAll<HTMLElement>(".vu i").forEach((bar) => {
+      bar.style.height = `${Math.round(mic.level(Number(bar.dataset.ch)) * 100)}%`;
     });
-  }
+  }, 80);
 
   // ---- TV 소리 출력 ----
   function renderOutputs(d: DevicesMsg): void {
@@ -165,17 +163,19 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
     if (el.contains(document.activeElement) && document.activeElement?.tagName === "SELECT") { pending = d; return; }
     pending = null;
     last = d;
-    renderMics(d);
     renderOutputs(d);
   }
   el.addEventListener("focusout", () => setTimeout(() => { if (pending) render(pending); }, 0));
 
   ctx.socket.on((m: ServerMsg) => {
     if (m.type === "devices") render(m);
-    else if (m.type === "devices.levels") setLevels(m.agent, m.levels);
   });
-  ctx.onState(() => { if (last && !pending) renderMics(last); });   // 아이 이름(마이크 번호)이 바뀌면
-  render({ type: "devices", mics: [], outputs: [] });
+  let kidsKey = "";
+  ctx.onState((st) => {
+    const key = st.kids.map((k) => `${k.name}:${k.mic_channel}`).join(",");
+    if (key !== kidsKey) { kidsKey = key; renderMic(); }                  // 음량 막대 아래 아이 이름
+    if (!last?.outputs.length) ctx.socket.sendJson({ type: "devices.get" });   // 다시 연결됐을 때
+  });
+  render({ type: "devices", outputs: [] });
   ctx.socket.sendJson({ type: "devices.get" });
-  ctx.onState(() => { if (!last?.mics.length && !last?.outputs.length) ctx.socket.sendJson({ type: "devices.get" }); });   // 다시 연결됐을 때
 }

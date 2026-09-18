@@ -8,7 +8,7 @@ import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
 import { renderNow, SEATS, type WorldView } from "../world/types";
 
-export interface TvOptions { debug: boolean; demo: boolean; mic: boolean }
+export interface TvOptions { debug: boolean; demo: boolean }
 
 /**
  * TV 모드: 3D 방 + 리본이 + 대기 순서 + 자막.
@@ -201,11 +201,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   }
   requestAnimationFrame(frame);
 
-  if (opts.mic && !opts.debug) {
-    // 마이크가 TV 노트북에 꽂혀 있을 때: 장치 고르기·켜기는 관리자 '설정' 탭에서 (화면에는 아무것도 띄우지 않는다)
-    const { MicAgent } = await import("../audio/micAgent");
-    new MicAgent(socket, { autoStart: true });
-  }
   if (opts.debug) {
     const { mountDebugPanel } = await import("../debug/panel");
     mountDebugPanel(socket, () => kids);

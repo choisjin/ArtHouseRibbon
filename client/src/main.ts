@@ -7,8 +7,8 @@ import type { ClientRole } from "./protocol";
  *   /?mode=entrance  출입구 폰. 카메라로 아이를 알아보고 인사
  *   /?mode=camera    TV 위 폰. 얼굴 위치를 서버로 보내 리본이 시선에 쓴다
  *   /?mode=debug     TV 화면 + 디버그 패널 자동 표시
- *   /?mode=admin     관리자 페이지. 아이 목록, 리본이 목소리·겉모습, TV 에 보여줄 방
- *   /?mode=mic       마이크 화면. 무선 마이크가 꽂힌 컴퓨터에서 켜 둔다 (TV 에서 받으려면 /?mode=tv&mic=1)
+ *   /?mode=admin     관리자 페이지. 무선 마이크 수신기가 꽂힌 컴퓨터에서 열어 두면 마이크도 받는다 (설정 탭)
+ *   /?mode=mic       (예전 마이크 화면) → 관리자 설정 탭으로 넘어간다
  *   /?mode=editor    맵 편집기. 가구 배치와 벽에 거는 그림 (Character_Creator 배치 편집기)
  *   /?mode=art       아이 전시실 꾸미기. 작품 사진을 올리고(배경 지우기) 전시실 벽에 건다
  */
@@ -16,6 +16,11 @@ const params = new URLSearchParams(location.search);
 const mode = (params.get("mode") ?? "tv") as ClientRole;
 
 async function boot(): Promise<void> {
+  if (mode === "mic") {
+    // 마이크 설정·받기는 관리자 설정 탭으로 옮겼다 (예전 주소·start_ribbon 설정을 위해 남겨 둔다)
+    location.replace("/?mode=admin#settings");
+    return;
+  }
   if (mode === "editor") {
     const { startEditor } = await import("./editor/index");
     await startEditor();
@@ -39,11 +44,6 @@ async function boot(): Promise<void> {
       await startCamera(socket);
       break;
     }
-    case "mic": {
-      const { startMic } = await import("./mic/index");
-      await startMic(socket);
-      break;
-    }
     case "admin": {
       const { startAdmin } = await import("./admin/index");
       await startAdmin(socket);
@@ -51,7 +51,7 @@ async function boot(): Promise<void> {
     }
     default: {
       const { startTv } = await import("./tv/index");
-      await startTv(socket, { debug: mode === "debug" || params.has("debug"), demo: params.has("demo"), mic: params.has("mic") });
+      await startTv(socket, { debug: mode === "debug" || params.has("debug"), demo: params.has("demo") });
     }
   }
 }
