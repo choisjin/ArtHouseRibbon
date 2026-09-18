@@ -15,16 +15,16 @@ bpy 를 쓰지 않는 값만 둔다.
 """
 
 PHASES = {
-    "dawn": dict(name="일출", from_h=5, sky=(0.34, 0.20, 0.25), sun=900, sun_color=(1.0, 0.66, 0.48),
-                 top=0.5, panel=1.5, exposure=-0.6),
-    "morning": dict(name="아침", from_h=7, sky=(0.52, 0.66, 0.88), sun=3400, sun_color=(1.0, 0.93, 0.86),
-                    top=1.4, panel=0.9, exposure=-0.35),
-    "day": dict(name="낮", from_h=11, sky=(0.48, 0.66, 0.92), sun=4400, sun_color=(1.0, 0.97, 0.92),
-                top=1.8, panel=0.8, exposure=-0.3),
-    "sunset": dict(name="일몰", from_h=17, sky=(0.62, 0.24, 0.09), sun=1600, sun_color=(1.0, 0.58, 0.34),
-                   top=0.7, panel=2.1, exposure=-0.45),
-    "night": dict(name="밤", from_h=20, sky=(0.018, 0.026, 0.06), sun=40, sun_color=(0.55, 0.62, 0.9),
-                  top=0.16, panel=3.0, exposure=-0.5),
+    "dawn": dict(name="일출", from_h=5, sky=(0.34, 0.20, 0.25), sun=1050, sun_color=(1.0, 0.66, 0.48),
+                 top=0.58, panel=1.7, exposure=-0.35),
+    "morning": dict(name="아침", from_h=7, sky=(0.52, 0.66, 0.88), sun=3900, sun_color=(1.0, 0.93, 0.86),
+                    top=1.6, panel=1.05, exposure=-0.1),
+    "day": dict(name="낮", from_h=11, sky=(0.48, 0.66, 0.92), sun=5000, sun_color=(1.0, 0.97, 0.92),
+                top=2.05, panel=0.9, exposure=-0.05),
+    "sunset": dict(name="일몰", from_h=17, sky=(0.62, 0.24, 0.09), sun=1850, sun_color=(1.0, 0.58, 0.34),
+                   top=0.8, panel=2.4, exposure=-0.2),
+    "night": dict(name="밤", from_h=20, sky=(0.018, 0.026, 0.06), sun=45, sun_color=(0.55, 0.62, 0.9),
+                  top=0.18, panel=3.4, exposure=-0.25),
 }
 
 #: 시간 순서 (밤이 마지막이라 자정~새벽도 밤)

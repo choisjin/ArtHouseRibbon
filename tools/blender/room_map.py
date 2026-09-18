@@ -56,7 +56,8 @@ ROOM_W = 12.0 * 1.3             # 가로 15.6 (처음 12의 1.3배)
 ROOM_H = ROOM_W * 9 / 16        # 높이 8.775 (약 3.9m): 입구가 16:9 → 3840×2160 화면에 딱 맞음
 TV_RES = (3840, 2160)
 ROOM_WORLD = (0.62, 0.70, 0.80, 1.0)  # 왼쪽 창으로 보이는 하늘빛 (시간대에 따라 phases.py 가 바꾼다)
-ROOM_EXPOSURE = -0.9            # 렌더 노출(EV). 형광등처럼 쨍하지 않게 한 단계 낮춰 찍는다
+ROOM_EXPOSURE = -0.9            # 렌더 노출(EV) 기본값 (미술실은 시간대마다 phases.py 가 따로 정한다)
+GALLERY_EXPOSURE = -0.35        # 전시장 렌더 노출
 CORR_W = 6.5                    # 오른쪽 유리벽 밖 상가 복도 폭 (약 3m). 천장 높이는 방과 같다
 SX = ROOM_W / 12.0             # 바닥 소품 위치를 가로 비율에 맞춰 늘리는 계수
 ROOM_D = LCAB_LEN + RCAB_LEN + PIL_W + 2 * PIER_W  # 약 16.5 (앞 벽기둥 + 좌측장 + 기둥 + 우측장 + 뒤 벽기둥)
@@ -363,7 +364,7 @@ def make_materials():
         "gfloor": mat_planks("GalleryFloor", srgb(230, 220, 204), srgb(218, 206, 188)),
         "gskirt": mat_plain("GallerySkirt", srgb(226, 224, 219), rough=0.6, sheen=0.0),
         "track": mat_plain("TrackBlack", srgb(30, 30, 32), rough=0.4, sheen=0.0),
-        "skylight": mat_plain("Skylight", srgb(255, 253, 248), emit=0.5),
+        "skylight": mat_plain("Skylight", srgb(255, 253, 248), emit=0.85),
         "bench": mat_plain("BenchFabric", srgb(120, 124, 130), rough=0.95, sheen=0.6),
         "plinth": mat_plain("PlinthWhite", srgb(250, 250, 248), rough=0.5, sheen=0.0),
         "art_canvas": mat_plain("ArtCanvasEdge", srgb(244, 241, 234), rough=0.8, sheen=0.2),
@@ -619,11 +620,10 @@ def build_left_wall(B, M):
     B.box("LWall_Low", (xw - T / 2, 0, SILL_Z / 2), (T, ROOM_D, SILL_Z), M["lwall"], 0.0)
     B.box("LWall_Head", (xw - T / 2, 0, (HEAD_Z + H) / 2), (T, ROOM_D, H - HEAD_Z), M["lwall"], 0.0)
 
-    # 앞쪽 끝 흰 벽기둥
-    B.box("LPier", (xw + PIER_D / 2 - T / 2, FRONT_Y + PIER_W / 2, H / 2), (PIER_D + T, PIER_W, H), M["trim"], 0.03)
-    # 정면벽 쪽 모서리 벽기둥 (앞쪽과 같은 크기, 정면벽에서 살짝 튀어나옴)
-    B.box("LPierBack", (xw + PIER_D / 2 - T / 2, BACK_Y - PIER_W / 2 + T / 2, H / 2),
-          (PIER_D + T, PIER_W + T, H), M["trim"], 0.03)
+    # 앞뒤 모서리 기둥: 줄무늬 기둥과 같은 분홍, 같은 깊이로 튀어나온다
+    B.box("LPier", (xw + PIL_D / 2 - T / 2, FRONT_Y + PIER_W / 2, H / 2), (PIL_D + T, PIER_W, H), M["pillar_p"], 0.03)
+    B.box("LPierBack", (xw + PIL_D / 2 - T / 2, BACK_Y - PIER_W / 2 + T / 2, H / 2),
+          (PIL_D + T, PIER_W + T, H), M["pillar_p"], 0.03)
 
     # 가운데 기둥: 빨강/분홍 세로 줄무늬 (정면 + 옆면). 양 끝은 빨강
     sw = PIL_W / STRIPES
@@ -1119,6 +1119,10 @@ def build_right_glass_wall(B, M):
         y = FRONT_Y + ROOM_D * k / n
         y = min(max(y, FRONT_Y + 0.06), BACK_Y - 0.06)
         B.box(f"RSash{k}", (xw + 0.02, y, H / 2), (0.16, 0.12 if 0 < k < n else 0.1, H), M["trim"], 0.02)
+    # 앞뒤 모서리 기둥: 왼쪽과 같은 분홍 기둥 (방 안쪽으로 PIL_D 만큼)
+    B.box("RPier", (xw - PIL_D / 2 + T / 2, FRONT_Y + PIER_W / 2, H / 2), (PIL_D + T, PIER_W, H), M["pillar_p"], 0.03)
+    B.box("RPierBack", (xw - PIL_D / 2 + T / 2, BACK_Y - PIER_W / 2 + T / 2, H / 2),
+          (PIL_D + T, PIER_W + T, H), M["pillar_p"], 0.03)
 
 def build_corridor(B, M):
     """오른쪽 유리벽 밖 상가 복도. 밖이 아니라 건물 안이라 시간과 상관없이 늘 같은 밝기다.
@@ -1758,10 +1762,13 @@ def room_info(room="classroom"):
     dist = (ROOM_W / 2) / math.tan(half)
     obstacles = []
     if room == "classroom":
+        xe = ROOM_W / 2
         obstacles = [
             dict(name="가운데 기둥", x0=xw, x1=xw + PIL_D, y0=pf, y1=pb),
-            dict(name="앞쪽 벽기둥", x0=xw, x1=xw + PIER_D, y0=FRONT_Y, y1=FRONT_Y + PIER_W),
-            dict(name="뒤쪽 벽기둥", x0=xw, x1=xw + PIER_D, y0=BACK_Y - PIER_W, y1=BACK_Y),
+            dict(name="왼쪽 앞 기둥", x0=xw, x1=xw + PIL_D, y0=FRONT_Y, y1=FRONT_Y + PIER_W),
+            dict(name="왼쪽 뒤 기둥", x0=xw, x1=xw + PIL_D, y0=BACK_Y - PIER_W, y1=BACK_Y),
+            dict(name="오른쪽 앞 기둥", x0=xe - PIL_D, x1=xe, y0=FRONT_Y, y1=FRONT_Y + PIER_W),
+            dict(name="오른쪽 뒤 기둥", x0=xe - PIL_D, x1=xe, y0=BACK_Y - PIER_W, y1=BACK_Y),
         ]
     return dict(
         id=room, name=ROOMS[room]["name"], shell=ROOMS[room]["shell"], prefix=ROOMS[room]["prefix"],
@@ -1795,11 +1802,11 @@ def room_lights(link, room=None, phase=None):
               (CORR_W * 0.8, ROOM_D * 1.1), (0, 0, 0), (1.0, 0.96, 0.9)))
     if room == "gallery":
         a = math.radians(50)
-        specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 165 * SX, (8 * SX, ROOM_D * 0.7), (0, 0, 0), WARM),
-                 ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 50 * SX, (8 * SX, 3), (math.radians(80), 0, 0), WARM),
-                 ("WashLeft", (-ROOM_W / 2 + 2.5, 0.0, ROOM_H - 0.5), 130, (0.6, ROOM_D * 0.8), (0, a, 0), WARM),
-                 ("WashRight", (ROOM_W / 2 - 2.5, 0.0, ROOM_H - 0.5), 130, (0.6, ROOM_D * 0.8), (0, -a, 0), WARM),
-                 ("WashBack", (0.0, BACK_Y - 2.5, ROOM_H - 0.5), 130, (ROOM_W * 0.8, 0.6), (a, 0, 0), WARM))
+        specs = (("RoomTop", (0, 0.3, ROOM_H - 0.3), 250 * SX, (8 * SX, ROOM_D * 0.7), (0, 0, 0), WARM),
+                 ("RoomFront", (0, FRONT_Y - 3.0, 3.8), 76 * SX, (8 * SX, 3), (math.radians(80), 0, 0), WARM),
+                 ("WashLeft", (-ROOM_W / 2 + 2.5, 0.0, ROOM_H - 0.5), 200, (0.6, ROOM_D * 0.8), (0, a, 0), WARM),
+                 ("WashRight", (ROOM_W / 2 - 2.5, 0.0, ROOM_H - 0.5), 200, (0.6, ROOM_D * 0.8), (0, -a, 0), WARM),
+                 ("WashBack", (0.0, BACK_Y - 2.5, ROOM_H - 0.5), 200, (ROOM_W * 0.8, 0.6), (a, 0, 0), WARM))
     for name, loc, energy, (sx, sy), rot, color in specs:
         ld = bpy.data.lights.new(name, "AREA")
         ld.shape = "RECTANGLE"
@@ -1822,7 +1829,7 @@ def apply_phase(phase=None, room=None):
     room = room or CURRENT_ROOM
     ph = phases.get(phase or phases.DEFAULT)
     if room == "gallery":
-        return ROOM_WORLD, ROOM_EXPOSURE
+        return ROOM_WORLD, GALLERY_EXPOSURE
     m = bpy.data.materials.get("PanelLight")
     if m and m.use_nodes:
         for nd in m.node_tree.nodes:
