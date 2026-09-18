@@ -55,6 +55,9 @@ export const EXPRESSIONS: Record<Expression, Look> = {
 function pivotFor(mesh: THREE.Object3D): THREE.Object3D | null {
   const parent = mesh.parent;
   if (!parent) return null;
+  // 부품 상자(월드)와 부모의 월드→로컬 변환이 같은 행렬로 계산돼야 한다. 복제본은 행렬이 원본에서 복사된 채
+  // 낡아 있을 수 있어서, 조상부터 부품까지 먼저 새로 계산한다 (안 그러면 축이 엉뚱한 곳에 생겨 눈이 떨어져 나간다)
+  parent.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(mesh);
   const center = box.getCenter(new THREE.Vector3());
   parent.worldToLocal(center);
