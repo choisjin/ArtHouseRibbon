@@ -82,3 +82,14 @@ async def test_stop_drops_lines_waiting_to_be_spoken():
     await asyncio.wait_for(asyncio.gather(greet, wake), timeout=1.0)   # 기다리던 인사도 바로 풀린다
     spoken = [m["text"] for m in sent if m.get("type") == "speak"]
     assert len(spoken) == 1 and "왔구나" in spoken[0]
+
+
+async def test_speaking_covers_speech_and_tail():
+    dm, _ = make()
+    assert not dm.speaking(now=1000.0)
+    dm._pending_done.append(("u1", asyncio.Event(), 5))   # TV 가 아직 재생 중
+    assert dm.speaking(now=1000.0)
+    dm._pending_done.clear()
+    t = dm._last_spoken_at = 1000.0              # 재생이 끝난 때
+    assert dm.speaking(now=t + 0.3)              # 끝난 직후 여운
+    assert not dm.speaking(now=t + dm.settings.echo_tail_ms / 1000 + 0.1)

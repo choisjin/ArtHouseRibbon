@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     vad_silence_ms: int = 800
     max_utterance_s: int = 15
     follow_up_window_s: float = 6.0
+    # 에코 막기: 리본이가 말하는 동안과 끝난 뒤 echo_tail_ms 동안은 마이크 소리를 버린다.
+    # TV 스피커 소리가 마이크(특히 웹캠 마이크)로 다시 들어가 새 질문이 되는 것을 막는다.
+    # 대신 리본이가 말하는 중에는 다른 아이의 호출도 듣지 못한다 (목에 거는 마이크만 쓰면 꺼도 된다)
+    echo_guard: bool = True
+    echo_tail_ms: int = 700
 
     waiting_timeout_s: float = 20.0
     turn_idle_timeout_s: float = 10.0   # 리본이가 "말해봐"를 끝낸 뒤부터 잰다

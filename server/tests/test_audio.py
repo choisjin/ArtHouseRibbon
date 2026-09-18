@@ -79,3 +79,18 @@ def test_channel_processor_wake_then_utterance_then_sleep():
     assert "utterance" in events
     assert events[-1] == "sleep"
     assert proc.state == "idle"
+
+
+def test_hold_drops_speech_and_restarts_follow_up_window():
+    """리본이가 말하는 동안(에코 막기) 잘라 두던 소리를 버리고, 이어 말할 시간은 말이 끝난 뒤부터 잰다"""
+    s = Settings(vad_silence_ms=300, follow_up_window_s=1.0)
+    proc = ChannelProcessor(0, s, _AlwaysWake())
+    proc.start_listening(now=0.0)
+    for f in _frames(_tone(0.4)):
+        proc.feed(f, now=0.1)
+    assert proc.segmenter.in_speech
+    proc.hold(now=5.0)                          # 말하는 중에는 feed 대신 hold
+    assert not proc.segmenter.in_speech
+    assert proc.state == "listening"
+    events = [k for f in _frames(_silence(0.1)) for k, _ in proc.feed(f, now=5.5)]
+    assert "sleep" not in events and "utterance" not in events

@@ -43,6 +43,15 @@ class ChannelProcessor:
         self.state = "idle"
         self.segmenter.reset()
 
+    def hold(self, now: Optional[float] = None) -> None:
+        """리본이가 말하는 동안 (에코 막기): 소리를 버리고 잘라 두던 발화도 버린다.
+        듣는 중이면 이어 말할 시간(follow-up)은 리본이 말이 끝난 뒤부터 다시 잰다."""
+        now = time.time() if now is None else now
+        self.segmenter.reset()
+        self._idle_buf = []
+        if self.state == "listening":
+            self._listen_until = now + self.settings.follow_up_window_s
+
     def feed(self, pcm: np.ndarray, now: Optional[float] = None) -> List[Event]:
         now = time.time() if now is None else now
         events: List[Event] = []

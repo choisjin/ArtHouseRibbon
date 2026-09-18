@@ -466,6 +466,9 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     proc = processors.get(channel)
     if proc is None:
         return
+    if settings.echo_guard and dialogue.speaking():
+        proc.hold()                  # 리본이 목소리가 마이크로 다시 들어오는 것 (에코)
+        return
     for kind, payload in proc.feed(pcm):
         if kind == "wake":
             _spawn(dialogue.on_wake(channel))

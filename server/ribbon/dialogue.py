@@ -175,6 +175,13 @@ class DialogueManager:
         log.info("관리자 중단 (대기열 %s)", "비움" if clear_queue else f"{len(self.queue)}명 남음")
         await self._after_turn()
 
+    def speaking(self, now: Optional[float] = None) -> bool:
+        """리본이 목소리가 스피커에서 나오고 있을 수 있는가 (말하는 중 + 끝난 뒤 echo_tail_ms)"""
+        now = time.time() if now is None else now
+        if self._speak_lock.locked() or self._pending_done or self._waiting is not None:
+            return True
+        return now - self._last_spoken_at < self.settings.echo_tail_ms / 1000
+
     def mark_spoken(self, utterance_id: str) -> None:
         """클라이언트가 재생을 끝냈다고 알릴 때 (browser TTS)."""
         ev = self._spoken.get(utterance_id)
