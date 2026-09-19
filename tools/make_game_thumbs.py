@@ -1,4 +1,5 @@
-"""포켓몬 맞추기 게임 고르기 화면의 썸네일 3장을 맥미니 MLX 로 만든다 -> data/game_thumbs/{describe,image,peek}.png
+"""포켓몬 맞추기 게임 고르기 화면의 게임 표지 3장을 맥미니 MLX 로 만든다 -> data/game_thumbs/{describe,image,peek}.png
+(1. 설명 듣고 맞추기, 2. 그림 보고 맞추기, 3. 조금 보고 맞추기. 세로 3:4 게임 박스 표지처럼, 제목 글씨는 TV 가 얹는다)
 
 서버가 /api/game/thumb/<게임> 으로 바로 보여 준다 (다시 만들면 TV 를 새로 열 때 바뀐다).
 집에서 아이와만 쓰는 것이라 실제 포켓몬(피카츄·이브이·팬텀)을 그린다. 글자는 넣지 않는다 (한글 제목은 TV 가 얹는다).
@@ -24,16 +25,20 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data", "game_thumbs")
-STYLE = ("Pokemon official anime art style, bright children's video game title card, bold outlines, "
-         "vivid colors, sparkles, centered composition, soft gradient background, "
+STYLE = ("Pokemon video game box art cover, official key art, dynamic heroic composition, dramatic rim lighting, "
+         "glowing light rays burst behind, glossy vibrant colors, high detail, portrait orientation, "
+         "the lower quarter of the image left as a simple colorful gradient for a title, "
          "no text, no letters, no words, no logo")
 PROMPTS = {
-    "describe": "Pikachu happily talking, a large speech bubble with a big question mark next to Pikachu, "
-                "a mysterious Pokemon silhouette in the background, " + STYLE,
-    "image": "Eevee inside a golden picture frame, Pikachu holding a big magnifying glass looking at it, "
-             "stars around, " + STYLE,
-    "peek": "a grid of purple square puzzle tiles, some tiles flipped open revealing parts of Gengar hiding "
-            "behind them, question marks floating, Who's that Pokemon style, " + STYLE,
+    # 1. 설명 듣고 맞추기 (주황): 말풍선 물음표와 피카츄
+    "describe": "Pikachu leaning forward curiously with a hand to its ear listening, a huge glowing speech bubble "
+                "with a big question mark above, warm orange and yellow background, " + STYLE,
+    # 2. 그림 보고 맞추기 (파랑): 금색 액자 속 이브이, 돋보기
+    "image": "Eevee posing proudly inside an ornate golden picture frame, a big magnifying glass in front, "
+             "sparkles, bright sky blue background, " + STYLE,
+    # 3. 조금 보고 맞추기 (보라): 타일 사이로 살짝 보이는 팬텀
+    "peek": "Gengar peeking mischievously through gaps between floating purple square tiles that hide most of "
+            "its body, only its grin and eyes visible, question marks floating, deep purple background, " + STYLE,
 }
 
 
@@ -60,12 +65,12 @@ def pick_image_model(base, want=""):
     return ""
 
 
-def gen_serve(base, model, prompt, path, size, seed):
+def gen_serve(base, model, prompt, path, width, height, seed):
     try:
         http("POST", f"{base.rsplit('/v1', 1)[0]}/v1/load-model", {"model": model}, timeout=600)
     except Exception:  # noqa: BLE001 - 올리기 API 가 없어도 만들기는 해 본다
         pass
-    body = {"model": model, "prompt": prompt, "n": 1, "size": f"{size}x{size}", "response_format": "b64_json"}
+    body = {"model": model, "prompt": prompt, "n": 1, "size": f"{width}x{height}", "response_format": "b64_json"}
     if seed is not None:
         body["seed"] = seed
     res = http("POST", f"{base}/images/generations", body)
@@ -81,12 +86,12 @@ def gen_serve(base, model, prompt, path, size, seed):
         f.write(raw)
 
 
-def gen_mflux(prompt, path, size, seed, steps, model):
+def gen_mflux(prompt, path, width, height, seed, steps, model):
     exe = shutil.which("mflux-generate")
     if not exe:
         raise RuntimeError("mflux 가 없습니다: pip install mflux")
-    cmd = [exe, "--model", model, "--prompt", prompt, "--steps", str(steps), "--width", str(size),
-           "--height", str(size), "--output", path, "-q", "8"]
+    cmd = [exe, "--model", model, "--prompt", prompt, "--steps", str(steps), "--width", str(width),
+           "--height", str(height), "--output", path, "-q", "8"]
     if seed is not None:
         cmd += ["--seed", str(seed)]
     print("  ", " ".join(cmd[:3]), "...", flush=True)
@@ -100,7 +105,8 @@ def main():
     ap.add_argument("--model", default="", help="mlx-serve 그림 모델 이름 (비우면 찾아본다)")
     ap.add_argument("--mflux-model", default="schnell", help="mflux 모델: schnell (빠름) | dev")
     ap.add_argument("--only", choices=list(PROMPTS), help="하나만 다시 만들기")
-    ap.add_argument("--size", type=int, default=768)
+    ap.add_argument("--width", type=int, default=768)
+    ap.add_argument("--height", type=int, default=1024, help="게임 표지처럼 세로 3:4")
     ap.add_argument("--steps", type=int, default=4, help="mflux 단계 수 (schnell 은 2~4)")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--list", action="store_true", help="mlx-serve 모델 목록만 보기")
@@ -134,9 +140,9 @@ def main():
         path = os.path.join(OUT, f"{mode}.png")
         print(f"[{mode}] 만드는 중...", flush=True)
         if backend == "serve":
-            gen_serve(args.base, model, prompt, path, args.size, args.seed)
+            gen_serve(args.base, model, prompt, path, args.width, args.height, args.seed)
         else:
-            gen_mflux(prompt, path, args.size, args.seed, args.steps, args.mflux_model)
+            gen_mflux(prompt, path, args.width, args.height, args.seed, args.steps, args.mflux_model)
         print(f"  -> {path}")
     print("끝. TV 를 새로 열면 게임 고르기 화면에 나옵니다.")
 

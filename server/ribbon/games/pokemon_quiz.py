@@ -4,7 +4,7 @@
 
 - describe: 리본이가 타입·생김새·특징을 말로 설명하고 맞춘다. 어려워하면 힌트를 하나씩 더.
 - image:    TV 에 포켓몬 그림을 띄우고 이름을 맞춘다. 어려워하면 글자 수 -> 초성 -> 한 글자씩.
-- peek:     그림을 90% 가리고 시작. 어려워하면 여기저기(이어지지 않게) 조금씩 더 보여 준다. 중간에 초성·글자도.
+- peek:     "조금 보고 맞추기". 그림을 90% 가리고 시작. 어려워하면 여기저기(이어지지 않게) 조금씩 더 보여 준다. 중간에 초성·글자도.
 
 정답 판정과 힌트 순서는 이 규칙 코드가 정한다 (대화 모델이 정답을 흘리거나 틀리게 판정하지 않게).
 대화 모델은 describe 의 "생김새" 힌트 하나만 만든다 (도감에 생김새가 없어서, dialogue 가 뒤에서 채운다).
@@ -22,10 +22,11 @@ from typing import Dict, List, Optional
 from ..knowledge.pokedex import Pokedex, jamo
 
 MODES = ("describe", "image", "peek")
-MODE_NAME = {"describe": "설명 듣고 맞추기", "image": "그림 보고 맞추기", "peek": "가린 그림 맞추기"}
+MODE_NAME = {"describe": "설명 듣고 맞추기", "image": "그림 보고 맞추기", "peek": "조금 보고 맞추기"}
 MODE_SUB = {"describe": "리본이 설명을 듣고 누구인지 맞혀요", "image": "그림을 보고 이름을 맞혀요",
-            "peek": "가려진 그림을 조금씩 열어요"}
-GRID = 6                                    # 가린 그림: 6x6 = 36칸
+            "peek": "조금만 보이는 그림을 보고 맞혀요"}
+GRID = 6                                    # 조금 보고 맞추기: 6x6 = 36칸
+MODE_ART = {"describe": 25, "image": 133, "peek": 94}   # 게임 표지에 나오는 포켓몬 (피카츄·이브이·팬텀)
 _CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 _CHO_NAME = {"ㄱ": "기역", "ㄲ": "쌍기역", "ㄴ": "니은", "ㄷ": "디귿", "ㄸ": "쌍디귿", "ㄹ": "리을", "ㅁ": "미음",
              "ㅂ": "비읍", "ㅃ": "쌍비읍", "ㅅ": "시옷", "ㅆ": "쌍시옷", "ㅇ": "이응", "ㅈ": "지읒", "ㅉ": "쌍지읒",
@@ -97,11 +98,13 @@ def detect_start(text: str) -> Optional[str]:
 
 def detect_mode(text: str) -> Optional[str]:
     c = _compact(text)
-    if any(k in c for k in ("가린", "가려", "가리고", "숨은", "숨긴", "숨겨", "일부", "부분", "조금만보", "세번째", "3번")):
+    # 3번(조금 보고)을 먼저: "조금 보고" 에도 "보고" 가 있어서 2번(그림 보고)으로 가지 않게
+    if any(k in c for k in ("조금보", "조금만", "쪼금", "가린", "가려", "가리고", "숨은", "숨긴", "숨겨", "일부", "부분",
+                            "세번째", "3번", "삼번")):
         return "peek"
     if any(k in c for k in ("그림", "사진", "이미지", "보고", "두번째", "2번")):
         return "image"
-    if any(k in c for k in ("설명", "듣고", "말로", "특징", "첫번째", "1번")):
+    if any(k in c for k in ("설명", "듣고", "말로", "특징", "첫번째", "1번", "일번")):
         return "describe"
     return None
 
@@ -162,7 +165,7 @@ class PokemonQuiz:
         self.mode = ""
         self.answer: Optional[Dict] = None
         self.hints: List[str] = []   # 남은 힌트 종류
-        self.shown: List[int] = []   # 가린 그림에서 보이는 칸
+        self.shown: List[int] = []   # 조금 보고 맞추기에서 보이는 칸
         self.letters = 0             # 이름판에서 공개한 글자 수
         self.cho = False             # 이름판에 초성을 보였나
         self.count = False           # 이름판에 글자 수(빈칸)를 보였나
@@ -172,6 +175,7 @@ class PokemonQuiz:
         self.max_id = 151
         self.recent: List[int] = []
         self.last_at = 0.0
+        self.thumbs_dir = None       # MLX 로 만든 게임 표지 폴더 (main 이 정한다, tools/make_game_thumbs.py)
 
     # ---------- 시작·끝 ----------
     def offer(self, mode: str = "") -> Reply:
@@ -190,7 +194,7 @@ class PokemonQuiz:
         self.pending = ""
         if mode in MODES:
             return self._pick(mode, intro="좋아!")
-        return Reply(["좋아, 포켓몬 맞추기 하자! 1번 설명 듣고 맞추기, 2번 그림 보고 맞추기, 3번 가린 그림 맞추기. 뭐 할래?"])
+        return Reply(["좋아, 포켓몬 맞추기 하자! 1번 설명 듣고 맞추기, 2번 그림 보고 맞추기, 3번 조금 보고 맞추기. 뭐 할래?"])
 
     def _pick(self, mode: str, intro: str = "") -> Reply:
         """고른 게임을 TV 에서 반짝이게 하고 맞는지 묻는다"""
@@ -216,6 +220,9 @@ class PokemonQuiz:
         self.phase = ""
         return Reply([f"알겠어, 포켓몬 맞추기 끝! 정답은 {ieosseo(name)}." if name else "알겠어, 포켓몬 맞추기 끝! 재미있었다."],
                      ended=True)
+
+    def _has_thumb(self, mode: str) -> bool:
+        return bool(self.thumbs_dir) and (self.thumbs_dir / f"{mode}.png").exists()
 
     def _pool(self) -> List[Dict]:
         pool = [e for e in self.dex.entries if e["id"] <= self.max_id]
@@ -273,7 +280,7 @@ class PokemonQuiz:
                 self.phase = ""
                 return Reply(ended=True, passthrough=True)
             if not mode:
-                return Reply(["1번 설명 듣고, 2번 그림 보고, 3번 가린 그림 중에 골라 줘!"])
+                return Reply(["1번 설명 듣고, 2번 그림 보고, 3번 조금 보고 중에 골라 줘!"])
             return self._pick(mode)
         if self.phase == "confirm":
             mode = detect_mode(text)
@@ -414,7 +421,9 @@ class PokemonQuiz:
             # 게임 고르기 화면: 썸네일(tools/make_game_thumbs.py 가 MLX 로 만든 것)과 제목, 고른 것은 반짝
             return {"kind": "menu", "selected": self.pending or None,
                     "items": [{"mode": m, "num": i + 1, "title": MODE_NAME[m], "sub": MODE_SUB[m],
-                               "thumb": f"/api/game/thumb/{m}"} for i, m in enumerate(MODES)]}
+                               # 만들어 둔 표지가 있으면 그것, 없으면 공식 그림으로 TV 가 표지를 꾸민다
+                               "thumb": f"/api/game/thumb/{m}" if self._has_thumb(m) else None,
+                               "art": f"/api/pokemon/{MODE_ART[m]}/image"} for i, m in enumerate(MODES)]}
         if not self.answer:
             return None
         e = self.answer

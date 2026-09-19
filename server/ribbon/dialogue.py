@@ -420,7 +420,7 @@ class DialogueManager:
         words = list(dict.fromkeys(n for n in names + chars if n))
         text = f"{', '.join(words)}. 아이가 {self.ribbon_name}에게 말한다. 그림, 포켓몬, 공룡, 선생님."
         if self.quiz and self.quiz.active:
-            text += " 포켓몬 맞추기, 힌트, 정답, 모르겠어, 다음 문제, 1번, 2번, 3번, 설명 듣고, 그림 보고, 가린 그림, 응, 아니."
+            text += " 포켓몬 맞추기, 힌트, 정답, 모르겠어, 다음 문제, 1번, 2번, 3번, 설명 듣고, 그림 보고, 조금 보고, 응, 아니."
         return text[:400]
 
     # ---------- 도감 (knowledge/) ----------

@@ -38,19 +38,42 @@
         background: radial-gradient(circle at 50% 30%, #ffec99, #ff914d 55%, #d6336c); }
       #game-menu .gm-title { font-size: clamp(32px, 6vw, 88px); font-weight: 900; color: #fff; letter-spacing: .05em;
         text-shadow: 0 6px 0 #c2255c, 0 10px 24px rgba(0,0,0,.35); }
-      #game-menu .gm-cards { display: flex; gap: 3vw; }
-      #game-menu .gm-card { position: relative; width: 24vw; background: #fff; border-radius: 26px; padding: 1.6vh 1.2vw 2.4vh;
-        box-shadow: 0 10px 30px rgba(0,0,0,.25); text-align: center; transition: transform .35s, opacity .35s, filter .35s, box-shadow .35s; }
-      #game-menu .gm-thumb { position: relative; aspect-ratio: 1; border-radius: 18px; overflow: hidden; background: #f3f0f7; display: grid; place-items: center; }
-      #game-menu .gm-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-      #game-menu .gm-fb { font-size: 7vw; }
-      #game-menu .gm-thumb.ok .gm-fb { display: none; }
-      #game-menu .gm-num { position: absolute; top: -2vh; left: -1vw; width: 5vw; height: 5vw; border-radius: 50%; background: #d6336c; color: #fff;
-        display: grid; place-items: center; font-size: 3vw; font-weight: 900; box-shadow: 0 4px 10px rgba(0,0,0,.3); }
-      #game-menu .gm-name { margin-top: 1.4vh; font-size: clamp(20px, 2.6vw, 40px); font-weight: 900; color: #333; }
-      #game-menu .gm-sub { margin-top: .6vh; font-size: clamp(13px, 1.3vw, 20px); color: #777; }
+      #game-menu .gm-cards { display: flex; gap: 3.5vw; align-items: flex-start; }
+      #game-menu .gm-card { position: relative; width: 23vw; text-align: center; transition: transform .35s, opacity .35s, filter .35s; }
+      /* 게임 박스 표지 (3:4) */
+      #game-menu .gm-cover { position: relative; aspect-ratio: 3 / 4; border-radius: 22px; overflow: hidden; border: .45vw solid #fff;
+        box-shadow: 0 1.2vw 2.4vw rgba(0,0,0,.35); transition: box-shadow .35s; }
+      #game-menu .gm-describe { background: radial-gradient(circle at 50% 38%, #fff3bf, #ffa94d 58%, #d9480f); }
+      #game-menu .gm-image { background: radial-gradient(circle at 50% 38%, #e7f5ff, #74c0fc 55%, #364fc7); }
+      #game-menu .gm-peek { background: radial-gradient(circle at 50% 38%, #f3f0ff, #9775fa 55%, #5f3dc4); }
+      #game-menu .gm-rays { position: absolute; inset: -50%; animation: spin 40s linear infinite;
+        background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,.2) 0 9deg, transparent 9deg 18deg); }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #game-menu .gm-full { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      #game-menu .gm-art { position: absolute; left: 10%; top: 9%; width: 80%; height: 60%; object-fit: contain;
+        filter: drop-shadow(0 .6vw 0 rgba(0,0,0,.28)); }
+      #game-menu .gm-bubble { position: absolute; right: 5%; top: 5%; width: 32%; aspect-ratio: 1; border-radius: 50%; background: #fff;
+        display: grid; place-items: center; font-size: 4.6vw; font-weight: 900; color: #e8590c; box-shadow: 0 .4vw 0 rgba(0,0,0,.2); }
+      #game-menu .gm-bubble::after { content: ""; position: absolute; left: 8%; bottom: -8%; border: 1vw solid transparent;
+        border-top-color: #fff; border-right-color: #fff; transform: rotate(20deg); }
+      #game-menu .gm-frame { position: absolute; left: 7%; top: 6%; width: 86%; height: 66%; border: .9vw solid #fcc419; border-radius: 10px;
+        box-shadow: inset 0 0 0 .3vw #e67700, 0 0 0 .3vw #e67700; }
+      #game-menu .gm-tiles { position: absolute; left: 10%; top: 9%; width: 80%; height: 60%; display: grid;
+        grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(6, 1fr); }
+      #game-menu .gm-tiles i { background: #5f3dc4; border: 1px solid #7950f2; }
+      #game-menu .gm-tiles i.open { background: transparent; border-color: transparent; }
+      #game-menu .gm-logo { position: absolute; left: 0; right: 0; bottom: 5%; line-height: 1.05; }
+      #game-menu .gm-logo small, #game-menu .gm-logo b { display: block; font-weight: 900; paint-order: stroke fill; }
+      #game-menu .gm-logo small { font-size: 1.7vw; color: #ffd43b; -webkit-text-stroke: .35vw #1c1c1c; letter-spacing: .1em; }
+      #game-menu .gm-logo b { font-size: 2.7vw; color: #fff; -webkit-text-stroke: .45vw #c2255c; text-shadow: 0 .45vw 0 #1c1c1c; }
+      #game-menu .gm-image .gm-logo b { -webkit-text-stroke-color: #364fc7; }
+      #game-menu .gm-peek .gm-logo b { -webkit-text-stroke-color: #5f3dc4; }
+      #game-menu .gm-num { position: absolute; top: -1.8vw; left: -1.4vw; width: 4.6vw; height: 4.6vw; border-radius: 50%; background: #d6336c;
+        color: #fff; border: .35vw solid #fff; display: grid; place-items: center; font-size: 2.6vw; font-weight: 900; box-shadow: 0 .4vw 1vw rgba(0,0,0,.3); }
+      #game-menu .gm-sub { margin-top: 1.4vh; font-size: clamp(13px, 1.4vw, 22px); font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.35); }
       #game-menu.picked .gm-card { opacity: .4; filter: grayscale(.7); transform: scale(.92); }
-      #game-menu.picked .gm-card.on { opacity: 1; filter: none; transform: scale(1.1); animation: glow 1s ease-in-out infinite alternate; }
+      #game-menu.picked .gm-card.on { opacity: 1; filter: none; transform: scale(1.1); }
+      #game-menu.picked .gm-card.on .gm-cover { animation: glow 1s ease-in-out infinite alternate; }
       @keyframes glow { from { box-shadow: 0 0 0 6px #ffd43b, 0 10px 30px rgba(0,0,0,.3); } to { box-shadow: 0 0 0 12px #fff3bf, 0 0 60px 10px #ffd43b; } }
       #game-menu .gm-hint { font-size: clamp(20px, 3vw, 44px); font-weight: 800; color: #fff; text-shadow: 0 3px 8px rgba(0,0,0,.35); }
       #game .g-types:empty, #game .g-board:empty, #game .g-answer:empty { display: none; }

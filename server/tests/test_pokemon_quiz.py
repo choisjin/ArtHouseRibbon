@@ -250,3 +250,24 @@ async def test_dialogue_asks_for_play_words_not_for_explicit(tmp_path):
     await dm.on_utterance(0, "그만")
     await dm.on_utterance(0, "포켓몬 맞추기 하자")
     assert dm.quiz.phase == "choosing"                                  # 콕 집어 말하면 다시 묻지 않는다
+
+
+def test_new_game_names():
+    from ribbon.games.pokemon_quiz import MODE_NAME, detect_mode
+    assert MODE_NAME["peek"] == "조금 보고 맞추기"
+    assert detect_mode("조금 보고 맞추기") == "peek"          # "보고" 가 있어도 2번이 아니라 3번
+    assert detect_mode("조금만 보여 줘") == "peek"
+    assert detect_mode("그림 보고 맞추기") == "image"
+    assert detect_mode("설명 듣고 맞추기") == "describe"
+    assert detect_mode("3번") == "peek" and detect_mode("2번") == "image" and detect_mode("1번") == "describe"
+
+
+def test_menu_items_have_art_and_thumb_only_if_made(tmp_path):
+    q = quiz(tmp_path)
+    q.thumbs_dir = tmp_path / "game_thumbs"
+    (tmp_path / "game_thumbs").mkdir()
+    (tmp_path / "game_thumbs" / "image.png").write_bytes(b"png")
+    q.open_menu()
+    items = {i["mode"]: i for i in q.view()["items"]}
+    assert items["image"]["thumb"] and items["describe"]["thumb"] is None
+    assert items["peek"]["art"].endswith("/94/image")               # 팬텀

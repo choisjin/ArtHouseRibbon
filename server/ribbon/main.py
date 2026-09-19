@@ -109,6 +109,8 @@ processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
 button_call = ButtonCall(processors)   # 호출 버튼 뒤 먼저 말한 채널 고르기
+if dialogue.quiz:
+    dialogue.quiz.thumbs_dir = settings.pokedex_path().parent / "game_thumbs"   # MLX 로 만든 게임 표지
 
 
 async def _ticker() -> None:

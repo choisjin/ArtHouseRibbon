@@ -35,7 +35,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
           <div class="row game-row"><span class="hint">포켓몬 맞추기</span>
             <button data-game="describe">🗣 설명 듣고</button>
             <button data-game="image">🖼 그림 보고</button>
-            <button data-game="peek">🧩 가린 그림</button>
+            <button data-game="peek">🧩 조금 보고</button>
             <button data-game="stop">끝내기</button>
           </div>
           <ol id="ctl-queue" class="queue"></ol>

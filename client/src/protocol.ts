@@ -168,7 +168,8 @@ export interface ButtonMsg { type: "button"; channels: number[] }
 export interface GameMenuView {
   kind: "menu";
   selected: GameMode | null;
-  items: { mode: GameMode; num: number; title: string; sub: string; thumb: string }[];
+  /** thumb: MLX 로 만든 게임 표지 (없으면 null), art: 표지에 올릴 포켓몬 공식 그림 */
+  items: { mode: GameMode; num: number; title: string; sub: string; thumb: string | null; art: string }[];
 }
 export type GameMode = "describe" | "image" | "peek";
 
@@ -178,8 +179,8 @@ export interface GamePlayView {
   kind: "play";
   mode: GameMode;
   image: string | null;          // 보일 그림 (설명 듣고 맞추기는 맞추기 전까지 null)
-  grid: number;                  // 가린 그림 칸 수 (grid x grid)
-  shown: number[] | null;        // 가린 그림에서 보이는 칸 (null = 다 보임)
+  grid: number;                  // 조금 보고 맞추기의 칸 수 (grid x grid)
+  shown: number[] | null;        // 조금 보고 맞추기에서 보이는 칸 (null = 다 보임)
   board: { c: string; k: "letter" | "cho" | "blank" }[];   // 이름판 (글자 수를 알려 주기 전엔 빈 배열)
   solved: boolean;
   answer: string | null;
