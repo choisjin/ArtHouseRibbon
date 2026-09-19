@@ -17,6 +17,13 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      /* 말을 받을 수 있을 때만 오른쪽 위 마이크 (서버 mic 메시지) */
+      #mic-badge { right: 2.4vw; top: 2.4vh; width: 7vw; height: 7vw; max-width: 110px; max-height: 110px; border-radius: 50%;
+        background: #e03131; display: none; place-items: center; z-index: 30;
+        box-shadow: 0 0 0 0 rgba(224,49,49,.6); animation: micpulse 1.2s ease-out infinite; }
+      #mic-badge.on { display: grid; }
+      #mic-badge svg { width: 55%; height: 55%; fill: #fff; stroke: #fff; }
+      @keyframes micpulse { to { box-shadow: 0 0 0 2.2vw rgba(224,49,49,0); } }
       /* 포켓몬 맞추기 (src/tv/game.ts) */
       #game { left: 4vw; top: 4vh; max-height: 74vh; display: none; flex-direction: column; align-items: center; gap: 1.6vh;
         background: rgba(255,255,255,.94); color: #222; border-radius: 28px; padding: 2.4vh 2.4vw; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
@@ -94,6 +101,7 @@
     <div id="hud" class="overlay"></div>
     <div id="caption" class="overlay"></div>
     <div id="bubble" class="overlay"></div>
+    <div id="mic-badge" class="overlay" aria-label="말해도 돼요"><svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" fill="none" stroke-width="2" stroke-linecap="round"/></svg></div>
     <div id="debug" class="overlay"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

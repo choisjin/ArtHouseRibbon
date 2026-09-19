@@ -664,6 +664,7 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
                 _spawn(dialogue.barge_in(channel))
                 return
         proc.hold()                  # 리본이 목소리가 마이크로 다시 들어오는 것 (에코)
+        _update_mic()
         return
     if barge.peak:
         peak = barge.end()           # 리본이가 한 번 말하는 동안 이 마이크에 들어온 가장 큰 소리 = 에코 크기
@@ -680,6 +681,20 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     won = button_call.check(channel)
     if won is not None:
         _spawn(dialogue.claim(won))
+    _update_mic()
+
+
+_mic_on = False
+
+
+def _update_mic() -> None:
+    """말을 받을 수 있는 동안(아이가 등록된 채널이 듣는 중이고 리본이가 말하지 않을 때)만 TV 오른쪽 위에 마이크 표시"""
+    global _mic_on
+    chans = {k.mic_channel for k in kids.all() if k.mic_channel is not None} or set(processors)
+    on = not dialogue.speaking() and any(processors[c].state == "listening" for c in chans if c in processors)
+    if on != _mic_on:
+        _mic_on = on
+        _spawn(hub.broadcast({"type": "mic", "on": on}))
 
 
 async def _on_button() -> None:
@@ -691,8 +706,8 @@ async def _on_button() -> None:
     for proc in processors.values():
         proc.stop_listening()                    # 이어 말하기로 듣던 채널도 버튼 기준으로 새로
     channels = sorted({k.mic_channel for k in kids.all() if k.mic_channel is not None}) or list(processors)
-    await dialogue.on_button(channels)          # "지금 말해줘." (미리 합성해 둔 소리)
-    armed = button_call.press(channels, store.config.ribbon.button_window_s)   # 말이 끝난 뒤부터 듣는다
+    await dialogue.on_button(channels)
+    armed = button_call.press(channels, store.config.ribbon.button_window_s)   # 바로 듣는다 (TV 에 마이크 표시)
     log.info("호출 버튼: 마이크 %s 듣는 중", [c + 1 for c in armed])
 
 
@@ -704,6 +719,7 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         if hub.clients[ws] == "admin":
             await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))
         await ws.send_text(json.dumps(dialogue.snapshot().model_dump(), ensure_ascii=False))
+        await ws.send_text(json.dumps({"type": "mic", "on": _mic_on}))   # 마이크 표시
         if dialogue.quiz and dialogue.quiz.active:   # TV 를 새로 열어도 하던 게임 화면이 나오게
             await ws.send_text(json.dumps({"type": "game", "view": dialogue.quiz.view()}, ensure_ascii=False))
     elif t == "tts.done":

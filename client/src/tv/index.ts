@@ -50,6 +50,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   let faces: FacePosition[] = [];
   let facesAt = 0;
   const game = new GameBoard();
+  const micBadge = document.getElementById("mic-badge")!;
   let placed = false;
   let walkSpeed = 1;
 
@@ -154,6 +155,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "speak.stop": speaker.stop(); break;
       case "cue": speaker.chime(); break;   // 불렀을 때 "띵" (듣고 있어)
       case "game": game.render(msg.view); break;   // 포켓몬 맞추기
+      case "mic": micBadge.classList.toggle("on", msg.on); break;   // 말할 수 있을 때 오른쪽 위 마이크
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
         hud.showCaption(`${name}: ${msg.text}`, 8000);   // 잘 들었는지 보이게. 리본이가 말하면 그 자막으로 바뀐다

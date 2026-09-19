@@ -85,13 +85,13 @@ class DialogueManager:
         await self._broadcast_state()
         self._spawn_bg(self.prewarm())                 # 목소리를 바꿨으면 자주 쓰는 말을 새 목소리로 다시
 
-    # ---------- 자주 쓰는 말은 미리 합성 (버튼 "지금 말해줘." 가 바로 나오게) ----------
+    # ---------- 자주 쓰는 말(추임새)은 미리 합성해 둔다 ----------
     def _voice_key(self) -> tuple:
         rc = self.store.config.ribbon if self.store else None
         return (rc.voice, rc.speed, rc.steps, rc.pitch) if rc else ()
 
     def _cacheable(self, text: str) -> bool:
-        return text == persona.BUTTON_PROMPT or text in persona._FILLERS
+        return text in persona._FILLERS
 
     async def _synth(self, text: str) -> Optional[bytes]:
         if not self._cacheable(text):
@@ -102,10 +102,10 @@ class DialogueManager:
         return self._tts_cache[key]
 
     async def prewarm(self) -> None:
-        """서버가 켜질 때·목소리를 바꿨을 때: 버튼 말·추임새를 미리 만들어 둔다"""
+        """서버가 켜질 때·목소리를 바꿨을 때: 추임새를 미리 만들어 둔다"""
         vk = self._voice_key()
         self._tts_cache = {k: v for k, v in self._tts_cache.items() if k[1] == vk}
-        for text in [persona.BUTTON_PROMPT, *persona._FILLERS]:
+        for text in persona._FILLERS:
             try:
                 await self._synth(text)
             except Exception:  # noqa: BLE001 - 미리 만들기 실패는 말할 때 다시 해 본다
@@ -175,12 +175,11 @@ class DialogueManager:
             await self.stop(clear_queue=True, advance=False, reason="호출 버튼으로 대화 멈춤")
 
     async def on_button(self, channels: List[int]) -> None:
-        """호출 버튼(DJI 송신기)이 눌렸다. 누가 눌렀는지 몰라서 "지금 말해줘." 라고만 하고 (미리 합성해 둔 소리라
-        바로 나온다), 끝나면 main 이 채널들을 듣기 시작해 먼저 말하는 아이를 기다린다 (claim)"""
+        """호출 버튼(DJI 송신기)이 눌렸다. 말은 하지 않는다 (2026-09-20 "지금 말해줘" 삭제). main 이 채널들을 바로
+        듣기 시작하고, 듣는 동안 TV 오른쪽 위에 마이크 표시가 뜬다 (main._update_mic). 먼저 말하는 아이를 기다린다 (claim)"""
         log.info("호출 버튼: 채널 %s", [c + 1 for c in channels])
         self._barged = False
         await self.broadcast({"type": "button", "channels": channels})
-        await self._say(persona.BUTTON_PROMPT, None, final=True)
         await self._set_ribbon("listening", None)
 
     async def claim(self, channel: int) -> None:

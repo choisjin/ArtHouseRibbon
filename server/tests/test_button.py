@@ -59,15 +59,15 @@ async def test_claim_gives_turn_without_talking():
         dm._pending_done.clear()
     dm._wait_spoken = fast_wait
     await dm.on_button([0, 1])
-    assert [m["text"] for m in sent if m.get("type") == "speak"] == ["지금 말해줘."]   # 버튼 누르면 바로
+    assert {"type": "button", "channels": [0, 1]} in sent
     await dm.claim(1)
     active = dm.queue.active()
     assert active is not None and active.kid_id == "b"
     assert dm.ribbon_state == "listening"
-    assert len([m for m in sent if m.get("type") == "speak"]) == 1              # 차례를 줄 때는 말하지 않는다
+    assert not [m for m in sent if m.get("type") == "speak"]                   # 버튼을 눌러도 말하지 않는다 (마이크 표시만)
 
 
-async def test_button_prompt_is_synthesized_ahead():
+async def test_fillers_are_synthesized_ahead():
     calls = []
 
     class CountTTS:
@@ -83,10 +83,10 @@ async def test_button_prompt_is_synthesized_ahead():
         dm._pending_done.clear()
     dm._wait_spoken = fast_wait
     await dm.prewarm()
-    n = calls.count("지금 말해줘.")
-    await dm.on_button([0])
-    await dm.on_button([0])
-    assert n == 1 and calls.count("지금 말해줘.") == 1                        # 미리 만든 소리를 다시 쓴다
+    n = calls.count("음...")
+    await dm._say("음...", None, final=True)
+    await dm._say("음...", None, final=True)
+    assert n == 1 and calls.count("음...") == 1                                 # 미리 만든 소리를 다시 쓴다
 
 
 def test_button_mode_takes_one_utterance_then_closes():
