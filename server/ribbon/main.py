@@ -189,6 +189,31 @@ async def api_kid_delete(kid_id: str):
     return JSONResponse({"ok": True})
 
 
+# ---------- 포켓몬 그림 (포켓몬 맞추기 게임) ----------
+_IMG_URL = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{}.png"
+
+
+@app.get("/api/pokemon/{pid}/image")
+async def api_pokemon_image(pid: int):
+    """공식 그림. 처음 한 번 받아 data/pokemon_img/ 에 두고 다음부터는 그 파일 (인터넷이 끊겨도 본 것은 나온다)"""
+    from fastapi.responses import FileResponse
+    import httpx
+    if not 1 <= pid <= 2000:
+        raise HTTPException(404, "없는 번호")
+    folder = settings.pokedex_path().parent / "pokemon_img"
+    path = folder / f"{pid}.png"
+    if not path.exists():
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as c:
+                r = await c.get(_IMG_URL.format(pid))
+                r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"그림을 받지 못했습니다: {e}")
+        folder.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(r.content)
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+
 # ---------- 리본이가 기억하는 약속 (memory.py) ----------
 
 @app.get("/api/memory")
@@ -593,6 +618,7 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     if proc is None:
         return
     proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
+    proc.follow_up_s = 20.0 if (dialogue.quiz and dialogue.quiz.active) else None   # 게임 중엔 답할 시간을 넉넉히
     if settings.echo_guard and dialogue.speaking():
         proc.hold()                  # 리본이 목소리가 마이크로 다시 들어오는 것 (에코)
         return
@@ -630,6 +656,8 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         if hub.clients[ws] == "admin":
             await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))
         await ws.send_text(json.dumps(dialogue.snapshot().model_dump(), ensure_ascii=False))
+        if dialogue.quiz and dialogue.quiz.active:   # TV 를 새로 열어도 하던 게임 화면이 나오게
+            await ws.send_text(json.dumps({"type": "game", "view": dialogue.quiz.view()}, ensure_ascii=False))
     elif t == "tts.done":
         dialogue.mark_spoken(msg.get("utterance_id", ""))
     elif t == "debug.wake":
@@ -671,6 +699,12 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
             for p in processors.values():
                 p.stop_listening()
         _spawn(dialogue.stop(clear_queue=bool(msg.get("all"))))
+    elif t == "admin.game":
+        # 관리자 대시보드의 포켓몬 맞추기 버튼
+        if msg.get("action") == "stop":
+            _spawn(dialogue.stop_quiz())
+        else:
+            _spawn(dialogue.start_quiz(str(msg.get("mode") or "")))
     elif t == "admin.ignore":
         on = bool(msg.get("on"))
         if on:

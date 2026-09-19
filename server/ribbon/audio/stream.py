@@ -31,6 +31,7 @@ class ChannelProcessor:
         # 대기 중에도 최근 프레임을 기억해, 깨어나는 순간 호출 전에 말한 앞부분을 잃지 않는다 (에너지 호출용)
         self._idle_buf: List[np.ndarray] = []
         self._idle_keep = max(1, int(800 / 20))  # 20ms 프레임 × 0.8초
+        self.follow_up_s: Optional[float] = None  # 이어 말하기 시간을 잠깐 바꿀 때 (포켓몬 맞추기 중에는 길게)
 
     def start_listening(self, now: Optional[float] = None, window_s: Optional[float] = None) -> None:
         now = time.time() if now is None else now
@@ -55,7 +56,7 @@ class ChannelProcessor:
         self.segmenter.reset()
         self._idle_buf = []
         if self.state == "listening":
-            self._listen_until = now + self.settings.follow_up_window_s
+            self._listen_until = now + (self.follow_up_s or self.settings.follow_up_window_s)
 
     def feed(self, pcm: np.ndarray, now: Optional[float] = None) -> List[Event]:
         now = time.time() if now is None else now
@@ -76,7 +77,7 @@ class ChannelProcessor:
         utterance = self.segmenter.push(pcm)
         if utterance is not None and utterance.size > 0:
             events.append(("utterance", utterance))
-            self._listen_until = now + self.settings.follow_up_window_s
+            self._listen_until = now + (self.follow_up_s or self.settings.follow_up_window_s)
         elif not self.segmenter.in_speech and now > self._listen_until:
             self.stop_listening()
             events.append(("sleep", None))

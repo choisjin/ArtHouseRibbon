@@ -16,6 +16,7 @@ data/schedule.json
 data/memory.json*
 data/pokedex.json
 data/.pokeapi_cache/
+data/pokemon_img/
 data/faces/
 data/recordings/
 data/artworks/

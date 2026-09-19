@@ -17,6 +17,25 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      /* 포켓몬 맞추기 (src/tv/game.ts) */
+      #game { left: 4vw; top: 4vh; max-height: 74vh; display: none; flex-direction: column; align-items: center; gap: 1.6vh;
+        background: rgba(255,255,255,.94); color: #222; border-radius: 28px; padding: 2.4vh 2.4vw; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+      #game .g-title { font-size: clamp(18px, 2.6vw, 34px); font-weight: 800; color: #d6336c; }
+      #game .g-card { position: relative; width: min(42vh, 32vw); aspect-ratio: 1; border-radius: 20px; overflow: hidden; background: #f3f0f7; }
+      #game .g-card img { position: absolute; inset: 4%; width: 92%; height: 92%; object-fit: contain; }
+      #game .g-card.noimg img { display: none; }
+      #game .g-q { position: absolute; inset: 0; display: none; place-items: center; font-size: min(26vh, 18vw); font-weight: 900; color: #c9bfe0; }
+      #game .g-card.noimg .g-q { display: grid; }
+      #game .g-card.solved { box-shadow: 0 0 0 6px #ffd43b; }
+      #game .g-mask { position: absolute; inset: 0; display: grid; }
+      #game .g-mask div { background: #5f3dc4; border: 1px solid #7048e8; transition: opacity .6s; }
+      #game .g-mask div.open { opacity: 0; }
+      #game .g-types span { display: inline-block; margin: 0 .4vw; padding: .3vh 1.2vw; border-radius: 999px; background: #e7f5ff; font-size: clamp(16px, 2vw, 28px); font-weight: 700; }
+      #game .g-board { display: flex; gap: .8vw; }
+      #game .g-board span { min-width: 1.3em; padding: .1em .15em; text-align: center; border-bottom: 5px solid #adb5bd; font-size: clamp(22px, 3.2vw, 46px); font-weight: 900; }
+      #game .g-board span.cho { color: #1c7ed6; }
+      #game .g-types:empty, #game .g-board:empty, #game .g-answer:empty { display: none; }
+      #game .g-answer { font-size: clamp(22px, 3.4vw, 48px); font-weight: 900; color: #d6336c; min-height: 1em; }
       @keyframes bob { 50% { margin-top: -8px; } }
       #debug { right: 16px; top: 16px; width: 320px; background: rgba(0,0,0,.75); border: 1px solid #555; border-radius: 10px; padding: 12px; display: none; }
       #debug label { display: block; margin: 6px 0 2px; color: #aaa; font-size: 12px; }

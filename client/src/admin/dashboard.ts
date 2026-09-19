@@ -32,6 +32,12 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
             <button id="ctl-stop-all" class="danger" title="Shift+Esc">⏏ 모두 멈춤 <kbd>⇧Esc</kbd></button>
             <button id="ctl-ignore" title="M">🔕 호출 무시 <kbd>M</kbd></button>
           </div>
+          <div class="row game-row"><span class="hint">포켓몬 맞추기</span>
+            <button data-game="describe">🗣 설명 듣고</button>
+            <button data-game="image">🖼 그림 보고</button>
+            <button data-game="peek">🧩 가린 그림</button>
+            <button data-game="stop">끝내기</button>
+          </div>
           <ol id="ctl-queue" class="queue"></ol>
           <p class="hint">호출: 아이 줄의 📣 버튼<span class="keys">, 또는 <kbd>1</kbd>~<kbd>4</kbd> (그 마이크를 쓰는 아이)</span>. 중단하면 기다리던 다음 아이 차례로 넘어갑니다.</p>
         </section>
@@ -127,6 +133,10 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   $("#ctl-stop").onclick = () => stop(false);
   $("#ctl-stop-all").onclick = () => stop(true);
   $("#ctl-ignore").onclick = toggleIgnore;
+  el.querySelectorAll<HTMLButtonElement>("[data-game]").forEach((b) => {
+    b.onclick = () => ctx.socket.sendJson(b.dataset.game === "stop"
+      ? { type: "admin.game", action: "stop" } : { type: "admin.game", action: "start", mode: b.dataset.game });
+  });
 
   window.addEventListener("keydown", (e) => {
     if (!isActive() || e.ctrlKey || e.metaKey || e.altKey) return;

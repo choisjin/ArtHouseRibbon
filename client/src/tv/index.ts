@@ -3,6 +3,7 @@ import type { FacePosition, KidInfo, ServerMsg, StateMsg } from "../protocol";
 import type { RibbonSocket } from "../ws";
 import { Speaker } from "../speech/browserTts";
 import { RibbonBrain } from "./brain";
+import { GameBoard } from "./game";
 import { Hud } from "./hud";
 import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
@@ -48,6 +49,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   let kids: KidInfo[] = [];
   let faces: FacePosition[] = [];
   let facesAt = 0;
+  const game = new GameBoard();
   let placed = false;
   let walkSpeed = 1;
 
@@ -151,6 +153,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "speak": speaker.enqueue(msg); break;
       case "speak.stop": speaker.stop(); break;
       case "cue": speaker.chime(); break;   // 불렀을 때 "띵" (듣고 있어)
+      case "game": game.render(msg.view); break;   // 포켓몬 맞추기
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
         hud.showCaption(`${name}: ${msg.text}`, 8000);   // 잘 들었는지 보이게. 리본이가 말하면 그 자막으로 바뀐다

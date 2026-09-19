@@ -54,6 +54,8 @@ export interface RibbonConfig {
   button_window_s?: number;
   /** 아이 말에 포켓몬이 나오면 도감(data/pokedex.json)을 참고해 답한다 */
   pokedex_enabled?: boolean;
+  /** 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 */
+  game_max_id?: number;
   filler_delay_s?: number;
   filler_interval_s?: number;
   look?: Partial<import("./world/doll").RibbonLook>;
@@ -154,6 +156,19 @@ export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string | null }
 /** DJI 송신기 호출 버튼이 눌렸다. 누가 눌렀는지 몰라서 channels 를 잠깐 듣는다 (관리자 대화 기록) */
 export interface ButtonMsg { type: "button"; channels: number[] }
 
+/** 포켓몬 맞추기 게임 화면 (서버 games/pokemon_quiz.PokemonQuiz.view). null 이면 게임 없음 */
+export interface GameView {
+  mode: "describe" | "image" | "peek";
+  image: string | null;          // 보일 그림 (설명 듣고 맞추기는 맞추기 전까지 null)
+  grid: number;                  // 가린 그림 칸 수 (grid x grid)
+  shown: number[] | null;        // 가린 그림에서 보이는 칸 (null = 다 보임)
+  board: { c: string; k: "letter" | "cho" | "blank" }[];   // 이름판 (글자 수를 알려 주기 전엔 빈 배열)
+  solved: boolean;
+  answer: string | null;
+  types: string[];
+}
+export interface GameMsg { type: "game"; view: GameView | null }
+
 /** 리본이가 기억하는 약속 (서버 memory.Rule). kid_id 가 null 이면 모든 아이 공통 */
 export interface MemoryRule { id: string; text: string; kid_id: string | null; source: string; created: string; by: "auto" | "admin" }
 
@@ -186,4 +201,4 @@ export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "o
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | CueMsg | ButtonMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg;
+  | SpeakStopMsg | CueMsg | ButtonMsg | GameMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg;

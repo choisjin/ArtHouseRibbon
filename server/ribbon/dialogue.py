@@ -25,6 +25,7 @@ from .world_store import WorldStore
 from . import memory as mem
 from .memory import MemoryStore
 from .knowledge.pokedex import Pokedex, knowledge_block
+from .games.pokemon_quiz import PokemonQuiz, detect_start
 from .settings_store import ConfigStore
 
 log = logging.getLogger("ribbon.dialogue")
@@ -47,6 +48,7 @@ class DialogueManager:
         self.world = world
         self.memory = memory
         self.pokedex = pokedex
+        self.quiz: Optional[PokemonQuiz] = PokemonQuiz(pokedex) if pokedex is not None else None
         self._recent_dex: Dict[str, tuple] = {}         # 아이 -> (최근에 이야기한 포켓몬들, 남은 턴) "걔는 뭐 먹어?" 용
         self._learn_lock = asyncio.Lock()              # 약속 뽑기는 한 번에 하나씩 (대화 모델 부담)
         self._bg: set = set()                          # 뒤에서 도는 약속 뽑기 작업
@@ -151,6 +153,14 @@ class DialogueManager:
         log.info("%s> %s", kid.name, text)
         await self.broadcast(TranscriptMessage(kid_id=kid.id, channel=channel, text=text).model_dump())
 
+        # 포켓몬 맞추기 게임: 게임 중에는 누가 말하든 답으로 본다 (대화 모델을 거치지 않는다)
+        if self.quiz and self.quiz.active:
+            if await self._quiz_turn(kid, channel, text):
+                return
+        elif self.quiz and len(self.pokedex or []) and (mode := detect_start(text)) is not None:
+            await self.start_quiz(mode, kid, channel)
+            return
+
         if self._is_cancel(text):
             active = self.queue.active()
             if active is not None and active.channel == channel:
@@ -246,9 +256,75 @@ class DialogueManager:
         if ev:
             ev.set()
 
+    # ---------- 포켓몬 맞추기 게임 (games/pokemon_quiz.py) ----------
+    async def start_quiz(self, mode: str, kid: Optional[KidInfo] = None, channel: Optional[int] = None) -> None:
+        """게임 시작 (아이 말 또는 관리자 대시보드). mode "" 면 셋 중에 고르라고 묻는다"""
+        if not self.quiz or not len(self.pokedex or []):
+            await self._say("포켓몬 도감이 아직 없어서 맞추기를 못 해. 선생님께 도감을 받아 달라고 해 줘.",
+                            kid.id if kid else None, final=True)
+            return
+        rc = self.store.config.ribbon if self.store else None
+        self.quiz.max_id = rc.game_max_id if rc else 151
+        log.info("포켓몬 맞추기 시작: %s", mode or "고르는 중")
+        await self._quiz_reply(self.quiz.start(mode), kid, channel)
+
+    async def stop_quiz(self) -> None:
+        if self.quiz and self.quiz.active:
+            await self._quiz_reply(self.quiz.stop(), None, None)
+
+    async def _quiz_turn(self, kid: KidInfo, channel: int, text: str) -> bool:
+        """게임 중 아이 말. 게임과 상관없는 말이면 False (게임을 끝내고 보통 대화로)"""
+        reply = self.quiz.handle(text)
+        if reply.passthrough:
+            await self.broadcast({"type": "game", "view": None})
+            return False
+        await self._quiz_reply(reply, kid, channel)
+        return True
+
+    async def _quiz_reply(self, reply, kid: Optional[KidInfo], channel: Optional[int]) -> None:
+        if channel is not None:
+            self.queue.cancel(channel)                 # 게임은 줄(차례) 없이 한다
+        await self.broadcast({"type": "game", "view": self.quiz.view()})
+        kid_id = kid.id if kid else None
+        for i, line in enumerate(reply.lines):
+            await self._say(line, kid_id, final=i == len(reply.lines) - 1)
+        if reply.new_round and self.quiz.mode == "describe":
+            self._spawn_bg(self._quiz_appearance(self.quiz.answer))
+        if self.quiz.active:
+            await self._set_ribbon("listening", None)  # 답을 기다린다
+        await self._broadcast_state()
+
+    async def _quiz_appearance(self, entry: Dict) -> None:
+        """설명 듣고 맞추기의 "생김새" 힌트를 대화 모델에게 뒤에서 받아 둔다 (도감에는 생김새가 없다)"""
+        msgs = [{"role": "system", "content": "너는 포켓몬을 잘 아는 도우미야. 모르면 모른다고만 한다."},
+                {"role": "user", "content": (
+                    f"포켓몬 '{entry['name']}'({entry.get('genus', '')}, {'/'.join(entry.get('types') or [])} 타입)의 "
+                    "생김새를 어린이가 알아듣게 짧은 두 문장으로 설명해 줘. 색깔과 모양 위주로. "
+                    "이름은 절대 말하지 말고 '이 포켓몬' 이라고 한다. 확실히 모르면 '모름' 이라고만 답해. /no_think")}]
+        try:
+            raw = "".join([d async for d in self.llm.stream(msgs)])
+        except Exception:  # noqa: BLE001
+            log.exception("생김새 힌트 만들기 실패")
+            return
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.S).strip()
+        if not raw or "모름" in raw or entry["name"] in raw or self.quiz.answer is not entry:
+            return
+        self.quiz.appearance = [s.strip() for s in _SENTENCE_END.split(raw) if s.strip()][:2]
+        log.info("생김새 힌트: %s", self.quiz.appearance)
+
+    def _spawn_bg(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+
     async def tick(self) -> None:
         """1초마다 호출: 만료/유휴 처리."""
         now = time.time()
+        if self.quiz and self.quiz.active and now - self.quiz.last_at > 180:
+            log.info("포켓몬 맞추기: 3분 동안 답이 없어 끝냄")
+            self.quiz.active = False
+            await self.broadcast({"type": "game", "view": None})
+            await self._set_ribbon("idle", None)
         for turn in self.queue.expire(now, self.settings.waiting_timeout_s):
             kid = self._kid_for_channel(turn.channel)
             await self._say(persona.expired_notice(call_name(kid)), kid.id, final=True)
@@ -256,6 +332,7 @@ class DialogueManager:
         active = self.queue.active()
         idle_since = max(active.activated_at or 0.0, self._last_spoken_at) if active else 0.0
         if (active and not active.text and not self._responding and not self._speak_lock.locked()
+                and not (self.quiz and self.quiz.active)
                 and idle_since and now - idle_since > self.settings.turn_idle_timeout_s):
             kid = self._kid_for_channel(active.channel)
             self.queue.complete_active(now)
