@@ -24,6 +24,7 @@ from .queue import Turn, TurnQueue
 from .world_store import WorldStore
 from . import memory as mem
 from .memory import MemoryStore
+from .knowledge.pokedex import Pokedex, knowledge_block
 from .settings_store import ConfigStore
 
 log = logging.getLogger("ribbon.dialogue")
@@ -36,7 +37,7 @@ _SENTENCE_END = re.compile(r"(?<=[.!?。！？…])\s+|\n+")
 class DialogueManager:
     def __init__(self, settings: Settings, kids: KidRegistry, llm: LLM, tts: TTS, broadcast: Broadcast,
                  store: Optional[ConfigStore] = None, world: Optional["WorldStore"] = None,
-                 memory: Optional[MemoryStore] = None):
+                 memory: Optional[MemoryStore] = None, pokedex: Optional[Pokedex] = None):
         self.settings = settings
         self.kids = kids
         self.llm = llm
@@ -45,6 +46,8 @@ class DialogueManager:
         self.store = store
         self.world = world
         self.memory = memory
+        self.pokedex = pokedex
+        self._recent_dex: Dict[str, tuple] = {}         # 아이 -> (최근에 이야기한 포켓몬들, 남은 턴) "걔는 뭐 먹어?" 용
         self._learn_lock = asyncio.Lock()              # 약속 뽑기는 한 번에 하나씩 (대화 모델 부담)
         self._bg: set = set()                          # 뒤에서 도는 약속 뽑기 작업
         self.queue = TurnQueue()
@@ -260,6 +263,24 @@ class DialogueManager:
             await self._after_turn()
 
     # ---------- 내부 ----------
+    # ---------- 도감 (knowledge/) ----------
+    def _knowledge(self, kid: KidInfo, text: str) -> str:
+        """아이 말에 포켓몬이 나오면 도감 정보를 참고 자료로. 다음 두 번까지는 "걔는 뭐 먹어?" 도 알아듣게 이어 준다"""
+        rc = self.store.config.ribbon if self.store else None
+        if self.pokedex is None or not len(self.pokedex) or (rc is not None and not rc.pokedex_enabled):
+            return ""
+        found = self.pokedex.find(text)
+        if found:
+            log.info("포켓몬 도감: %s", ", ".join(e["name"] for e in found))
+            self._recent_dex[kid.id] = (found, 2)
+        else:
+            recent = self._recent_dex.get(kid.id)
+            if not recent or recent[1] <= 0:
+                return ""
+            found = recent[0]
+            self._recent_dex[kid.id] = (found, recent[1] - 1)
+        return knowledge_block(found)
+
     # ---------- 약속 기억하기 (memory.py) ----------
     def _memory_on(self) -> bool:
         rc = self.store.config.ribbon if self.store else None
@@ -339,7 +360,8 @@ class DialogueManager:
                 messages = persona.build_messages(
                     kid if not kid.id.startswith("unknown_") else None, history, text,
                     name=rc.name if rc else "리본", extra=rc.persona_extra if rc else "",
-                    max_sentences=max_sentences, promises=self._promises(kid))
+                    max_sentences=max_sentences, promises=self._promises(kid),
+                    knowledge=self._knowledge(kid, text))
                 sentences: List[str] = []
                 synth: List[asyncio.Task] = []   # 문장이 완성되는 즉시 합성을 시작한다 (pipelining)
                 first_ready = asyncio.Event()

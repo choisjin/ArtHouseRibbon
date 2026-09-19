@@ -52,6 +52,8 @@ export interface RibbonConfig {
   memory_max_per_kid?: number;
   /** 호출 버튼을 누른 뒤 이 시간(초) 안에 먼저 말한 아이가 부른 아이 */
   button_window_s?: number;
+  /** 아이 말에 포켓몬이 나오면 도감(data/pokedex.json)을 참고해 답한다 */
+  pokedex_enabled?: boolean;
   filler_delay_s?: number;
   filler_interval_s?: number;
   look?: Partial<import("./world/doll").RibbonLook>;

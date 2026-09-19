@@ -60,12 +60,14 @@ def system_prompt(name: str = "리본", extra: str = "", max_sentences: int = 2)
 
 def build_messages(kid: Optional[KidInfo], history: List[Dict[str, str]], text: str,
                    name: str = "리본", extra: str = "", max_sentences: int = 2,
-                   promises: str = "") -> List[Dict[str, str]]:
-    """promises: 이 아이와 한 약속 (memory.prompt_block)"""
+                   promises: str = "", knowledge: str = "") -> List[Dict[str, str]]:
+    """promises: 이 아이와 한 약속 (memory.prompt_block). knowledge: 도감 같은 참고 자료"""
     who = "\n".join(context_lines(kid)) if kid else "지금 말하는 아이: 이름 모름 (친구라고 부른다)"
     system = system_prompt(name, extra, max_sentences) + "\n" + who
     if promises:
         system += "\n\n" + promises
+    if knowledge:
+        system += "\n\n" + knowledge
     messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
     messages.extend(history[-8:])
     messages.append({"role": "user", "content": text})

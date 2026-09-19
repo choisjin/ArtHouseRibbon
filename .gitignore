@@ -14,6 +14,8 @@ data/kids.json
 data/settings.json
 data/schedule.json
 data/memory.json*
+data/pokedex.json
+data/.pokeapi_cache/
 data/faces/
 data/recordings/
 data/artworks/

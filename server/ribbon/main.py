@@ -27,6 +27,7 @@ from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
 from .memory import MemoryStore
+from .knowledge.pokedex import Pokedex
 from .providers import llm as llm_mod
 from .providers.llm import make_llm
 from .providers.stt import make_stt
@@ -85,6 +86,7 @@ devices = DeviceBoard()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
 memory = MemoryStore(settings.memory_path(), store.config.ribbon.memory_max_per_kid)
+pokedex = Pokedex(settings.pokedex_path())
 schedule = sched.ScheduleStore(settings.schedule_path())
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 # 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다
@@ -95,7 +97,7 @@ stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world, memory)
+dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world, memory, pokedex)
 renderer = WorldRenderer(world, settings.blender_exe, settings.render_pct, settings.render_samples,
                          on_change=dialogue.notify_config_changed)
 world.render_info = renderer.info
@@ -121,6 +123,7 @@ async def lifespan(app: FastAPI):
     log.info("kids=%d stt=%s llm=%s:%s (%s) tts=%s wakeword=%s", len(kids.all()), settings.stt_provider,
              llm_settings.llm_provider, llm_settings.llm_model, llm_settings.llm_base_url,
              settings.tts_provider, settings.wakeword_provider)
+    log.info("포켓몬 도감: %s", f"{len(pokedex)}마리" if len(pokedex) else "없음 (python tools/fetch_pokedex.py 로 받기)")
     log.info("blender=%s (배경 자동 렌더 %s)", renderer.blender or "없음", "켬" if settings.render_auto else "끔")
     if renderer.available and settings.render_auto:
         # 렌더가 없거나 배치가 바뀐 방은 켜질 때 한 번 렌더

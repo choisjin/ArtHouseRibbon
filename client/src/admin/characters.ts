@@ -151,6 +151,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         <label>추임새 간격 (초) <input name="filler_interval_s" type="number" step="0.5" min="1" max="15" /></label>
         <label class="inline"><input name="ack_enabled" type="checkbox" /> 알아들으면 바로 짧게 반응 ("응!", "아하!")</label>
         <label class="inline"><input name="filler_enabled" type="checkbox" /> 답이 늦으면 추임새 ("음...")</label>
+        <label class="inline"><input name="pokedex_enabled" type="checkbox" /> 포켓몬 이야기가 나오면 도감을 보고 답하기 (tools/fetch_pokedex.py 로 받아 둔 도감)</label>
         <label class="inline"><input name="memory_enabled" type="checkbox" /> 아이가 지적하거나 하지 말라고 한 것을 약속으로 기억하기</label>
         <label>아이 한 명당 약속 수 (넘치면 오래된 것부터 지움) <input name="memory_max_per_kid" type="number" min="1" max="50" /></label>
         <label class="inline"><input name="wander" type="checkbox" /> 평소에 방을 돌아다니기 (끄면 "부르면 오는 자리"에 서 있음)</label>
@@ -174,6 +175,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     fld("ack_enabled").checked = r.ack_enabled ?? true;
     fld("filler_enabled").checked = r.filler_enabled ?? true;
     fld("memory_enabled").checked = r.memory_enabled ?? true;
+    fld("pokedex_enabled").checked = r.pokedex_enabled ?? true;
     fld("memory_max_per_kid").value = String(r.memory_max_per_kid ?? 20);
     fld("wander").checked = r.wander ?? true;
     fld("walk_speed").value = String(r.walk_speed ?? 1);
@@ -193,6 +195,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           filler_interval_s: Number(fld("filler_interval_s").value) || 4,
           ack_enabled: fld("ack_enabled").checked, filler_enabled: fld("filler_enabled").checked,
           memory_enabled: fld("memory_enabled").checked,
+          pokedex_enabled: fld("pokedex_enabled").checked,
           memory_max_per_kid: Number(fld("memory_max_per_kid").value) || 20,
           wander: fld("wander").checked, walk_speed: Number(fld("walk_speed").value) || 1,
           return_after_s: Number(fld("return_after_s").value) || 0,
