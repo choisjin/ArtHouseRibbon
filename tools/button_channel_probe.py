@@ -39,6 +39,35 @@ def find_input(name_hint):
     return None
 
 
+def open_button():
+    """DJI 수신기 HID 를 연다. 볼륨 키(page 0x0C) 경로부터, 안 되면 다른 경로, 그래도 안 되면 vid/pid 로"""
+    devs = [d for d in hid.enumerate() if d["vendor_id"] == DJI_VENDOR
+            or "wireless mic" in (d.get("product_string") or "").lower()]
+    if not devs:
+        sys.exit("DJI 수신기 HID 를 못 찾았습니다 (hid_probe.py 로 확인)")
+    devs.sort(key=lambda d: d["usage_page"] != 0x0C)
+    errors = []
+    for d in devs:
+        h = hid.device()
+        try:
+            h.open_path(d["path"])
+            h.set_nonblocking(1)
+            return h
+        except OSError as e:
+            errors.append(f"page={d['usage_page']:#06x} path={d['path']!r}: {e}")
+    try:
+        h = hid.device()
+        h.open(devs[0]["vendor_id"], devs[0]["product_id"])
+        h.set_nonblocking(1)
+        return h
+    except OSError as e:
+        errors.append(f"vid/pid: {e}")
+    print("\n".join(errors))
+    sys.exit("DJI 수신기 HID 를 열 수 없습니다. 맥에서는 한 프로그램만 열 수 있어서, 다른 터미널에 hid_probe.py 가\n"
+             "켜져 있으면 끄고 다시 실행하세요. 그래도 안 되면 시스템 설정 > 개인정보 보호 및 보안 > 입력 모니터링 에서\n"
+             "터미널을 껐다 켜 보세요.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", type=int, help="입력 장치 번호 (mic_test.py 목록)")
@@ -70,14 +99,8 @@ def main():
                 frames.append((t, np.sqrt(np.mean(blk ** 2, axis=0))))
         carry = buf[n * hop:]
 
-    hids = [d for d in hid.enumerate(DJI_VENDOR) if d["usage_page"] == 0x0C] or \
-           [d for d in hid.enumerate() if "wireless mic" in (d.get("product_string") or "").lower()]
-    if not hids:
-        sys.exit("DJI 수신기 HID 를 못 찾았습니다 (hid_probe.py 로 확인)")
-    h = hid.device()
-    h.open_path(hids[0]["path"])
-    h.set_nonblocking(1)
-    print(f"버튼: {hids[0].get('product_string')}")
+    h = open_button()
+    print("버튼: DJI 수신기 HID 열림")
 
     def analyze(t_press):
         with lock:
