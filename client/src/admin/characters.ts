@@ -129,10 +129,15 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     return `<section class="card">
       <h2>대화 · 움직임 (모든 캐릭터 공통)</h2>
       <form id="common-form" class="cols">
-        <label>한 번에 최대 문장 수 <input name="max_sentences" type="number" min="1" max="6" /></label>
+        <label>부르면 <select name="listen_cue">
+          <option value="sound">"띵" 소리만 (아이가 바로 말할 수 있음)</option>
+          <option value="voice">"응 ○○야, 말해봐." 라고 대답</option></select></label>
+        <label>말이 끝났다고 보는 조용한 시간 (초, 아이가 말하다 자주 끊기면 늘리기)
+          <input name="end_silence_s" type="number" step="0.1" min="0.5" max="3" /></label>
+        <label>한 번에 최대 문장 수 (놀이 상대는 1~2) <input name="max_sentences" type="number" min="1" max="6" /></label>
         <label>첫 추임새까지 (초) <input name="filler_delay_s" type="number" step="0.5" min="0.5" max="10" /></label>
         <label>추임새 간격 (초) <input name="filler_interval_s" type="number" step="0.5" min="1" max="15" /></label>
-        <label class="inline"><input name="ack_enabled" type="checkbox" /> 알아들으면 바로 반응 ("알았어, 잠깐 생각해 볼게!")</label>
+        <label class="inline"><input name="ack_enabled" type="checkbox" /> 알아들으면 바로 짧게 반응 ("응!", "아하!")</label>
         <label class="inline"><input name="filler_enabled" type="checkbox" /> 답이 늦으면 추임새 ("음...")</label>
         <label class="inline"><input name="wander" type="checkbox" /> 평소에 방을 돌아다니기 (끄면 "부르면 오는 자리"에 서 있음)</label>
         <label>걷는 속도 <input name="walk_speed" type="range" min="0.5" max="2" step="0.1" /> <output id="walk-out"></output></label>
@@ -147,6 +152,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     const fld = (n: string) => f.elements.namedItem(n) as HTMLInputElement;
     const r = rc()!;
     fld("max_sentences").value = String(r.max_sentences);
+    fld("listen_cue").value = r.listen_cue ?? "sound";
+    fld("end_silence_s").value = String((r.end_silence_ms ?? 1300) / 1000);
     fld("filler_delay_s").value = String(r.filler_delay_s ?? 1.5);
     fld("filler_interval_s").value = String(r.filler_interval_s ?? 4);
     fld("ack_enabled").checked = r.ack_enabled ?? true;
@@ -161,7 +168,9 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
       e.preventDefault();
       try {
         await api("PUT", "/api/config/ribbon", {
-          max_sentences: Number(fld("max_sentences").value) || 3,
+          max_sentences: Number(fld("max_sentences").value) || 2,
+          listen_cue: fld("listen_cue").value,
+          end_silence_ms: Math.round((Number(fld("end_silence_s").value) || 1.3) * 1000),
           filler_delay_s: Number(fld("filler_delay_s").value) || 1.5,
           filler_interval_s: Number(fld("filler_interval_s").value) || 4,
           ack_enabled: fld("ack_enabled").checked, filler_enabled: fld("filler_enabled").checked,

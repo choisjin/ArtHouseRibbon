@@ -39,6 +39,11 @@ class ChannelProcessor:
         self._listen_until = now + window_s
         self.segmenter.reset()
 
+    def set_silence_ms(self, ms: int) -> None:
+        """말이 끝났다고 보는 침묵 길이 (관리자 설정, 0.3~4초)"""
+        samples = int(self.settings.sample_rate * max(300, min(4000, int(ms))) / 1000)
+        self.segmenter.silence_samples = samples
+
     def stop_listening(self) -> None:
         self.state = "idle"
         self.segmenter.reset()

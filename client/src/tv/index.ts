@@ -48,6 +48,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   let kids: KidInfo[] = [];
   let faces: FacePosition[] = [];
   let facesAt = 0;
+  let hearing = false;   // 들을 차례인 아이가 지금 말하는 중 (서버 hearing)
   let placed = false;
   let walkSpeed = 1;
 
@@ -150,9 +151,11 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "ribbon.state": brain.setState(msg.state); break;
       case "speak": speaker.enqueue(msg); break;
       case "speak.stop": speaker.stop(); break;
+      case "cue": speaker.chime(); break;   // 불렀을 때 "띵" (듣고 있어)
+      case "hearing": hearing = msg.on; break;
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
-        hud.showCaption(`${name}: ${msg.text}`, 4000);
+        hud.showCaption(`${name}: ${msg.text}`, 8000);   // 잘 들었는지 보이게. 리본이가 말하면 그 자막으로 바뀐다
         break;
       }
       case "face.positions": faces = msg.faces; facesAt = performance.now(); break;   // 카메라(관리자 페이지)가 초당 10번
@@ -193,13 +196,14 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     stage.render();
     // 말풍선: 듣는 중 / 생각 중
     const s = ribbon.state;
-    const text = s === "listening" ? "👂" : s === "thinking" ? "💭" : "";
+    const text = hearing && s !== "speaking" ? "👂" : s === "listening" ? "👂" : s === "thinking" ? "💭" : "";
     if (text && placed) {
       const p = stage.toScreen(ribbon.headTop(head));
       bubble.textContent = text;
       bubble.style.display = p.visible ? "block" : "none";
       bubble.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px) translate(-50%, -110%)`;
-      bubble.classList.toggle("thinking", s === "thinking");
+      bubble.classList.toggle("thinking", s === "thinking" && !hearing);
+      bubble.classList.toggle("hearing", hearing);   // 아이가 말하는 동안 귀가 두근두근
     } else {
       bubble.style.display = "none";
     }

@@ -54,6 +54,8 @@ class DialogueManager:
         self._respond_task: Optional[asyncio.Task] = None
         self._stop_gen = 0                            # "중단"할 때마다 늘린다. 그 전에 줄 서 있던 말은 버린다
         self._waiting: Optional[asyncio.Event] = None  # 지금 재생 완료를 기다리는 문장
+        self._more: Optional[asyncio.Event] = None     # 답을 생각하는 중에 아이가 이어 말했다
+        self._hold_until = 0.0                         # "띵" 소리가 마이크로 다시 들어가지 않게 잠깐 막는다
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
@@ -92,7 +94,7 @@ class DialogueManager:
         if position == 0:
             await self._set_ribbon("listening", kid.id)
             if created:
-                await self._say(persona.listening_prompt(call_name(kid)), kid.id, final=True)
+                await self._listen_cue(kid)
         elif created:
             active = self.queue.active()
             active_name = call_name(self._kid_for_channel(active.channel)) if active else "친구"
@@ -124,6 +126,8 @@ class DialogueManager:
             # 호출어 없이 후속 발화(follow-up window) -> 새 턴으로 취급
             turn, _, _ = self.queue.request(kid.id, channel)
             turn.append_text(text, time.time())
+        elif self._responding and turn is self.queue.active() and self._more:
+            self._more.set()   # 답을 생각하는 중이면 앞말과 합쳐 다시 생각한다 (말하는 중이면 끝난 뒤 이어서)
         await self._broadcast_state()
         await self._maybe_respond()
 
@@ -178,6 +182,8 @@ class DialogueManager:
     def speaking(self, now: Optional[float] = None) -> bool:
         """리본이 목소리가 스피커에서 나오고 있을 수 있는가 (말하는 중 + 끝난 뒤 echo_tail_ms)"""
         now = time.time() if now is None else now
+        if now < self._hold_until:
+            return True
         if self._speak_lock.locked() or self._pending_done or self._waiting is not None:
             return True
         return now - self._last_spoken_at < self.settings.echo_tail_ms / 1000
@@ -217,73 +223,44 @@ class DialogueManager:
     async def _respond(self, turn: Turn) -> None:
         self._responding = True
         self._respond_task = asyncio.current_task()   # 관리자 "중단"이 이 작업을 멈춘다
+        self._more = more = asyncio.Event()
         producer: Optional[asyncio.Task] = None
         kid = self._kid_for_channel(turn.channel)
         text = turn.text
-        turn.text = ""  # 응답 중 들어오는 추가 발화는 새 질문으로 쌓인다
+        turn.text = ""  # 답하는 동안 들어오는 말은 여기 다시 쌓인다 (버리지 않는다)
+        rc = self.store.config.ribbon if self.store else None
+        max_sentences = rc.max_sentences if rc else 2
+        history = self._history.setdefault(kid.id, [])
         try:
             await self._set_ribbon("thinking", kid.id)
-            history = self._history.setdefault(kid.id, [])
-            rc = self.store.config.ribbon if self.store else None
-            messages = persona.build_messages(
-                kid if not kid.id.startswith("unknown_") else None, history, text,
-                name=rc.name if rc else "리본", extra=rc.persona_extra if rc else "",
-                max_sentences=rc.max_sentences if rc else 3)
-
-            max_sentences = rc.max_sentences if rc else 3
-            sentences: List[str] = []
-            synth: List[asyncio.Task] = []   # 문장이 완성되는 즉시 합성을 시작한다 (pipelining)
-            first_ready = asyncio.Event()
-
-            async def produce() -> None:
-                pending = ""
-                truncated = False
-                async for delta in self.llm.stream(messages):
-                    pending += delta
-                    parts = _SENTENCE_END.split(pending)
-                    if len(parts) > 1:
-                        for s in parts[:-1]:
-                            if s.strip():
-                                sentences.append(s.strip())
-                                synth.append(asyncio.create_task(self.tts.synthesize(s.strip())))
-                                first_ready.set()
-                        pending = parts[-1]
-                    if len(sentences) >= max_sentences:
-                        truncated = True
-                        break
-                if not truncated and pending.strip():
-                    sentences.append(pending.strip())
-                    synth.append(asyncio.create_task(self.tts.synthesize(pending.strip())))
-                if truncated:
-                    log.info("답이 %d문장을 넘어 잘랐음", max_sentences)
-                if not sentences:
-                    log.warning("LLM 이 빈 답을 돌려줌 (모델 오류 또는 빈 응답). 입력: %s", text)
-                    sentences.append("음, 다시 한 번 말해줄래?")
-                    synth.append(asyncio.create_task(self.tts.synthesize(sentences[0])))
-                first_ready.set()
-
-            producer = asyncio.create_task(produce())
-
-            # 1) 인식 직후 즉시 반응 (LLM 을 기다리지 않는다)
-            if rc is None or rc.ack_enabled:
-                await self._say(persona.acknowledge(text, call_name(kid)), kid.id, final=False, wait=True)
-                await self._set_ribbon("thinking", kid.id)
-            # 2) 첫 문장이 늦으면 추임새로 침묵을 메운다
-            if rc is None or rc.filler_enabled:
-                delay = rc.filler_delay_s if rc else 1.5
-                n = 0
-                while not first_ready.is_set():
-                    try:
-                        await asyncio.wait_for(first_ready.wait(), timeout=delay)
-                    except asyncio.TimeoutError:
-                        if first_ready.is_set():
-                            break
-                        await self._say(persona.filler(n), kid.id, final=False, wait=True)
-                        await self._set_ribbon("thinking", kid.id)
-                        n += 1
-                        delay = rc.filler_interval_s if rc else 4.0
-                        if n >= 4:
-                            break
+            restarts = 0
+            while True:
+                messages = persona.build_messages(
+                    kid if not kid.id.startswith("unknown_") else None, history, text,
+                    name=rc.name if rc else "리본", extra=rc.persona_extra if rc else "",
+                    max_sentences=max_sentences)
+                sentences: List[str] = []
+                synth: List[asyncio.Task] = []   # 문장이 완성되는 즉시 합성을 시작한다 (pipelining)
+                first_ready = asyncio.Event()
+                producer = asyncio.create_task(
+                    self._produce(messages, text, max_sentences, sentences, synth, first_ready))
+                # 1) 인식 직후 즉시 반응 (LLM 을 기다리지 않는다). 다시 생각할 때는 하지 않는다
+                if restarts == 0 and rc is not None and rc.ack_enabled:
+                    await self._say(persona.acknowledge(text, call_name(kid)), kid.id, final=False, wait=True)
+                    await self._set_ribbon("thinking", kid.id)
+                # 2) 첫 문장을 기다린다. 늦으면 추임새. 그 사이 아이가 이어 말하면 합쳐서 다시 생각한다
+                await self._wait_first(first_ready, more, kid.id, rc)
+                if more.is_set() and turn.text and restarts < 3:
+                    producer.cancel()
+                    for t in synth:
+                        t.cancel()
+                    text = f"{text} {turn.text}"
+                    turn.text = ""
+                    more.clear()
+                    restarts += 1
+                    log.info("아이가 이어 말해서 다시 생각: %s", text)
+                    continue
+                break
             # 3) 준비된 문장부터 순서대로 재생 (앞 문장은 기다리지 않고 이어 보낸다)
             i = 0
             while True:
@@ -306,10 +283,71 @@ class DialogueManager:
             await self._say("미안, 잠깐 생각이 안 났어. 다시 말해줄래?", kid.id, final=True)
         finally:
             self._responding = False
+            self._more = None
             if producer and not producer.done():
                 producer.cancel()                     # 중단되면 LLM 스트림도 닫는다
+        if turn.text and turn is self.queue.active():
+            await self._respond(turn)                 # 리본이가 말하는 사이 아이가 더 말했다: 같은 차례로 이어서
+            return
         self.queue.complete_active()
         await self._after_turn()
+
+    async def _produce(self, messages: List[Dict[str, str]], text: str, max_sentences: int,
+                       sentences: List[str], synth: List[asyncio.Task], first_ready: asyncio.Event) -> None:
+        """LLM 을 흘려 받아 문장이 끝날 때마다 sentences 에 넣고 합성을 시작한다"""
+        pending = ""
+        truncated = False
+        async for delta in self.llm.stream(messages):
+            pending += delta
+            parts = _SENTENCE_END.split(pending)
+            if len(parts) > 1:
+                for s in parts[:-1]:
+                    if s.strip():
+                        sentences.append(s.strip())
+                        synth.append(asyncio.create_task(self.tts.synthesize(s.strip())))
+                        first_ready.set()
+                pending = parts[-1]
+            if len(sentences) >= max_sentences:
+                truncated = True
+                break
+        if not truncated and pending.strip():
+            sentences.append(pending.strip())
+            synth.append(asyncio.create_task(self.tts.synthesize(pending.strip())))
+        if truncated:
+            log.info("답이 %d문장을 넘어 잘랐음", max_sentences)
+        if not sentences:
+            log.warning("LLM 이 빈 답을 돌려줌 (모델 오류 또는 빈 응답). 입력: %s", text)
+            sentences.append("음, 다시 한 번 말해줄래?")
+            synth.append(asyncio.create_task(self.tts.synthesize(sentences[0])))
+        first_ready.set()
+
+    async def _wait_first(self, first_ready: asyncio.Event, more: asyncio.Event, kid_id: str, rc) -> None:
+        """첫 문장이 준비되거나 아이가 이어 말할 때까지 기다린다. 오래 걸리면 추임새로 침묵을 메운다"""
+        fillers = rc is None or rc.filler_enabled
+        delay = rc.filler_delay_s if rc else 1.5
+        n = 0
+        while not first_ready.is_set() and not more.is_set():
+            waits = [asyncio.create_task(first_ready.wait()), asyncio.create_task(more.wait())]
+            done, pending = await asyncio.wait(waits, timeout=delay if fillers and n < 4 else None,
+                                               return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+            if done:
+                return
+            await self._say(persona.filler(n), kid_id, final=False, wait=True)
+            await self._set_ribbon("thinking", kid_id)
+            n += 1
+            delay = rc.filler_interval_s if rc else 4.0
+
+    async def _listen_cue(self, kid: KidInfo) -> None:
+        """불렀을 때 "듣고 있어" 신호. 기본은 짧은 "띵" 소리라서 아이가 바로 이어 말할 수 있다"""
+        rc = self.store.config.ribbon if self.store else None
+        if rc is not None and rc.listen_cue == "voice":
+            await self._say(persona.listening_prompt(call_name(kid)), kid.id, final=True)
+            return
+        self._hold_until = time.time() + 0.35         # 띵 소리(0.25초)가 마이크로 들어가는 것만 막는다
+        self._last_spoken_at = time.time()           # 여기부터 "말 안 하면 끝내기" 시간을 잰다
+        await self.broadcast({"type": "cue", "kind": "listen", "kid_id": kid.id})
 
     async def _after_turn(self) -> None:
         nxt = self.queue.active()
@@ -324,7 +362,7 @@ class DialogueManager:
             nxt.text = persona.recall_prefix(call_name(kid)) + nxt.text
             await self._respond(nxt)
         else:
-            await self._say(persona.listening_prompt(call_name(kid)), kid.id, final=True)
+            await self._say(persona.turn_prompt(call_name(kid)), kid.id, final=True)   # 누구 차례인지 이름으로
 
     async def _say(self, text: str, kid_id: Optional[str], final: bool,
                    audio: Optional[bytes] = None, wait: bool = True) -> None:

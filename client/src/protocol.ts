@@ -42,6 +42,10 @@ export interface RibbonConfig {
   max_sentences: number;
   persona_extra: string;
   ack_enabled?: boolean;
+  /** 부르면: sound = "띵" 소리만 | voice = "응 ○○야, 말해봐." */
+  listen_cue?: "sound" | "voice";
+  /** 이만큼(ms) 조용하면 아이 말이 끝난 것으로 본다 */
+  end_silence_ms?: number;
   filler_enabled?: boolean;
   filler_delay_s?: number;
   filler_interval_s?: number;
@@ -137,6 +141,12 @@ export interface FacePositionsMsg {
 /** 관리자 "중단": TV 는 재생 중인 소리와 남은 문장을 버린다 */
 export interface SpeakStopMsg { type: "speak.stop" }
 
+/** 불렀을 때 "듣고 있어" 신호. TV 가 짧은 "띵" 소리를 낸다 */
+export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string }
+
+/** 들을 차례인 아이가 말하기 시작(on)/멈춤. TV 가 "듣는 중" 표시를 한다 */
+export interface HearingMsg { type: "hearing"; channel: number; kid_id: string | null; on: boolean }
+
 /** 관리자 조작에 대한 서버 알림 (예: 마이크가 없는 아이를 호출) */
 export interface AdminMsg { type: "admin.msg"; text: string; error?: boolean }
 
@@ -163,4 +173,4 @@ export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "o
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | AdminMsg | DevicesMsg | DeviceControlMsg;
+  | SpeakStopMsg | CueMsg | HearingMsg | AdminMsg | DevicesMsg | DeviceControlMsg;

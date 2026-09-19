@@ -29,9 +29,12 @@ class RibbonConfig(BaseModel):
     speed: float = 1.05          # 0.7 ~ 2.0
     steps: int = 8               # 5 ~ 12
     pitch: float = 0.0           # 반음 단위 -6 ~ +8. 어린아이 느낌은 +3 ~ +5
-    max_sentences: int = 3
+    max_sentences: int = 2
     persona_extra: str = ""      # 시스템 프롬프트 뒤에 붙는 추가 지시문
-    ack_enabled: bool = True     # 인식 직후 "알았어, 잠깐 생각해 볼게!" 같은 즉시 반응
+    ack_enabled: bool = False    # 인식 직후 "응!" 같은 짧은 즉시 반응 (말이 많아져서 기본은 끔)
+    listen_cue: str = "sound"    # 부르면: sound = "띵" 소리만 (바로 말할 수 있게) | voice = "응 ○○야, 말해봐."
+    end_silence_ms: int = 1300   # 이만큼 조용하면 아이 말이 끝난 것으로 본다. 아이들은 말 중간에 오래 쉰다
+    dialogue_style: int = 2      # 2 = 놀이 상대 방식(2026-09-20). 예전 설정 파일을 한 번 옮길 때 쓴다
     filler_enabled: bool = True  # 답이 늦으면 "음..." 추임새
     filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
     filler_interval_s: float = 4.0  # 그 뒤 추임새 간격
@@ -101,6 +104,12 @@ class ConfigStore:
                 self.config = AppConfig(**raw)
             except Exception:  # noqa: BLE001 - 깨진 파일이면 기본값으로
                 raw, self.config = {}, AppConfig()
+        if raw.get("ribbon") and "dialogue_style" not in raw["ribbon"]:
+            # 놀이 상대 방식으로 바꾸기 전 설정: 즉시 반응 끄고 짧게 (관리자 화면에서 다시 켤 수 있다)
+            rc = self.config.ribbon
+            rc.ack_enabled = False
+            rc.max_sentences = min(rc.max_sentences, 2)
+            rc.dialogue_style = 2
         self._seed_profiles(had_profiles=bool(raw.get("characters")))
         self._sync_main()
         return self.config

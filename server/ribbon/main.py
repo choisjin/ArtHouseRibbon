@@ -524,14 +524,29 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     proc = processors.get(channel)
     if proc is None:
         return
+    proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
     if settings.echo_guard and dialogue.speaking():
         proc.hold()                  # 리본이 목소리가 마이크로 다시 들어오는 것 (에코)
+        _report_hearing(channel, proc)
         return
     for kind, payload in proc.feed(pcm):
         if kind == "wake":
             _spawn(dialogue.on_wake(channel))
         elif kind == "utterance" and payload is not None:
             _spawn(_transcribe_and_dispatch(channel, payload))
+    _report_hearing(channel, proc)
+
+
+_hearing: Dict[int, bool] = {}
+
+
+def _report_hearing(channel: int, proc: ChannelProcessor) -> None:
+    """아이가 말하기 시작/멈춤을 TV 에 알린다 ("듣고 있어" 표시). 들을 차례일 때만"""
+    on = proc.state == "listening" and proc.segmenter.in_speech
+    if on != _hearing.get(channel, False):
+        _hearing[channel] = on
+        kid = kids.by_channel(channel)
+        _spawn(hub.broadcast({"type": "hearing", "channel": channel, "kid_id": kid.id if kid else None, "on": on}))
 
 
 async def _handle_text(ws: WebSocket, msg: dict) -> None:

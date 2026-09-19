@@ -94,6 +94,26 @@ export class Speaker {
     osc.stop(ctx.currentTime + 0.6);
   }
 
+  /** 불렀을 때 "듣고 있어" 신호: 짧게 올라가는 두 음 (띵-동, 0.25초). 말 대신이라 아이가 바로 이어 말할 수 있다 */
+  chime(): void {
+    if (this.muted) return;
+    const ctx = this.audioContext();
+    void ctx.resume();
+    const t0 = ctx.currentTime;
+    [[1046, 0], [1568, 0.1]].forEach(([freq, at]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + at + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0 + at);
+      osc.stop(t0 + at + 0.16);
+    });
+  }
+
   /** 오디오 컨텍스트 하나를 공유한다 (매번 만들면 자동재생 차단에 걸린다). */
   private audioContext(): AudioContext {
     if (!this.ctx) this.ctx = new AudioContext();

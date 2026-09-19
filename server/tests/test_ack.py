@@ -6,9 +6,9 @@ def test_math_request_is_acknowledged_as_math():
     assert "수학" in a
 
 
-def test_short_unknown_text_is_echoed():
+def test_plain_talk_gets_short_reaction():
     a = acknowledge("기린이 좋아", "지우")
-    assert "기린이 좋아" in a
+    assert len(a) <= 6          # 리본이 말이 많다는 의견: 아주 짧게만 받는다
 
 
 def test_long_unknown_text_gets_default():
