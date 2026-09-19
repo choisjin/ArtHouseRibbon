@@ -27,3 +27,14 @@ def test_resolve_ollama_keeps_given_url():
     assert r.llm_base_url == "http://mac.local:11434/v1"
     assert r.llm_autoload is False
     assert isinstance(llm_mod.make_llm(r), llm_mod.OllamaLLM)
+
+
+def test_env_default_is_not_frozen_by_saving_other_settings(tmp_path):
+    """대화 모델을 고른 적이 없으면, 다른 설정을 저장해도 .env 값이 settings.json 에 굳지 않는다"""
+    path = tmp_path / "settings.json"
+    s = ConfigStore(path)
+    s.seed_llm("ollama", "http://localhost:11434/v1", "gemma3:27b")
+    s.update_ribbon({"max_sentences": 2})                        # 다른 설정 저장
+    again = ConfigStore(path)
+    again.seed_llm("mlx", "", "new-model")                         # .env 를 바꾸고 다시 켬
+    assert again.config.llm.provider == "mlx" and again.config.llm.model == "new-model"

@@ -97,6 +97,7 @@ class ConfigStore:
     def __init__(self, path: Path):
         self.path = path
         self.config = AppConfig()
+        self._llm_from_env = False   # 대화 모델이 관리자가 고른 게 아니라 .env 기본값인가
         self.load()
 
     def load(self) -> AppConfig:
@@ -146,7 +147,10 @@ class ConfigStore:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.config.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+        data = self.config.model_dump()
+        if self._llm_from_env:
+            data["llm"] = None     # .env 로 채운 기본값은 파일에 굳히지 않는다 (.env 를 바꾸면 따라가게)
+        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def update_ribbon(self, data: Dict) -> RibbonConfig:
         """공통 설정(주인공·친구·대화·움직임). 이름·목소리 등 프로필 값이 오면 주인공 프로필에 적는다"""
@@ -165,12 +169,14 @@ class ConfigStore:
         """관리자가 대화 모델을 고른 적이 없으면 .env 값으로 채운다 (파일에는 고를 때 적는다)"""
         if self.config.llm is None:
             self.config.llm = LLMConfig(provider=provider, base_url=base_url, model=model)
+            self._llm_from_env = True
         return self.config.llm
 
     def update_llm(self, data: Dict) -> LLMConfig:
         merged = (self.config.llm or LLMConfig()).model_dump()
         merged.update({k: str(v).strip() for k, v in data.items() if v is not None and k in LLMConfig.model_fields})
         self.config.llm = LLMConfig(**merged)
+        self._llm_from_env = False   # 관리자가 골랐다: 이제부터 .env 보다 앞선다
         self.save()
         return self.config.llm
 
