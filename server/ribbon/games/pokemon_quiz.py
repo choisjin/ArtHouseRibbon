@@ -106,14 +106,43 @@ def detect_mode(text: str) -> Optional[str]:
     return None
 
 
-def _is_yes(text: str) -> bool:
-    c = _compact(text)
-    return (any(c.startswith(w) for w in ("응", "어", "좋아", "또", "네", "그래", "웅", "예", "할래", "해", "그거", "이거", "시작"))
-            and len(c) <= 8) or _has(text, "좋아", "할래", "그걸로", "이걸로", "시작하자")
+# 긍정·부정 대답 (할까? / 이걸로 할까? / 하나 더 할래?). 부정이 먼저다 ("안 좋아" 는 싫다는 말)
+_NO_WORDS = ("아니", "아냐", "아뇨", "아녀", "싫어", "싫다", "싫은데", "싫거든", "안해", "안할", "안하고", "하기싫",
+             "됐어", "됐다", "괜찮아", "괜찮습니다", "별로", "그만", "다음에", "나중에", "말고", "다른거", "다른걸",
+             "바꿀래", "바꿔", "안좋아", "no", "노노", "놉")
+_YES_WORDS = ("좋아", "좋지", "좋다", "좋아요", "그래", "그러자", "그럴래", "할래", "하자", "해줘", "할게", "해요",
+              "당연하지", "당연", "물론", "고고", "가자", "렛츠고", "시작", "알았어", "알겠어", "오케이", "ok", "okay",
+              "콜", "넵", "넹", "네네", "응응", "그걸로", "이걸로", "재밌겠다", "하고싶", "또할래", "한번더",
+              "하나더", "계속")
+_YES_SHORT = ("응", "어", "웅", "엉", "네", "예", "그럼", "해", "또", "yes", "예스")   # 짧은 대답의 첫머리일 때만 ("어제" 는 아님)
 
 
 def _is_no(text: str) -> bool:
-    return _has(text, "아니", "싫어", "다른거", "말고", "안할", "바꿀래", "바꿔")
+    c = _compact(text).lower()
+    return any(w in c for w in _NO_WORDS) or c in ("노", "안돼")
+
+
+def _is_yes(text: str) -> bool:
+    if _is_no(text):
+        return False
+    c = _compact(text).lower()
+    return any(w in c for w in _YES_WORDS) or (len(c) <= 4 and any(c.startswith(w) for w in _YES_SHORT))
+
+
+def _leftover(text: str) -> str:
+    """거절 말을 뺀 나머지 ("아니 소꿉놀이 하자" -> "소꿉놀이하자"). 다른 하고 싶은 게 있는지 보려고"""
+    c = _compact(text).lower()
+    for w in sorted(_NO_WORDS, key=len, reverse=True):
+        c = c.replace(w, "")
+    for w in ("그냥", "나", "난", "응", "어", "음", "이제", "리본아", "리본", "야", "요"):
+        c = c.replace(w, "") if len(w) > 1 else c
+    return c
+
+
+def explicit_pokemon(text: str) -> bool:
+    """"포켓몬 맞추기 하자" 처럼 게임을 콕 집어 말했나 (그러면 할지 다시 묻지 않는다)"""
+    c = _compact(text).lower()
+    return any(w in c for w in _POKEMON_WORDS) and any(k.replace(" ", "") in c for k in _GAME_WORDS)
 
 
 @dataclass
@@ -129,7 +158,7 @@ class PokemonQuiz:
         self.dex = pokedex
         self.rng = rng or random.Random()
         self.active = False
-        self.phase = ""              # choosing (고르기 화면) | confirm (고른 것 확인) | playing | again
+        self.phase = ""              # offer (할까?) | choosing (고르기 화면) | confirm (고른 것 확인) | playing | again
         self.mode = ""
         self.answer: Optional[Dict] = None
         self.hints: List[str] = []   # 남은 힌트 종류
@@ -145,6 +174,14 @@ class PokemonQuiz:
         self.last_at = 0.0
 
     # ---------- 시작·끝 ----------
+    def offer(self, mode: str = "") -> Reply:
+        """놀자는 말에: 화면을 열기 전에 먼저 할지 묻는다"""
+        self.active = True
+        self.last_at = time.time()
+        self.phase = "offer"
+        self.pending = mode if mode in MODES else ""
+        return Reply(["포켓몬 맞추기 할까?"])
+
     def open_menu(self, mode: str = "") -> Reply:
         """아이가 하자고 할 때: TV 에 게임 고르기 화면. 이미 게임을 말했으면 그걸 골라 두고 한 번 더 묻는다"""
         self.active = True
@@ -214,6 +251,18 @@ class PokemonQuiz:
     # ---------- 아이 말 ----------
     def handle(self, text: str) -> Reply:
         self.last_at = time.time()
+        if self.phase == "offer":
+            if _is_no(text):
+                self.active = False
+                self.phase = ""
+                if len(_leftover(text)) >= 3:                     # "아니, 소꿉놀이 하자": 그 놀이는 대화로
+                    return Reply(ended=True, passthrough=True)
+                return Reply(["알겠어!"], ended=True)
+            if _is_yes(text) or detect_mode(text):
+                return self.open_menu(detect_mode(text) or self.pending)
+            self.active = False                                    # 다른 이야기: 보통 대화로
+            self.phase = ""
+            return Reply(ended=True, passthrough=True)
         if self.phase == "choosing":
             mode = detect_mode(text)
             if _has(text, "그만", "안할래", "끝", "됐어"):
@@ -240,9 +289,9 @@ class PokemonQuiz:
                 return self.start(self.pending)
             return Reply([f"{MODE_NAME[self.pending]} 할까? 좋으면 응 이라고 해 줘."])
         if self.phase == "again":
-            if _has(text, "그만", "안할래", "끝", "됐어", "아니", "안해"):
+            if _is_no(text) or _has(text, "끝"):
                 return self.stop()
-            if _is_yes(text) or _has(text, "한번더", "하나더", "계속", "또할래", "더할래"):
+            if _is_yes(text):
                 return self._new_round()
             if detect_mode(text):
                 self.mode = detect_mode(text)
@@ -359,8 +408,8 @@ class PokemonQuiz:
 
     # ---------- TV 화면 ----------
     def view(self) -> Optional[Dict]:
-        if not self.active:
-            return None
+        if not self.active or self.phase == "offer":
+            return None                                   # "할까?" 물을 때는 아직 화면을 열지 않는다
         if self.phase in ("choosing", "confirm"):
             # 게임 고르기 화면: 썸네일(tools/make_game_thumbs.py 가 MLX 로 만든 것)과 제목, 고른 것은 반짝
             return {"kind": "menu", "selected": self.pending or None,

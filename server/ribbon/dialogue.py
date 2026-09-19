@@ -25,7 +25,7 @@ from .world_store import WorldStore
 from . import memory as mem
 from .memory import MemoryStore
 from .knowledge.pokedex import Pokedex, knowledge_block
-from .games.pokemon_quiz import PokemonQuiz, detect_start
+from .games.pokemon_quiz import PokemonQuiz, detect_start, explicit_pokemon
 from .settings_store import ConfigStore
 
 log = logging.getLogger("ribbon.dialogue")
@@ -212,7 +212,9 @@ class DialogueManager:
             if await self._quiz_turn(kid, channel, text):
                 return
         elif (mode := detect_start(text)) is not None:
-            await self.start_quiz(mode, kid, channel)   # 도감이 없으면 없다고 알려 준다 (대화 모델로 넘기지 않는다)
+            # "놀자" 같은 말이면 먼저 "포켓몬 맞추기 할까?" 묻고, "포켓몬 맞추기 하자" 처럼 콕 집으면 바로 고르기 화면
+            # 도감이 없으면 없다고 알려 준다 (대화 모델로 넘기지 않는다)
+            await self.start_quiz(mode, kid, channel, ask_first=not explicit_pokemon(text))
             return
 
         if self._is_cancel(text):
@@ -314,7 +316,7 @@ class DialogueManager:
 
     # ---------- 포켓몬 맞추기 게임 (games/pokemon_quiz.py) ----------
     async def start_quiz(self, mode: str, kid: Optional[KidInfo] = None, channel: Optional[int] = None,
-                         confirm: bool = True) -> None:
+                         confirm: bool = True, ask_first: bool = False) -> None:
         """게임 시작. 아이가 하자고 하면(confirm) TV 에 고르기 화면 -> 고른 걸 반짝이며 한 번 더 묻고 시작.
         선생님이 대시보드에서 누르면 바로 시작 (mode "" 면 고르기 화면)"""
         if not self.quiz or not len(self.pokedex or []):
@@ -327,7 +329,11 @@ class DialogueManager:
         rc = self.store.config.ribbon if self.store else None
         self.quiz.max_id = rc.game_max_id if rc else 151
         log.info("포켓몬 맞추기 시작: %s", mode or "고르는 중")
-        await self._quiz_reply(self.quiz.open_menu(mode) if confirm else self.quiz.start(mode), kid, channel)
+        if ask_first:
+            reply = self.quiz.offer(mode)
+        else:
+            reply = self.quiz.open_menu(mode) if confirm else self.quiz.start(mode)
+        await self._quiz_reply(reply, kid, channel)
 
     async def stop_quiz(self) -> None:
         if self.quiz and self.quiz.active:
@@ -479,14 +485,19 @@ class DialogueManager:
     def _compact(text: str) -> str:
         return "".join(ch for ch in text if ch.isalnum())
 
-    def _is_own_echo(self, text: str, window_s: float = 15.0) -> bool:
-        """들은 말이 리본이가 방금 한 말과 겹치면 스피커 소리가 다시 들어온 것 (에코 막기 시간이 지난 뒤의 울림 등)"""
+    def _is_own_echo(self, text: str) -> bool:
+        """들은 말이 리본이가 방금 한 말과 겹치면 스피커 소리가 다시 들어온 것 (에코 막기 시간이 지난 뒤의 울림 등).
+        에코는 리본이 문장을 거의 다 옮기고, 아이는 일부만 따라 한다 ("포켓몬 맞추기 하자" <- 리본: "좋아, 포켓몬 맞추기
+        하자! 1번 …"). 그래서 리본이 문장의 60% 이상을 옮겼을 때만 에코로 본다. 버튼 방식은 리본이가 말할 때 마이크가
+        닫혀 있어서 말이 끝난 직후 3초만 본다"""
         now = time.time()
-        self._said = [(s, t) for s, t in self._said if now - t < window_s]
+        window_s = 3.0 if self._button_only() else 15.0
+        self._said = [(s, t) for s, t in self._said if now - t < 15.0]
         heard = self._compact(text)
         if len(heard) < 4:
             return False
-        return any(heard in s or (len(s) >= 4 and s in heard) for s, _ in self._said)
+        return any((heard in s and len(heard) >= 0.6 * len(s)) or (len(s) >= 4 and s in heard)
+                   for s, t in self._said if now - t < window_s)
 
     def _is_cancel(self, text: str) -> bool:
         return persona.is_cancel(text, tuple(self.settings.cancel_phrases), (self.ribbon_name,))

@@ -196,3 +196,57 @@ def test_saying_no_on_menu_goes_back_to_chat(tmp_path):
     q.open_menu()
     r = q.handle("아니 소꿉놀이 하자")
     assert r.passthrough and not q.active
+
+
+def test_yes_no_words():
+    from ribbon.games.pokemon_quiz import _is_no, _is_yes
+    for t in ["응", "어", "웅", "네", "예", "넵", "그래", "좋아", "좋지!", "콜", "오케이", "할래", "하자", "해 줘",
+              "당연하지", "물론이지", "고고", "가자", "시작해", "알았어", "그럼!", "재밌겠다", "응 할래"]:
+        assert _is_yes(t) and not _is_no(t), t
+    for t in ["아니", "아니야", "아냐", "아뇨", "싫어", "안 해", "안 할래", "됐어", "괜찮아", "노", "별로",
+              "그만", "다음에", "나중에 할래", "안 좋아", "다른 거 하자"]:
+        assert _is_no(t) and not _is_yes(t), t
+    for t in ["어제 공룡 그렸어", "이거 뭐야?", "고양이"]:
+        assert not _is_yes(t) and not _is_no(t), t
+
+
+def test_play_word_asks_before_opening(tmp_path):
+    q = quiz(tmp_path)
+    r = q.offer()
+    assert r.lines == ["포켓몬 맞추기 할까?"] and q.view() is None       # 아직 화면을 열지 않는다
+    q.handle("좋아!")
+    assert q.phase == "choosing" and q.view()["kind"] == "menu"
+
+
+def test_offer_declined(tmp_path):
+    q = quiz(tmp_path)
+    q.offer()
+    r = q.handle("싫어")
+    assert r.lines == ["알겠어!"] and r.ended and not q.active
+    q.offer()
+    r = q.handle("아니 소꿉놀이 하자")                                   # 다른 놀이는 대화로
+    assert r.passthrough and not q.active
+    q.offer()
+    assert q.handle("오늘 비 와").passthrough                            # 딴 이야기도 대화로
+
+
+async def test_dialogue_asks_for_play_words_not_for_explicit(tmp_path):
+    sent = []
+
+    async def broadcast(m):
+        sent.append(m)
+    p = tmp_path / "pokedex.json"
+    p.write_text(json.dumps({"pokemon": MINI}, ensure_ascii=False), encoding="utf-8")
+    kids = KidRegistry([KidInfo(id="a", name="지우", mic_channel=0)])
+    dm = DialogueManager(Settings(), kids, None, BrowserTTS(), broadcast, pokedex=Pokedex(p))
+
+    async def fast_wait():
+        dm._pending_done.clear()
+    dm._wait_spoken = fast_wait
+    await dm.on_utterance(0, "심심해 놀아줘")
+    assert dm.quiz.phase == "offer"
+    await dm.on_utterance(0, "응")
+    assert dm.quiz.phase == "choosing"
+    await dm.on_utterance(0, "그만")
+    await dm.on_utterance(0, "포켓몬 맞추기 하자")
+    assert dm.quiz.phase == "choosing"                                  # 콕 집어 말하면 다시 묻지 않는다
