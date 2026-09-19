@@ -62,11 +62,11 @@ def main():
     ap.add_argument("--speed", type=float, default=1.05)
     ap.add_argument("--steps", type=int, default=8)
     ap.add_argument("--seed", type=int, default=7, help="같은 시드면 매번 같은 소리 (비교가 공정하도록)")
-    ap.add_argument("--set", default="basic", choices=["basic", "kids"],
-                    help="basic: 방법별 1차 샘플 / kids: 여자·남자아이 목소리 2차 샘플")
+    ap.add_argument("--set", default="basic", choices=["basic", "kids", "younger"],
+                    help="basic: 방법별 1차 / kids: 여자·남자아이 2차 / younger: 고른 아이 목소리를 더 어리게 3차")
     args = ap.parse_args()
-    if args.set == "kids" and args.out == os.path.join(ROOT, "voice_lab_out"):
-        args.out = os.path.join(ROOT, "voice_lab_out", "kids")
+    if args.set != "basic" and args.out == os.path.join(ROOT, "voice_lab_out"):
+        args.out = os.path.join(ROOT, "voice_lab_out", args.set)
     os.makedirs(args.out, exist_ok=True)
 
     from supertonic import TTS
@@ -95,10 +95,10 @@ def main():
         print(f"pyworld 를 불러오지 못해 아이 목소리 변환은 건너뜁니다: {e!r}")
 
     samples = []  # (파일 이름, 설명, Style, 후처리)
-    if args.set == "kids":
+    if args.set != "basic":
         if not has_world:
-            sys.exit("--set kids 는 아이 변환(pyworld)이 필요합니다")
-        samples = kids_samples(mixed)
+            sys.exit(f"--set {args.set} 는 아이 변환(pyworld)이 필요합니다")
+        samples = kids_samples(mixed) if args.set == "kids" else younger_samples(mixed)
     else:
         samples = basic_samples(S, names, mix, has_world)
 
@@ -143,6 +143,30 @@ def kids_samples(mixed):
     return out
 
 
+def younger_samples(mixed):
+    """3차: 2차에서 고른 4개를 더 어리게. 음높이·울림을 단계적으로 올리고, 어린아이답게 조금 느린 것도"""
+    W = lambda p, f: ("world", p, f)  # noqa: E731
+    picks = [  # (이름, 2차 설명, Style, 2차 세기)
+        ("G12", "F1 음색 + F3 말투", mixed({"F1": 1}, {"F3": 1}), (1.2, 1.12)),
+        ("G14", "F2 음색 + F3 말투", mixed({"F2": 1}, {"F3": 1}), (1.2, 1.12)),
+        ("G15", "F1 30% + F3 70%", mixed({"F1": .3, "F3": .7}), (1.2, 1.12)),
+        ("B11", "M1 70% + F3 30%", mixed({"M1": .7, "F3": .3}), (1.25, 1.12)),
+    ]
+    out = []
+    for name, desc, st, (p0, f0) in picks:
+        out.append((f"Y{name}-0", f"{desc} (2차에서 고른 것 x{p0} / x{f0})", st, W(p0, f0)))
+        for i, (dp, df) in enumerate([(0.1, 0.05), (0.2, 0.09), (0.3, 0.13), (0.4, 0.17)], 1):
+            p, f = round(p0 + dp, 2), round(f0 + df, 2)
+            out.append((f"Y{name}-{i}", f"{desc} 더 어리게 {i}단계: x{p} / x{f}", st, W(p, f)))
+        p, f = round(p0 + 0.2, 2), round(f0 + 0.09, 2)
+        out.append((f"Y{name}-s", f"{desc} 2단계 + 조금 느리게(0.95): x{p} / x{f}", st, W(p, f), 0.95))
+    # 남자아이는 여자 목소리를 더 섞으면 변성 전 어린 남자아이에 가까워진다
+    for r in (0.4, 0.5):
+        out.append((f"YB11-m{int(r * 100)}", f"M1 {int((1 - r) * 100)}% + F3 {int(r * 100)}% x1.35 / x1.17",
+                    mixed({"M1": 1 - r, "F3": r}), W(1.35, 1.17)))
+    return out
+
+
 def basic_samples(S, names, mix, has_world):
     from supertonic.core import Style
 
@@ -172,10 +196,10 @@ def basic_samples(S, names, mix, has_world):
 
 def run(args, tts, sr, samples):
     rows = []
-    for fname, desc, style, post in samples:
+    for fname, desc, style, post, *rest in samples:
         np.random.seed(args.seed)  # 합성 잡음을 같게 맞춰 방법 차이만 들리게
         t0 = time.perf_counter()
-        wav, _ = tts.synthesize(text=args.text, voice_style=style, total_steps=args.steps, speed=args.speed,
+        wav, _ = tts.synthesize(text=args.text, voice_style=style, total_steps=args.steps, speed=rest[0] if rest else args.speed,
                                 lang="ko", verbose=False)
         synth_s = time.perf_counter() - t0
         post_s = 0.0
@@ -201,6 +225,8 @@ def run(args, tts, sr, samples):
             g = fname.split("_")[0]
             if g[:1] in "PGB" and g[1:2].isdigit():   # kids: P 고른 것 / G 여자아이 / B 남자아이
                 g = {"P": "고른 것", "G": "여자아이", "B": "남자아이"}[g[0]]
+            elif g[:1] == "Y":                         # younger: YG12-2 -> G12 더 어리게
+                g = g[1:].split("-")[0] + " 더 어리게"
             if g != group:
                 f.write(f"<tr><th colspan=4 align=left style='padding-top:16px'>{g}</th></tr>")
                 group = g
