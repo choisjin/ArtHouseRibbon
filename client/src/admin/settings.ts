@@ -3,7 +3,7 @@ import type { DevicesMsg, LLMConfig, ServerMsg } from "../protocol";
 import { type AdminCtx, api, esc } from "./shared";
 
 /**
- * 설정 탭.
+ * 설정 탭. 항목마다 작은 탭으로 나눈다 (#settings/mic, cam, output, llm, theme). 스크롤 없이 한 화면에 한 항목.
  *   마이크      : 이 컴퓨터에서 마이크 받기 (예전 마이크 화면 ?mode=mic 의 기능 전부). 장치 고르기·켜기·끄기·음량.
  *                 무선 마이크 수신기가 꽂힌 컴퓨터에서 관리자 페이지를 열어 두면 된다 (audio/mic.ts)
  *   카메라      : 이 컴퓨터의 웹캠으로 TV 앞 얼굴 찾기 (camera/facecam.ts). 장치 고르기·켜기·끄기·미리보기.
@@ -34,15 +34,34 @@ export function applyTheme(pref: ThemePref = readPref()): void {
 }
 systemDark.addEventListener("change", () => { if (readPref() === "system") applyTheme("system"); });
 
-export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
+export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: string): void } {
   const themes: [ThemePref, string, string][] = [
     ["light", "☀️ 라이트", "밝은 화면"],
     ["dark", "🌙 다크", "어두운 화면"],
     ["system", "📱 기기 설정 따르기", "휴대폰·컴퓨터의 다크 모드를 따라갑니다"],
   ];
   el.innerHTML = `
+    <div class="subtabs seg many">
+      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="theme">🎨 화면</button>
+    </div>
     <div class="settings">
-      <section class="card">
+      <section class="card" data-subpanel="mic" hidden>
+        <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <div id="mic" class="agent"></div>
+        <p class="hint">무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 관리자 페이지를 열어 두세요. 한 번 켜 두면 이 브라우저가 기억해서
+          다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 듣지 못합니다.</b> 다른 탭으로 옮겨도 계속 받습니다.</p>
+      </section>
+      <section class="card" data-subpanel="cam" hidden>
+        <h2>📷 카메라 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <div id="cam" class="agent"></div>
+        <p class="hint">TV 위에 단 웹캠으로 아이들 얼굴 위치를 찾아 리본이가 그쪽을 바라봅니다. 영상은 저장하거나 보내지 않습니다.
+          마이크처럼 한 번 켜 두면 이 브라우저가 기억해서 다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 아이들을 보지 못합니다.</b></p>
+      </section>
+      <section class="card" data-subpanel="output" hidden>
+        <h2>🔈 TV 소리 출력</h2>
+        <div id="outputs" class="agents"></div>
+      </section>
+      <section class="card" data-subpanel="llm" hidden>
         <h2>🧠 대화 모델 <small class="hint">리본이가 답할 때 쓰는 AI</small></h2>
         <div id="llm" class="agent">
           <label>어디서 <select name="provider">
@@ -66,24 +85,8 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
         </div>
         <p class="hint">저장하면 서버를 다시 켜지 않아도 리본이의 다음 대답부터 바뀝니다. 맥미니에서는 MLX 를 씁니다.</p>
       </section>
-      <section class="card">
-        <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
-        <div id="mic" class="agent"></div>
-        <p class="hint">무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 관리자 페이지를 열어 두세요. 한 번 켜 두면 이 브라우저가 기억해서
-          다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 듣지 못합니다.</b> 다른 탭으로 옮겨도 계속 받습니다.</p>
-      </section>
-      <section class="card">
-        <h2>📷 카메라 <small class="hint">이 컴퓨터에서 받기</small></h2>
-        <div id="cam" class="agent"></div>
-        <p class="hint">TV 위에 단 웹캠으로 아이들 얼굴 위치를 찾아 리본이가 그쪽을 바라봅니다. 영상은 저장하거나 보내지 않습니다.
-          마이크처럼 한 번 켜 두면 이 브라우저가 기억해서 다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 아이들을 보지 못합니다.</b></p>
-      </section>
-      <section class="card">
-        <h2>🔈 TV 소리 출력</h2>
-        <div id="outputs" class="agents"></div>
-      </section>
-      <section class="card">
-        <h2>화면 스타일</h2>
+      <section class="card" data-subpanel="theme" hidden>
+        <h2>🎨 화면 스타일</h2>
         <div class="theme-options">
           ${themes.map(([v, n, d]) => `<label class="theme-opt"><input type="radio" name="theme" value="${v}" /><b>${n}</b><span class="hint">${d}</span></label>`).join("")}
         </div>
@@ -343,4 +346,21 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): void {
   });
   render({ type: "devices", outputs: [] });
   ctx.socket.sendJson({ type: "devices.get" });
+
+  // ---- 작은 탭 (마지막으로 본 것을 기억, 주소는 #settings/mic 처럼) ----
+  const SUBS = ["mic", "cam", "output", "llm", "theme"];
+  const SUB_KEY = "ribbon.admin.settings.sub";
+  function show(sub?: string): void {
+    let want = sub;
+    if (!want || !SUBS.includes(want)) {
+      try { want = localStorage.getItem(SUB_KEY) ?? "mic"; } catch { want = "mic"; }
+      if (!SUBS.includes(want)) want = "mic";
+    }
+    try { localStorage.setItem(SUB_KEY, want); } catch { /* 저장소 없음 */ }
+    el.querySelectorAll<HTMLElement>("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== want; });
+    el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === want));
+  }
+  el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => { b.onclick = () => ctx.go(`settings/${b.dataset.sub}`); });
+  show();
+  return { show };
 }

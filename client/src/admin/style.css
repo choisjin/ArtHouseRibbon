@@ -274,6 +274,8 @@
   #admin .cols { grid-template-columns: 1fr; }
   #admin .subtabs { display: flex; }
   #admin .subtabs button { flex: 1; }
+  /* 칸이 많은 작은 탭(설정)은 좁은 화면에서 두 줄로, 줄마다 꽉 차게 */
+  #admin .subtabs.many button { flex: 1 1 auto; padding: 9px 10px; white-space: nowrap; border-bottom: 1px solid var(--line); }
   #admin button, #admin a.button { min-height: 44px; }
   #admin .seg button { min-height: 40px; }
   #admin .sch-week { grid-template-columns: 38px repeat(var(--n), minmax(0, 1fr)); gap: 0 2px; }

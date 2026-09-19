@@ -16,7 +16,7 @@ import type { AdminCtx } from "./shared";
  *   #kids        아이 추가·수정 (인적사항, 정규 수업 시간)
  *   #characters  TV 에 나올 캐릭터, 캐릭터별 프로필(#characters/<id> 설정 페이지)
  *   #map         맵 편집기 (방 목록에서 아이들 전시실도 고른다)
- *   #settings    마이크(이 컴퓨터에서 받기: 장치·켜기·음량), TV 소리 출력, 화면 스타일 (라이트·다크)
+ *   #settings    작은 탭: 마이크(이 컴퓨터에서 받기) · 카메라(웹캠 얼굴 찾기) · TV 소리 출력 · 대화 모델(LLM) · 화면 스타일
  * 무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 페이지를 열어 두면 마이크 소리를 서버로 보낸다.
  * 저장은 REST API 로, 화면 반영은 서버가 보내는 state 브로드캐스트로 이뤄진다.
  */
@@ -37,7 +37,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     <header class="topbar">
       <h1>🎀 리본 관리자</h1>
       <nav>${TABS.map((t) => `<a href="#${t.id}" data-tab="${t.id}"><span class="ic">${t.icon}</span><span>${t.name}</span></a>`).join("")}</nav>
-      <a id="mic-badge" class="mic-badge" href="#settings" hidden></a>
+      <a id="mic-badge" class="mic-badge" href="#settings/mic" hidden></a>
       <span id="live" class="live" title="서버 연결">●</span>
     </header>
     ${TABS.map((t) => `<main class="tab" data-panel="${t.id}" hidden></main>`).join("")}
@@ -78,6 +78,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   let kidsTab: ReturnType<typeof mountKids> | null = null;
   let mapTab: ReturnType<typeof mountMap> | null = null;
   let dashboard: ReturnType<typeof mountDashboard> | null = null;
+  let settingsTab: ReturnType<typeof mountSettings> | null = null;
   function mount(id: TabId): void {
     if (mounted.has(id)) return;
     mounted.add(id);
@@ -86,7 +87,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     if (id === "kids") kidsTab = mountKids(el, ctx);
     if (id === "characters") characters = mountCharacters(el, ctx);
     if (id === "map") mapTab = mountMap(el);
-    if (id === "settings") mountSettings(el, ctx);
+    if (id === "settings") settingsTab = mountSettings(el, ctx);
   }
 
   function route(): void {
@@ -98,6 +99,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     root.querySelector("#admin")!.classList.toggle("full", active === "map");
     if (active === "dashboard") dashboard?.show(sub);
     if (active === "characters") characters?.show(sub);
+    if (active === "settings") settingsTab?.show(sub);
     if (active === "kids" && sub) kidsTab?.select(sub);
     if (active === "map") mapTab?.activate();
   }

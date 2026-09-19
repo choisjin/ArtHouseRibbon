@@ -103,7 +103,11 @@ export class FaceCam {
       await this.close();
       this.release?.();
       this.release = null;
-      this.setMsg(`카메라 열기 실패: ${e}`);
+      const name = (e as { name?: string })?.name;
+      this.setMsg(name === "OverconstrainedError" || name === "NotFoundError"
+        ? "고른 카메라를 찾지 못했습니다 (빠졌으면 다시 꽂고 '장치 다시 찾기')"
+        : name === "NotAllowedError" ? "카메라 권한이 막혀 있습니다 (브라우저 주소창 왼쪽 자물쇠, 맥은 시스템 설정 → 카메라)"
+        : `카메라 열기 실패: ${e}`);
       return;
     }
     const label = this.devices.find((d) => d.deviceId === deviceId)?.label ?? "";
