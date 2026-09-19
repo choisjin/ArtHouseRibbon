@@ -15,6 +15,8 @@ hid_probe.py 결과: 송신기 1·2번 버튼 모두 수신기에서 똑같은 "
   줄마다 채널별 [튄 정도] 가 나온다. 누른 송신기 채널만 크게 튀면 구분 가능.
 """
 import argparse
+import os
+import signal
 import collections
 import sys
 import threading
@@ -68,7 +70,17 @@ def open_button():
              "터미널을 껐다 켜 보세요.")
 
 
+def _quit_now(*_):
+    # hidapi 가 읽거나 닫는 중이면 KeyboardInterrupt 가 늦거나 안 먹힌다 (맥).
+    # 바로 끝낸다. 장치는 프로세스가 끝나면 운영체제가 풀어 준다
+    print("
+끝", flush=True)
+    os._exit(0)
+
+
 def main():
+    signal.signal(signal.SIGINT, _quit_now)
+    signal.signal(signal.SIGTERM, _quit_now)
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", type=int, help="입력 장치 번호 (mic_test.py 목록)")
     args = ap.parse_args()

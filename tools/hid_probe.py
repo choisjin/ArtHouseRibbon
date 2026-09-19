@@ -18,6 +18,8 @@ DJI 수신기 버튼을 누르면 맥 음량이 올라간다 = 수신기가 USB 
 이 스크립트는 듣기만 한다 (맥 음량은 그대로 올라간다). Ctrl+C 로 끝.
 """
 import argparse
+import os
+import signal
 import sys
 import time
 
@@ -50,7 +52,17 @@ def guess(report):
     return ", ".join(found) or ("(놓음)" if not any(report[1:]) else "?")
 
 
+def _quit_now(*_):
+    # hidapi 가 읽거나 닫는 중이면 KeyboardInterrupt 가 늦거나 안 먹힌다 (맥).
+    # 바로 끝낸다. 장치는 프로세스가 끝나면 운영체제가 풀어 준다
+    print("
+끝", flush=True)
+    os._exit(0)
+
+
 def main():
+    signal.signal(signal.SIGINT, _quit_now)
+    signal.signal(signal.SIGTERM, _quit_now)
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true", help="DJI 말고도 미디어 키를 보낼 수 있는 모든 장치")
     args = ap.parse_args()
