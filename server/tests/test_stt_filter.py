@@ -72,3 +72,30 @@ async def test_dialogue_prompt_has_names_not_answer(tmp_path):
     assert "준이" in dm.stt_prompt() and "김준호" in dm.stt_prompt()
     dm.quiz.start("image")
     assert "힌트" in dm.stt_prompt() and "피카츄" not in dm.stt_prompt()   # 정답은 넣지 않는다
+
+
+def test_mlx_repo_names():
+    from ribbon.providers.stt import mlx_repo
+    assert mlx_repo("large-v3-turbo") == "mlx-community/whisper-large-v3-turbo"
+    assert mlx_repo("large-v3") == "mlx-community/whisper-large-v3-mlx"     # "whisper-large-v3" 는 없다
+    assert mlx_repo("whisper-medium") == "mlx-community/whisper-medium-mlx"
+    assert mlx_repo("someone/korean-whisper-mlx") == "someone/korean-whisper-mlx"
+
+
+def test_mlx_falls_back_to_turbo_when_model_missing():
+    from ribbon.config import Settings
+    from ribbon.providers.stt import FALLBACK_REPO, MLXWhisperSTT
+    stt = MLXWhisperSTT.__new__(MLXWhisperSTT)
+    stt._repo, stt._language = "mlx-community/whisper-large-v3", "ko"
+    calls = []
+
+    class FakeMlx:
+        @staticmethod
+        def transcribe(audio, path_or_hf_repo, **kw):
+            calls.append(path_or_hf_repo)
+            if path_or_hf_repo != FALLBACK_REPO:
+                raise OSError("401 Repository Not Found")
+            return {"segments": [{"text": "안녕", "no_speech_prob": 0.0, "avg_logprob": -0.1}]}
+    stt._mlx = FakeMlx
+    assert stt._run(np.zeros(1600, np.float32)) == "안녕"
+    assert stt._repo == FALLBACK_REPO and calls == ["mlx-community/whisper-large-v3", FALLBACK_REPO]

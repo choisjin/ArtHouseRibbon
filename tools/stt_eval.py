@@ -5,11 +5,11 @@
 
     source server/.venv/bin/activate
     python tools/stt_eval.py                                  # 기본 두 모델, 최근 녹음 30개
-    python tools/stt_eval.py --models large-v3-turbo large-v3-mlx --limit 50
+    python tools/stt_eval.py --models large-v3-turbo large-v3 medium --limit 50
     python tools/stt_eval.py --no-prompt                      # 인식 힌트 없이 (힌트 효과 보기)
     python tools/stt_eval.py --no-prepare                     # 소리 다듬기 없이
 
-모델 이름: mlx-community/whisper-<이름> 으로 받는다. 한국어로 따로 학습한 모델은 "/" 가 들어간 HF 저장소 이름을
+모델 이름: large-v3-turbo, large-v3, medium, small (서버 RIBBON_STT_MODEL 과 같은 이름). 한국어로 따로 학습한 모델은 "/" 가 들어간 HF 저장소 이름을
 그대로 쓴다 (MLX 로 바꾼 것이어야 한다). 결과 표: 모델마다 글자 오류율(CER, 낮을수록 좋음)과 한 번에 걸린 시간.
 """
 import argparse
@@ -25,9 +25,9 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from ribbon.providers.stt import clean_segments, prepare  # noqa: E402  서버와 같은 다듬기·거르기
+from ribbon.providers.stt import clean_segments, mlx_repo, prepare  # noqa: E402  서버와 같은 다듬기·거르기·모델 이름
 
-DEFAULT_MODELS = ["large-v3-turbo", "large-v3-mlx"]   # 지금 쓰는 것 / 더 정확하지만 느린 것
+DEFAULT_MODELS = ["large-v3-turbo", "large-v3"]   # 지금 쓰는 것 / 더 정확하지만 느린 것
 
 
 def load(path):
@@ -50,9 +50,7 @@ def cer(ref, hyp):
 
 
 def repo(name):
-    if "/" in name:
-        return name
-    return f"mlx-community/{name}" if name.startswith("whisper-") else f"mlx-community/whisper-{name}"
+    return mlx_repo(name)   # large-v3 -> mlx-community/whisper-large-v3-mlx (서버와 같은 규칙)
 
 
 def main():

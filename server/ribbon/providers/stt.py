@@ -84,6 +84,30 @@ def _echoes_prompt(text: str, prompt: str) -> bool:
     return bool(p) and len(t) >= 12 and t in p
 
 
+# mlx-community 의 실제 저장소 이름. turbo 말고는 끝에 -mlx 가 붙는다 ("whisper-large-v3" 는 없어서 401 이 난다)
+_MLX_REPOS = {
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+    "turbo": "mlx-community/whisper-large-v3-turbo",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
+    "large": "mlx-community/whisper-large-v3-mlx",
+    "large-v2": "mlx-community/whisper-large-v2-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "base": "mlx-community/whisper-base-mlx",
+    "tiny": "mlx-community/whisper-tiny-mlx",
+}
+FALLBACK_REPO = "mlx-community/whisper-large-v3-turbo"
+
+
+def mlx_repo(name: str) -> str:
+    """RIBBON_STT_MODEL 값 -> HF 저장소. "/" 가 있으면 그대로 (한국어로 따로 학습한 모델 등)"""
+    name = name.strip()
+    if "/" in name:
+        return name
+    key = name.removeprefix("whisper-")
+    return _MLX_REPOS.get(key, f"mlx-community/whisper-{key}")
+
+
 class MockSTT:
     async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str:
         return ""
@@ -122,7 +146,7 @@ class MLXWhisperSTT:
 
         self._mlx = mlx_whisper
         name = settings.stt_model
-        self._repo = name if "/" in name else f"mlx-community/whisper-{name}"
+        self._repo = mlx_repo(name)
         self._language = settings.stt_language
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-stt")
 
@@ -133,8 +157,18 @@ class MLXWhisperSTT:
 
     def _run(self, audio: np.ndarray, prompt: str = "") -> str:
         # initial_prompt: 아이 이름·캐릭터 이름·게임 말을 미리 알려 주면 그 낱말을 훨씬 잘 적는다
-        result = self._mlx.transcribe(audio, path_or_hf_repo=self._repo, language=self._language,
-                                      condition_on_previous_text=False, initial_prompt=prompt or None)
+        try:
+            result = self._mlx.transcribe(audio, path_or_hf_repo=self._repo, language=self._language,
+                                          condition_on_previous_text=False, initial_prompt=prompt or None)
+        except Exception as e:  # noqa: BLE001
+            # 모델을 못 받으면(이름이 틀렸거나 인터넷이 없거나) turbo 로 한 번 돌아가 인식은 계속되게 한다
+            if self._repo == FALLBACK_REPO:
+                raise
+            log.error("음성 인식 모델 %s 을(를) 쓸 수 없어 %s 로 바꿉니다: %s (RIBBON_STT_MODEL 확인)",
+                      self._repo, FALLBACK_REPO, e)
+            self._repo = FALLBACK_REPO
+            result = self._mlx.transcribe(audio, path_or_hf_repo=self._repo, language=self._language,
+                                          condition_on_previous_text=False, initial_prompt=prompt or None)
         text = clean_segments(result.get("segments") or [])
         if _echoes_prompt(text, prompt):
             log.info("인식 힌트를 그대로 읊은 것 같아 버림: %r", text)
