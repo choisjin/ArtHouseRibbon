@@ -62,7 +62,11 @@ def main():
     ap.add_argument("--speed", type=float, default=1.05)
     ap.add_argument("--steps", type=int, default=8)
     ap.add_argument("--seed", type=int, default=7, help="같은 시드면 매번 같은 소리 (비교가 공정하도록)")
+    ap.add_argument("--set", default="basic", choices=["basic", "kids"],
+                    help="basic: 방법별 1차 샘플 / kids: 여자·남자아이 목소리 2차 샘플")
     args = ap.parse_args()
+    if args.set == "kids" and args.out == os.path.join(ROOT, "voice_lab_out"):
+        args.out = os.path.join(ROOT, "voice_lab_out", "kids")
     os.makedirs(args.out, exist_ok=True)
 
     from supertonic import TTS
@@ -77,7 +81,72 @@ def main():
         return Style(((1 - r) * S[a].ttl + r * S[b].ttl).astype(np.float32),
                      ((1 - r) * S[a].dp + r * S[b].dp).astype(np.float32))
 
+    def mixed(ttl, dp=None):
+        """ttl/dp 를 {목소리: 비율} 로. dp 를 안 주면 ttl 과 같은 비율"""
+        dp = dp or ttl
+        return Style(sum(r * S[v].ttl for v, r in ttl.items()).astype(np.float32),
+                     sum(r * S[v].dp for v, r in dp.items()).astype(np.float32))
+
+    try:
+        import pyworld  # noqa: F401
+        has_world = True
+    except ImportError as e:
+        has_world = False
+        print(f"pyworld 를 불러오지 못해 아이 목소리 변환은 건너뜁니다: {e!r}")
+
     samples = []  # (파일 이름, 설명, Style, 후처리)
+    if args.set == "kids":
+        if not has_world:
+            sys.exit("--set kids 는 아이 변환(pyworld)이 필요합니다")
+        samples = kids_samples(mixed)
+    else:
+        samples = basic_samples(S, names, mix, has_world)
+
+    run(args, tts, sr, samples)
+
+
+def kids_samples(mixed):
+    """2차: 여자아이 G, 남자아이 B. 1차에서 고른 5개(P)를 기준으로 섞기 + 아이 변환을 넓힌다"""
+    W = lambda p, f: ("world", p, f)  # noqa: E731
+    out = [
+        ("P1_ttl_F1_dp_F3", "고른 것: F1 음색 + F3 말투", mixed({"F1": 1}, {"F3": 1}), None),
+        ("P2_mix_F1_F3_70", "고른 것: F1 30% + F3 70%", mixed({"F1": .3, "F3": .7}), None),
+        ("P3_child_F3", "고른 것: F3 아이 x1.2 / x1.12", mixed({"F3": 1}), W(1.2, 1.12)),
+        ("P4_child_M1", "고른 것: M1 아이 x1.3 / x1.15", mixed({"M1": 1}), W(1.3, 1.15)),
+        ("P5_child_M1", "고른 것: M1 아이 x1.5 / x1.2", mixed({"M1": 1}), W(1.5, 1.2)),
+    ]
+    g = []  # 여자아이
+    for v in ["F1", "F2", "F3", "F4", "F5"]:
+        g.append((f"{v} 아이", mixed({v: 1}), W(1.2, 1.12)))
+    for a, b in [("F1", "F3"), ("F2", "F3"), ("F3", "F5"), ("F3", "F4"), ("F1", "F2"), ("F2", "F5")]:
+        g.append((f"{a}+{b} 반반 아이", mixed({a: .5, b: .5}), W(1.2, 1.12)))
+    for a, b in [("F1", "F3"), ("F3", "F1"), ("F2", "F3")]:
+        g.append((f"{a} 음색 + {b} 말투 아이", mixed({a: 1}, {b: 1}), W(1.2, 1.12)))
+    g.append(("F1 30% + F3 70% 아이", mixed({"F1": .3, "F3": .7}), W(1.2, 1.12)))
+    for p, f in [(1.1, 1.08), (1.3, 1.15), (1.2, 1.18)]:
+        g.append((f"F3 아이 x{p} / x{f}", mixed({"F3": 1}), W(p, f)))
+    b_ = []  # 남자아이
+    for v in ["M1", "M2", "M3", "M4", "M5"]:
+        b_.append((f"{v} 아이", mixed({v: 1}), W(1.35, 1.17)))
+    for a, b in [("M1", "M2"), ("M1", "M3"), ("M2", "M4"), ("M3", "M5"), ("M1", "M4")]:
+        b_.append((f"{a}+{b} 반반 아이", mixed({a: .5, b: .5}), W(1.35, 1.17)))
+    b_.append(("M1 70% + F3 30% 아이 (어린 남자아이)", mixed({"M1": .7, "F3": .3}), W(1.25, 1.12)))
+    b_.append(("M2 70% + F1 30% 아이 (어린 남자아이)", mixed({"M2": .7, "F1": .3}), W(1.25, 1.12)))
+    b_.append(("M1 음색 + F3 말투 아이", mixed({"M1": 1}, {"F3": 1}), W(1.35, 1.17)))
+    b_.append(("M1 음색 + M3 말투 아이", mixed({"M1": 1}, {"M3": 1}), W(1.35, 1.17)))
+    for p, f in [(1.4, 1.18), (1.6, 1.22)]:
+        b_.append((f"M1 아이 x{p} / x{f}", mixed({"M1": 1}), W(p, f)))
+    for i, (desc, st, post) in enumerate(g, 1):
+        out.append((f"G{i:02d}", f"여자아이: {desc}", st, post))
+    for i, (desc, st, post) in enumerate(b_, 1):
+        out.append((f"B{i:02d}", f"남자아이: {desc}", st, post))
+    return out
+
+
+def basic_samples(S, names, mix, has_world):
+    from supertonic.core import Style
+
+    samples = []
     for v in names:
         samples.append((f"base_{v}", f"기본 {v}", S[v], None))
     for a, b in [("F1", "F3"), ("F1", "F5"), ("F2", "F4"), ("M1", "M3")]:
@@ -93,18 +162,15 @@ def main():
     for v, semi in [("F1", 3), ("F1", 6)]:
         samples.append((f"pitch_{v}_+{semi}", f"{v} + 지금 방식 피치 +{semi} (비교용)", S[v],
                         ("pitch", semi)))
-    try:
-        import pyworld  # noqa: F401
-        has_world = True
-    except ImportError as e:
-        has_world = False
-        print(f"pyworld 를 불러오지 못해 아이 목소리 변환은 건너뜁니다: {e!r}")
     if has_world:
         for v, p, f in [("F1", 1.15, 1.08), ("F1", 1.2, 1.12), ("F1", 1.3, 1.18), ("F3", 1.2, 1.12),
                         ("M1", 1.3, 1.15), ("M1", 1.5, 1.2), ("F1", 1.0, 1.12)]:
             samples.append((f"child_{v}_p{p}_f{f}", f"{v} 아이 변환: 음높이 x{p}, 울림 x{f}", S[v],
                             ("world", p, f)))
+    return samples
 
+
+def run(args, tts, sr, samples):
     rows = []
     for fname, desc, style, post in samples:
         np.random.seed(args.seed)  # 합성 잡음을 같게 맞춰 방법 차이만 들리게
@@ -133,6 +199,8 @@ def main():
         group = None
         for fname, desc, synth_s, post_s in rows:
             g = fname.split("_")[0]
+            if g[:1] in "PGB" and g[1:2].isdigit():   # kids: P 고른 것 / G 여자아이 / B 남자아이
+                g = {"P": "고른 것", "G": "여자아이", "B": "남자아이"}[g[0]]
             if g != group:
                 f.write(f"<tr><th colspan=4 align=left style='padding-top:16px'>{g}</th></tr>")
                 group = g
