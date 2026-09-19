@@ -29,3 +29,4 @@ mic_test.wav
 
 # 3D 맵 배치와 올린 그림 (편집기가 씀)
 data/world/
+tts_bench_out/
