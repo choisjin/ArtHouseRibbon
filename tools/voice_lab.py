@@ -30,29 +30,7 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from ribbon.providers.tts import pitch_shift  # noqa: E402  지금 서버가 쓰는 피치 변환 그대로
-
-
-def world_child(wav, sr, pitch=1.15, formant=1.10):
-    """WORLD 로 음높이와 울림(스펙트럼 포락선)을 따로 올린다. 울림을 올리면 성도가 짧은 = 어린 목소리처럼 들린다"""
-    import pyworld as pw
-    x = np.asarray(wav, dtype=np.float64).reshape(-1)
-    f0, t = pw.dio(x, sr, frame_period=5.0)
-    f0 = pw.stonemask(x, f0, t, sr)
-    sp = pw.cheaptrick(x, f0, t, sr)
-    ap = pw.d4c(x, f0, t, sr)
-    n = sp.shape[1]
-    src = np.arange(n) / formant               # 새 주파수 k 는 원래 k/formant 자리의 값
-    lo = np.clip(np.floor(src).astype(int), 0, n - 1)
-    hi = np.clip(lo + 1, 0, n - 1)
-    w = src - np.floor(src)
-    sp2 = sp[:, lo] * (1 - w) + sp[:, hi] * w
-    ap2 = ap[:, lo] * (1 - w) + ap[:, hi] * w
-    y = pw.synthesize(f0 * pitch, np.ascontiguousarray(sp2), np.ascontiguousarray(ap2), sr, 5.0)
-    peak = np.abs(y).max()
-    if peak > 0.99:
-        y = y / peak * 0.99
-    return y.astype(np.float32)
+from ribbon.providers.tts import pitch_shift, world_child  # noqa: E402  서버가 쓰는 변환 그대로
 
 
 def main():

@@ -25,7 +25,7 @@ class RibbonLook(BaseModel):
 
 class RibbonConfig(BaseModel):
     name: str = "리본"
-    voice: str = "F1"            # supertonic M1~M5, F1~F5
+    voice: str = "F1"            # ribbon/voices.py 의 id (기본 F1~F5, M1~M5 또는 섞은 조합 "YG12-2" 등)
     speed: float = 1.05          # 0.7 ~ 2.0
     steps: int = 8               # 5 ~ 12
     pitch: float = 0.0           # 반음 단위 -6 ~ +8. 어린아이 느낌은 +3 ~ +5

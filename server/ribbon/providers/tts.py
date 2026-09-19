@@ -15,6 +15,7 @@ from typing import Optional, Protocol
 import numpy as np
 
 from ..config import Settings
+from ..voices import get_preset
 
 log = logging.getLogger("ribbon.tts")
 
@@ -58,6 +59,29 @@ def pitch_shift(wav: "np.ndarray", sample_rate: int, semitones: float) -> "np.nd
     return shifted[None, :] if wav.ndim == 2 else shifted
 
 
+def world_child(wav: "np.ndarray", sample_rate: int, pitch: float = 1.15, formant: float = 1.10) -> "np.ndarray":
+    """아이 목소리 변환 (pyworld). 음높이와 울림(스펙트럼 포락선)을 따로 올린다.
+    울림을 올리면 성도가 짧은 = 어린 목소리처럼 들린다. 피치만 올리는 것보다 다람쥐 소리가 덜 난다."""
+    import pyworld as pw  # 지연 임포트. setuptools<81 이 필요하다 (pkg_resources)
+    x = np.asarray(wav, dtype=np.float64).reshape(-1)
+    f0, t = pw.dio(x, sample_rate, frame_period=5.0)
+    f0 = pw.stonemask(x, f0, t, sample_rate)
+    sp = pw.cheaptrick(x, f0, t, sample_rate)
+    ap = pw.d4c(x, f0, t, sample_rate)
+    n = sp.shape[1]
+    src = np.arange(n) / formant               # 새 주파수 k 는 원래 k/formant 자리의 값
+    lo = np.clip(np.floor(src).astype(int), 0, n - 1)
+    hi = np.clip(lo + 1, 0, n - 1)
+    w = src - np.floor(src)
+    sp2 = sp[:, lo] * (1 - w) + sp[:, hi] * w
+    ap2 = ap[:, lo] * (1 - w) + ap[:, hi] * w
+    y = pw.synthesize(f0 * pitch, np.ascontiguousarray(sp2), np.ascontiguousarray(ap2), sample_rate, 5.0)
+    peak = np.abs(y).max()
+    if peak > 0.99:
+        y = y / peak * 0.99
+    return y.astype(np.float32)
+
+
 class BrowserTTS:
     async def synthesize(self, text: str) -> Optional[bytes]:
         return None
@@ -84,7 +108,7 @@ class MacSayTTS:
 class SupertonicTTS:
     """수퍼톤 Supertonic (ONNX, 온디바이스). pip install supertonic. 첫 실행 때 모델을 내려받는다.
 
-    내장 음성 M1~M5, F1~F5. 한국어는 lang="ko". 44.1kHz 16bit wav 를 돌려준다.
+    내장 음성 M1~M5, F1~F5 와 그걸 섞은 조합(ribbon/voices.py). 한국어는 lang="ko". 44.1kHz 16bit wav 를 돌려준다.
     합성은 스레드 풀에서 돌려 이벤트 루프를 막지 않는다.
     """
 
@@ -92,8 +116,10 @@ class SupertonicTTS:
         from supertonic import TTS as _TTS  # 지연 임포트
 
         self._tts = _TTS(auto_download=True)
+        self._styles: dict = {}          # voice id -> Style (섞은 것도 한 번 만들면 재사용)
+        self._world_ok: Optional[bool] = None
         self._voice = settings.tts_voice
-        self._style = self._tts.get_voice_style(voice_name=self._voice)
+        self._style = self._style_of(self._voice)
         self._speed = settings.tts_speed
         self._steps = settings.tts_steps
         self._pitch = 0.0
@@ -102,6 +128,37 @@ class SupertonicTTS:
         # librosa 피치 변환은 첫 호출에 JIT 컴파일로 10초 넘게 걸린다. 서버 시작 때 뒤에서 미리 예열한다.
         import threading
         threading.Thread(target=self._warmup_pitch, daemon=True).start()
+
+    def _style_of(self, voice: str):
+        """voice id -> Supertonic Style. 조합이면 기본 목소리 벡터를 비율대로 섞는다. 모르는 id 는 F1"""
+        if voice in self._styles:
+            return self._styles[voice]
+        preset = get_preset(voice)
+        if preset is None:
+            log.warning("모르는 목소리 %r -> F1 로", voice)
+            preset = get_preset("F1")
+        from supertonic.core import Style
+        base = {v: self._tts.get_voice_style(voice_name=v) for v in {**preset.ttl, **preset.dp}}
+        style = Style(sum(r * base[v].ttl for v, r in preset.ttl.items()).astype(np.float32),
+                      sum(r * base[v].dp for v, r in preset.dp.items()).astype(np.float32))
+        self._styles[voice] = style
+        return style
+
+    def _child(self, wav: "np.ndarray", voice: str) -> "np.ndarray":
+        preset = get_preset(voice)
+        if not preset or not preset.child:
+            return wav
+        if self._world_ok is None:
+            try:
+                import pyworld  # noqa: F401
+                self._world_ok = True
+            except ImportError as e:
+                self._world_ok = False
+                log.warning("pyworld 를 불러오지 못해 아이 목소리 변환을 건너뜁니다 (pip install pyworld 'setuptools<81'): %r", e)
+        if not self._world_ok:
+            return wav
+        y = world_child(wav, self._sample_rate, *preset.child)
+        return y[None, :] if np.asarray(wav).ndim == 2 else y
 
     def _warmup_pitch(self) -> None:
         try:
@@ -113,7 +170,7 @@ class SupertonicTTS:
                   pitch: Optional[float] = None) -> None:
         """관리자 페이지에서 목소리/속도/품질/피치를 바꿀 때. 서버 재시작 없이 적용."""
         if voice and voice != self._voice:
-            self._style = self._tts.get_voice_style(voice_name=voice)
+            self._style = self._style_of(voice)
             self._voice = voice
         if speed:
             self._speed = max(0.7, min(2.0, float(speed)))
@@ -129,11 +186,13 @@ class SupertonicTTS:
 
     def _run(self, text: str, voice: Optional[str] = None, speed: Optional[float] = None,
              steps: Optional[int] = None, pitch: Optional[float] = None) -> Optional[bytes]:
-        style = self._tts.get_voice_style(voice_name=voice) if voice and voice != self._voice else self._style
+        voice = voice or self._voice
+        style = self._style if voice == self._voice else self._style_of(voice)
         lang = detect_lang(text, self._lang)  # 영어 문장은 영어 발음으로
         wav, _duration = self._tts.synthesize(
             text=text, voice_style=style, total_steps=int(steps or self._steps), speed=float(speed or self._speed),
             lang=lang, verbose=False)
+        wav = self._child(wav, voice)
         wav = pitch_shift(wav, self._sample_rate, self._pitch if pitch is None else float(pitch))
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "out.wav"

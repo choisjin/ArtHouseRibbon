@@ -1,7 +1,10 @@
 import type { CharacterProfile, RibbonConfig } from "../protocol";
 import type { Ribbon3D } from "../tv/ribbon3d";
 import { CHARACTERS, characterOf, DEFAULT_LOOK, type RibbonLook } from "../world/doll";
-import { api, type AdminCtx, esc, mountPreview, snapshot, VOICES, voiceName } from "./shared";
+import { api, type AdminCtx, esc, mountPreview, snapshot } from "./shared";
+
+/** 서버 ribbon/voices.py 의 목소리 (기본 10개 + 섞은 조합) */
+interface VoiceInfo { id: string; name: string; group: string; speed: number | null }
 
 /**
  * 캐릭터 탭.
@@ -13,6 +16,7 @@ const TINT_NAME: Record<string, string> = { hair: "머리", bow: "머리 리본"
 
 export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: string): void } {
   const shots = new Map<string, string>();       // 캐릭터 id + 옷·색 → 사진 dataURL
+  let voices: VoiceInfo[] = [];                   // 서버에서 한 번 읽는다
   let current: string | undefined;                // 지금 보는 설정 페이지
   let rendered = "";                              // 목록을 마지막으로 그린 설정 (같으면 다시 안 그림)
 
@@ -23,6 +27,24 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     return r?.character === id || (!r?.character && id === "ribbon") ? "main" : r?.friend === id ? "friend" : "";
   };
   const ROLE = { main: "주인공", friend: "같이 나오는 친구", "": "쉬는 중" };
+
+  const voiceOf = (id: string): VoiceInfo | undefined => voices.find((v) => v.id === id);
+  const voiceName = (id: string): string => {
+    const v = voiceOf(id);
+    return !v ? id : v.group === "기본 목소리" ? v.name : `${v.group.replace(/ \(.*\)$/, "")} · ${v.name}`;
+  };
+  const voiceOptions = (): string => {
+    const groups = new Map<string, VoiceInfo[]>();
+    for (const v of voices) groups.set(v.group, [...(groups.get(v.group) ?? []), v]);
+    return [...groups].map(([g, vs]) => `<optgroup label="${esc(g)}">${vs.map((v) =>
+      `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join("")}</optgroup>`).join("");
+  };
+  void api<{ voices: VoiceInfo[] }>("GET", "/api/tts/voices").then((r) => {
+    voices = r.voices;
+    const sel = el.querySelector<HTMLSelectElement>("#char-form select[name=voice]");
+    if (sel) { const cur = sel.value; sel.innerHTML = voiceOptions(); sel.value = cur; }   // 고치는 중인 설정 페이지는 칸만 채운다
+    else if (!current) { rendered = ""; renderList(); }
+  }).catch((err) => ctx.msg(`목소리 목록을 못 읽음: ${err}`, true));
 
   function show(id?: string): void {
     current = id && CHARACTERS[id] ? id : undefined;
@@ -179,10 +201,10 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
             <p class="hint">주인공일 때 대화 규칙 뒤에 붙습니다. 짧고 분명하게 쓰면 잘 따릅니다.</p></section>
           <section><h3>목소리</h3>
             <div class="cols">
-              <label>음성 <select name="voice">${VOICES.map((v) => `<option value="${v}">${voiceName(v)}</option>`).join("")}</select></label>
+              <label>음성 <select name="voice">${voices.length ? voiceOptions() : `<option value="${esc(p.voice)}">${esc(p.voice)}</option>`}</select></label>
               <label>속도 <input name="speed" type="range" min="0.7" max="2" step="0.05" /> <output data-out="speed"></output></label>
               <label>품질 <input name="steps" type="range" min="5" max="12" step="1" /> <output data-out="steps"></output></label>
-              <label>피치 (반음, 어린아이 느낌은 +3 ~ +5) <input name="pitch" type="range" min="-6" max="8" step="0.5" /> <output data-out="pitch"></output></label>
+              <label>피치 (반음. 아이 목소리 조합은 이미 어리게 바뀌어 있어 0 권장) <input name="pitch" type="range" min="-6" max="8" step="0.5" /> <output data-out="pitch"></output></label>
             </div>
             <div class="row"><input name="preview_text" class="grow" /><button type="button" id="tts">🔊 미리 듣기</button></div></section>
           <section><h3>옷</h3>
@@ -219,6 +241,10 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     void preview.loaded.then(() => preview?.setLook(lookNow()));
     outs();
     f.oninput = () => { outs(); preview?.setLook(lookNow()); };
+    fld("voice")!.onchange = () => {   // "천천히" 조합은 속도도 같이 맞춘다
+      const sp = voiceOf(fld("voice")!.value)?.speed;
+      if (sp) { set("speed", String(sp)); outs(); }
+    };
 
     (el.querySelector("#back") as HTMLButtonElement).onclick = () => ctx.go("characters");
     (el.querySelector("#greet") as HTMLButtonElement).onclick = () => preview?.greet();
@@ -245,7 +271,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         preview?.setState("speaking");
         audio.onended = done;
         await audio.play().catch((err) => { done(); throw err; });
-        ctx.msg(`${fld("voice")!.value} 재생 중`);
+        ctx.msg(`${voiceName(fld("voice")!.value)} 재생 중`);
       } catch (err) { ctx.msg(String(err), true); preview?.setState("idle"); }
     };
     f.onsubmit = async (e) => {

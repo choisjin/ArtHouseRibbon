@@ -14,3 +14,6 @@ openwakeword>=0.6
 supertonic>=1.3
 # Pitch shift for Supertonic voice (admin page pitch slider)
 librosa>=0.10
+# Child voice (formant + pitch, ribbon/voices.py presets). pyworld 0.3.5 imports pkg_resources
+pyworld>=0.3.5
+setuptools<81

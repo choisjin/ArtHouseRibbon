@@ -47,8 +47,6 @@ export async function api<T>(method: string, url: string, body?: unknown): Promi
 export const esc = (s: string | null | undefined): string =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
-export const VOICES = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"];
-export const voiceName = (v: string): string => (v.startsWith("F") ? `여성 ${v}` : `남성 ${v}`);
 export const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 
 /** 아이를 부르는 이름: 별명이 있으면 "이름(별명)" */

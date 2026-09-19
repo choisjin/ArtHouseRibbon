@@ -71,13 +71,18 @@ Supertonic(수퍼톤, 온디바이스 ONNX)을 쓴다. 맥 내장 `say` 보다 �
 ```bash
 cd ~/ArtHouseRibbon/server
 source .venv/bin/activate
-pip install supertonic librosa
+pip install supertonic librosa pyworld "setuptools<81"
 python -c "from supertonic import TTS; t=TTS(auto_download=True); s=t.get_voice_style(voice_name='F1'); w,_=t.synthesize('안녕, 나는 리본이야', voice_style=s, lang='ko'); t.save_audio(w, '/tmp/ribbon.wav')" && afplay /tmp/ribbon.wav
 ```
 
 첫 실행에 모델(수백 MB)을 내려받는다. 확인: 스피커에서 한국어가 나온다.
 
 목소리는 `M1~M5`(남성), `F1~F5`(여성) 열 가지다. 위 명령의 `F1` 을 바꿔 가며 들어보고 마음에 드는 것을 6단계 `.env` 의 `RIBBON_TTS_VOICE` 에 넣는다.
+
+기본 목소리 열 개 말고도, 기본 목소리를 섞고 아이처럼 바꾼 조합(여자아이 가·나·다, 남자아이 가 등)을
+관리자 **캐릭터** 탭의 음성 칸에서 고를 수 있다 (`server/ribbon/voices.py`). 아이 변환에 `pyworld` 가 쓰이고,
+`pyworld` 는 `pkg_resources` 를 찾기 때문에 `setuptools<81` 이 같이 필요하다. 없으면 변환 없이 원래 목소리로 나온다.
+새 조합을 찾을 때는 `python tools/voice_lab.py` 로 샘플을 만들어 들어 보고 `voices.py` 에 추가한다.
 
 (대안) Supertonic 이 안 되면 맥 내장 음성: `say -v Yuna "안녕"` 이 들리면 `.env` 에서 `RIBBON_TTS_PROVIDER=mac_say`.
 

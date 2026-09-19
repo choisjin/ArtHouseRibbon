@@ -31,6 +31,7 @@ from .providers.stt import make_stt
 from .providers.tts import configure_tts, make_tts
 from . import schedule as sched
 from .settings_store import ConfigStore
+from .voices import list_voices
 from .world_render import WorldRenderer
 from .world_store import WorldStore
 
@@ -455,6 +456,12 @@ async def api_artwork_delete(data: dict = Body(...)):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/tts/voices")
+async def api_tts_voices():
+    """관리자 캐릭터 탭의 목소리 고르기 칸 (기본 10개 + 섞은 조합, ribbon/voices.py)"""
+    return JSONResponse({"voices": list_voices(), "custom": hasattr(tts, "configure")})
 
 
 @app.post("/api/tts/preview")
