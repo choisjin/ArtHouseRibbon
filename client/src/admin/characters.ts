@@ -139,6 +139,9 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     return `<section class="card">
       <h2>대화 · 움직임 (모든 캐릭터 공통)</h2>
       <form id="common-form" class="cols">
+        <label>입력 방식 <select name="input_mode">
+          <option value="button">버튼을 누른 뒤에만 듣기 (말 한 번)</option>
+          <option value="auto">자동 (대답 뒤 이어 말하기 · 말로 깨우기 · 끼어들기)</option></select></label>
         <label>부르면 <select name="listen_cue">
           <option value="sound">"띵" 소리만 (아이가 바로 말할 수 있음)</option>
           <option value="voice">"응 ○○야, 말해봐." 라고 대답</option></select></label>
@@ -154,7 +157,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         <label class="inline"><input name="pokedex_enabled" type="checkbox" /> 포켓몬 이야기가 나오면 도감을 보고 답하기 (tools/fetch_pokedex.py 로 받아 둔 도감)</label>
         <label>포켓몬 맞추기에 나올 포켓몬 (도감 1번 ~ 이 번호, 151 = 1세대, 1025 = 전부)
           <input name="game_max_id" type="number" min="10" max="1025" /></label>
-        <label class="inline"><input name="barge_in" type="checkbox" /> 리본이가 말하는 중에 아이가 말하면 멈추고 듣기 (끼어들기)</label>
+        <label class="inline"><input name="barge_in" type="checkbox" /> 리본이가 말하는 중에 아이가 말하면 멈추고 듣기 (끼어들기, 자동 방식일 때만)</label>
         <label>끼어들기 소리 크기 기준 (서버 로그 "리본이 목소리가 마이크에 들어온 크기" 보다 넉넉히 크게. 잘 안 멈추면 낮추기)
           <input name="barge_in_rms" type="number" step="0.005" min="0.01" max="0.5" /></label>
         <label class="inline"><input name="save_recordings" type="checkbox" /> 인식 개선용으로 아이 말 녹음 저장 (data/recordings/, tools/stt_eval.py 로 모델 비교)</label>
@@ -174,6 +177,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     const r = rc()!;
     fld("max_sentences").value = String(r.max_sentences);
     fld("listen_cue").value = r.listen_cue ?? "sound";
+    fld("input_mode").value = r.input_mode ?? "button";
     fld("button_window_s").value = String(r.button_window_s ?? 6);
     fld("end_silence_s").value = String((r.end_silence_ms ?? 1300) / 1000);
     fld("filler_delay_s").value = String(r.filler_delay_s ?? 1.5);
@@ -199,6 +203,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         await api("PUT", "/api/config/ribbon", {
           max_sentences: Number(fld("max_sentences").value) || 2,
           listen_cue: fld("listen_cue").value,
+          input_mode: fld("input_mode").value,
           button_window_s: Number(fld("button_window_s").value) || 6,
           end_silence_ms: Math.round((Number(fld("end_silence_s").value) || 1.3) * 1000),
           filler_delay_s: Number(fld("filler_delay_s").value) || 1.5,

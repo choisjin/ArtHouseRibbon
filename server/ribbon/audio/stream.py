@@ -32,6 +32,9 @@ class ChannelProcessor:
         self._idle_buf: List[np.ndarray] = []
         self._idle_keep = max(1, int(800 / 20))  # 20ms 프레임 × 0.8초
         self.follow_up_s: Optional[float] = None  # 이어 말하기 시간을 잠깐 바꿀 때 (포켓몬 맞추기 중에는 길게)
+        # 버튼 방식(input_mode="button"): 말 한 번 받으면 바로 닫고, 말소리로 깨어나지 않는다 (버튼을 눌러야만 듣는다)
+        self.single_shot = False
+        self.voice_wake = True
 
     def start_listening(self, now: Optional[float] = None, window_s: Optional[float] = None) -> None:
         now = time.time() if now is None else now
@@ -65,7 +68,7 @@ class ChannelProcessor:
             self._idle_buf.append(pcm)
             if len(self._idle_buf) > self._idle_keep:
                 self._idle_buf.pop(0)
-            if self.wakeword.process(pcm):
+            if self.voice_wake and self.wakeword.process(pcm):
                 self.start_listening(now)
                 events.append(("wake", None))
                 # 깨어나기 전 0.8초(예: "사과가")를 발화 앞에 붙인다. 호출어 모델이면 호출어 자체가 섞이지만 STT 가 걸러낸다
@@ -77,6 +80,9 @@ class ChannelProcessor:
         utterance = self.segmenter.push(pcm)
         if utterance is not None and utterance.size > 0:
             events.append(("utterance", utterance))
+            if self.single_shot:
+                self.stop_listening()              # 버튼 한 번에 말 한 번: 이어 말하기를 기다리지 않는다
+                return events
             self._listen_until = now + (self.follow_up_s or self.settings.follow_up_window_s)
         elif not self.segmenter.in_speech and now > self._listen_until:
             self.stop_listening()

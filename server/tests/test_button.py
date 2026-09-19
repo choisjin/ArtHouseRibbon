@@ -61,3 +61,26 @@ async def test_claim_gives_turn_without_talking():
     assert active is not None and active.kid_id == "b"
     assert dm.ribbon_state == "listening"
     assert not [m for m in sent if m.get("type") == "speak"]
+
+
+def test_button_mode_takes_one_utterance_then_closes():
+    p = procs()
+    proc = p[0]
+    proc.single_shot = True
+    proc.start_listening(now=100.0, window_s=6)
+    events = []
+    t = 100.0
+    for f in [LOUD] * 25 + [QUIET] * 80:            # 0.5초 말하고 1.6초 조용
+        t += 0.02
+        events += proc.feed(f, now=t)
+    assert [k for k, _ in events] == ["utterance"]
+    assert proc.state == "idle"                      # 이어 말하기를 기다리지 않는다
+
+
+def test_button_mode_does_not_wake_by_voice():
+    s = Settings()
+    s.wakeword_provider = "energy"
+    proc = ChannelProcessor(0, s, make_wakeword(s))
+    proc.voice_wake = False
+    assert all(proc.feed(LOUD, now=100.0 + i * 0.02) == [] for i in range(50))
+    assert proc.state == "idle"

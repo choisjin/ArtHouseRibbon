@@ -58,7 +58,9 @@ export interface RibbonConfig {
   game_max_id?: number;
   /** 인식 개선용으로 아이 말 녹음 저장 (data/recordings/, tools/stt_eval.py) */
   save_recordings?: boolean;
-  /** 리본이가 말하는 중에 아이가 말하면 멈추고 그 말을 받는다 */
+  /** 입력 방식: button = 버튼을 누른 뒤 말 한 번만 / auto = 이어 말하기·말로 깨우기·끼어들기 */
+  input_mode?: "button" | "auto";
+  /** 리본이가 말하는 중에 아이가 말하면 멈추고 그 말을 받는다 (auto 일 때만) */
   barge_in?: boolean;
   /** 끼어들기 소리 크기 기준 (서버 로그의 "리본이 목소리가 마이크에 들어온 크기" 보다 크게) */
   barge_in_rms?: number;

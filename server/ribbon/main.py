@@ -643,10 +643,13 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
         return
     proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
     proc.follow_up_s = 20.0 if (dialogue.quiz and dialogue.quiz.active) else None   # 게임 중엔 답할 시간을 넉넉히
+    button_only = store.config.ribbon.input_mode == "button"   # 버튼을 누른 뒤 말 한 번만 받는다
+    proc.single_shot = button_only
+    proc.voice_wake = not button_only
     barge = _barge.setdefault(channel, BargeIn())
     if settings.echo_guard and dialogue.speaking():
         rc = store.config.ribbon
-        if rc.barge_in and kids.by_channel(channel) is not None:
+        if rc.barge_in and not button_only and kids.by_channel(channel) is not None:
             frames = barge.feed(pcm, rc.barge_in_rms)
             if frames is not None:
                 # 아이가 끼어들었다: 리본이를 멈추고, 기억해 둔 0.5초(말 앞부분)부터 이어서 듣는다

@@ -116,6 +116,9 @@ class DialogueManager:
             await self._say(persona.queue_notice(call_name(kid), active_name), kid.id, final=True)
         await self._broadcast_state()
 
+    def _button_only(self) -> bool:
+        return bool(self.store and self.store.config.ribbon.input_mode == "button")
+
     def note_barge_in(self) -> None:
         """끼어들기를 알아챈 바로 그 순간 (main 이 오디오를 처리하며 부른다): 다음 소리 조각부터 마이크를 막지 않는다"""
         self._barged = True
@@ -319,8 +322,10 @@ class DialogueManager:
             await self._say(line, kid_id, final=i == len(reply.lines) - 1)
         if reply.new_round and self.quiz.mode == "describe":
             self._spawn_bg(self._quiz_appearance(self.quiz.answer))
-        if self.quiz.active:
-            await self._set_ribbon("listening", None)  # 답을 기다린다
+        if self.quiz.active and not self._button_only():
+            await self._set_ribbon("listening", None)  # 답을 기다린다 (버튼 방식이면 버튼을 눌러야 들으니 표시하지 않는다)
+        elif self.quiz.active:
+            await self._set_ribbon("idle", None)
         await self._broadcast_state()
 
     async def _quiz_appearance(self, entry: Dict) -> None:
