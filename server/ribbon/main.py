@@ -109,8 +109,8 @@ processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
 button_call = ButtonCall(processors)   # 호출 버튼 뒤 먼저 말한 채널 고르기
-if dialogue.quiz:
-    dialogue.quiz.thumbs_dir = settings.pokedex_path().parent / "game_thumbs"   # MLX 로 만든 게임 표지
+if dialogue.quiz:   # MLX 로 만든 게임 표지: 맥미니에서 새로 만든 것(data) -> 저장소에 넣어 둔 것(client public -> dist)
+    dialogue.quiz.thumbs_dirs = [settings.pokedex_path().parent / "game_thumbs", settings.client_dist_path() / "game_thumbs"]
 
 
 async def _ticker() -> None:
@@ -225,12 +225,13 @@ async def api_game_thumb(mode: str):
     from fastapi.responses import FileResponse
     if mode not in ("describe", "image", "peek"):
         raise HTTPException(404, "없는 게임")
-    path = settings.pokedex_path().parent / "game_thumbs" / f"{mode}.png"
-    if not path.exists():
+    path = dialogue.quiz.thumb_file(mode) if dialogue.quiz else None
+    if path is None:
         # 아직 안 만들었으면 포켓몬 공식 그림으로 (피카츄 / 이브이 / 팬텀)
         from fastapi.responses import RedirectResponse
         return RedirectResponse(f"/api/pokemon/{ {'describe': 25, 'image': 133, 'peek': 94}[mode] }/image")
-    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
+    media = "image/png" if path.suffix == ".png" else "image/jpeg"
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "no-cache"})
 
 
 # ---------- 리본이가 기억하는 약속 (memory.py) ----------

@@ -175,7 +175,7 @@ class PokemonQuiz:
         self.max_id = 151
         self.recent: List[int] = []
         self.last_at = 0.0
-        self.thumbs_dir = None       # MLX 로 만든 게임 표지 폴더 (main 이 정한다, tools/make_game_thumbs.py)
+        self.thumbs_dirs: List = []  # MLX 로 만든 게임 표지 폴더들, 앞의 것이 먼저 (main 이 정한다)
 
     # ---------- 시작·끝 ----------
     def offer(self, mode: str = "") -> Reply:
@@ -221,8 +221,17 @@ class PokemonQuiz:
         return Reply([f"알겠어, 포켓몬 맞추기 끝! 정답은 {ieosseo(name)}." if name else "알겠어, 포켓몬 맞추기 끝! 재미있었다."],
                      ended=True)
 
+    def thumb_file(self, mode: str):
+        """게임 표지 파일: 맥미니에서 만든 data/game_thumbs/*.png, 없으면 저장소에 넣어 둔 client/.../game_thumbs/*.jpg"""
+        for d in self.thumbs_dirs:
+            for ext in ("png", "jpg"):
+                f = d / f"{mode}.{ext}"
+                if f.exists():
+                    return f
+        return None
+
     def _has_thumb(self, mode: str) -> bool:
-        return bool(self.thumbs_dir) and (self.thumbs_dir / f"{mode}.png").exists()
+        return self.thumb_file(mode) is not None
 
     def _pool(self) -> List[Dict]:
         pool = [e for e in self.dex.entries if e["id"] <= self.max_id]

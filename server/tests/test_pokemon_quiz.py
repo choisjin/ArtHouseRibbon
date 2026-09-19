@@ -264,10 +264,13 @@ def test_new_game_names():
 
 def test_menu_items_have_art_and_thumb_only_if_made(tmp_path):
     q = quiz(tmp_path)
-    q.thumbs_dir = tmp_path / "game_thumbs"
+    q.thumbs_dirs = [tmp_path / "game_thumbs", tmp_path / "dist"]
     (tmp_path / "game_thumbs").mkdir()
+    (tmp_path / "dist").mkdir()
     (tmp_path / "game_thumbs" / "image.png").write_bytes(b"png")
+    (tmp_path / "dist" / "peek.jpg").write_bytes(b"jpg")                 # 저장소에 넣어 둔 표지
     q.open_menu()
     items = {i["mode"]: i for i in q.view()["items"]}
-    assert items["image"]["thumb"] and items["describe"]["thumb"] is None
+    assert items["image"]["thumb"] and items["peek"]["thumb"] and items["describe"]["thumb"] is None
+    assert q.thumb_file("peek").suffix == ".jpg"
     assert items["peek"]["art"].endswith("/94/image")               # 팬텀

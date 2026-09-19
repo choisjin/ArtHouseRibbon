@@ -27,7 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data", "game_thumbs")
 STYLE = ("Pokemon video game box art cover, official key art, dynamic heroic composition, dramatic rim lighting, "
          "glowing light rays burst behind, glossy vibrant colors, high detail, portrait orientation, "
-         "the lower quarter of the image left as a simple colorful gradient for a title, "
+         "the bottom of the image fades into a darker plain background of the same color (room for a title), "
          "no text, no letters, no words, no logo")
 PROMPTS = {
     # 1. 설명 듣고 맞추기 (주황): 말풍선 물음표와 피카츄
