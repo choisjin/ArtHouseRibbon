@@ -23,6 +23,8 @@ from ..knowledge.pokedex import Pokedex, jamo
 
 MODES = ("describe", "image", "peek")
 MODE_NAME = {"describe": "설명 듣고 맞추기", "image": "그림 보고 맞추기", "peek": "가린 그림 맞추기"}
+MODE_SUB = {"describe": "리본이 설명을 듣고 누구인지 맞혀요", "image": "그림을 보고 이름을 맞혀요",
+            "peek": "가려진 그림을 조금씩 열어요"}
 GRID = 6                                    # 가린 그림: 6x6 = 36칸
 _CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 _CHO_NAME = {"ㄱ": "기역", "ㄲ": "쌍기역", "ㄴ": "니은", "ㄷ": "디귿", "ㄸ": "쌍디귿", "ㄹ": "리을", "ㅁ": "미음",
@@ -89,6 +91,16 @@ def detect_mode(text: str) -> Optional[str]:
     return None
 
 
+def _is_yes(text: str) -> bool:
+    c = _compact(text)
+    return (any(c.startswith(w) for w in ("응", "어", "좋아", "또", "네", "그래", "웅", "예", "할래", "해", "그거", "이거", "시작"))
+            and len(c) <= 8) or _has(text, "좋아", "할래", "그걸로", "이걸로", "시작하자")
+
+
+def _is_no(text: str) -> bool:
+    return _has(text, "아니", "싫어", "다른거", "말고", "안할", "바꿀래", "바꿔")
+
+
 @dataclass
 class Reply:
     lines: List[str] = field(default_factory=list)
@@ -102,7 +114,7 @@ class PokemonQuiz:
         self.dex = pokedex
         self.rng = rng or random.Random()
         self.active = False
-        self.phase = ""              # choosing | playing | again
+        self.phase = ""              # choosing (고르기 화면) | confirm (고른 것 확인) | playing | again
         self.mode = ""
         self.answer: Optional[Dict] = None
         self.hints: List[str] = []   # 남은 힌트 종류
@@ -112,17 +124,35 @@ class PokemonQuiz:
         self.count = False           # 이름판에 글자 수(빈칸)를 보였나
         self.solved = False
         self.appearance: List[str] = []   # 대화 모델이 만든 생김새 설명 (describe)
+        self.pending = ""            # 고르기 화면에서 고른 게임 (확인 전)
         self.max_id = 151
         self.recent: List[int] = []
         self.last_at = 0.0
 
     # ---------- 시작·끝 ----------
-    def start(self, mode: str = "") -> Reply:
+    def open_menu(self, mode: str = "") -> Reply:
+        """아이가 하자고 할 때: TV 에 게임 고르기 화면. 이미 게임을 말했으면 그걸 골라 두고 한 번 더 묻는다"""
         self.active = True
         self.last_at = time.time()
+        self.phase = "choosing"
+        self.pending = ""
+        if mode in MODES:
+            return self._pick(mode, intro="좋아!")
+        return Reply(["좋아, 포켓몬 맞추기 하자! 1번 설명 듣고 맞추기, 2번 그림 보고 맞추기, 3번 가린 그림 맞추기. 뭐 할래?"])
+
+    def _pick(self, mode: str, intro: str = "") -> Reply:
+        """고른 게임을 TV 에서 반짝이게 하고 맞는지 묻는다"""
+        self.pending = mode
+        self.phase = "confirm"
+        return Reply([f"{intro} {MODE_NAME[mode]}! 이걸로 할까?".strip()])
+
+    def start(self, mode: str = "") -> Reply:
+        """바로 시작 (확인을 받았거나 선생님이 대시보드에서 누름). mode 가 없으면 고르기 화면"""
         if mode not in MODES:
-            self.phase = "choosing"
-            return Reply(["좋아, 포켓몬 맞추기 하자! 설명 듣고 맞추기, 그림 보고 맞추기, 가린 그림 맞추기 중에 뭐 할래?"])
+            return self.open_menu()
+        self.active = True
+        self.last_at = time.time()
+        self.pending = ""
         self.mode = mode
         r = self._new_round()
         r.lines.insert(0, f"좋아, {MODE_NAME[mode]} 시작!")
@@ -174,14 +204,25 @@ class PokemonQuiz:
             if _has(text, "그만", "안할래", "끝", "됐어"):
                 return self.stop()
             if not mode:
-                return Reply(["설명 듣고 맞추기, 그림 보고 맞추기, 가린 그림 맞추기 중에 골라 줘!"])
-            return self.start(mode)
+                return Reply(["1번 설명 듣고, 2번 그림 보고, 3번 가린 그림 중에 골라 줘!"])
+            return self._pick(mode)
+        if self.phase == "confirm":
+            mode = detect_mode(text)
+            if _has(text, "그만할래", "안할래", "끝", "됐어"):
+                return self.stop()
+            if mode and mode != self.pending:
+                return self._pick(mode)                           # 다른 걸 고름: 그쪽을 반짝이게
+            if _is_no(text):                                       # "다른 거 할래" 는 싫다는 말 (할래 보다 먼저 본다)
+                self.phase = "choosing"
+                self.pending = ""
+                return Reply(["그럼 뭐 할래? 1번, 2번, 3번 중에 골라 줘!"])
+            if mode == self.pending or _is_yes(text):
+                return self.start(self.pending)
+            return Reply([f"{MODE_NAME[self.pending]} 할까? 좋으면 응 이라고 해 줘."])
         if self.phase == "again":
             if _has(text, "그만", "안할래", "끝", "됐어", "아니", "안해"):
                 return self.stop()
-            c = _compact(text)
-            if any(c.startswith(w) for w in ("응", "어", "좋아", "또", "네", "그래", "웅", "예")) and len(c) <= 6 \
-                    or _has(text, "한번더", "하나더", "계속", "또할래", "더할래"):
+            if _is_yes(text) or _has(text, "한번더", "하나더", "계속", "또할래", "더할래"):
                 return self._new_round()
             if detect_mode(text):
                 self.mode = detect_mode(text)
@@ -298,7 +339,14 @@ class PokemonQuiz:
 
     # ---------- TV 화면 ----------
     def view(self) -> Optional[Dict]:
-        if not self.active or self.phase == "choosing" or not self.answer:
+        if not self.active:
+            return None
+        if self.phase in ("choosing", "confirm"):
+            # 게임 고르기 화면: 썸네일(tools/make_game_thumbs.py 가 MLX 로 만든 것)과 제목, 고른 것은 반짝
+            return {"kind": "menu", "selected": self.pending or None,
+                    "items": [{"mode": m, "num": i + 1, "title": MODE_NAME[m], "sub": MODE_SUB[m],
+                               "thumb": f"/api/game/thumb/{m}"} for i, m in enumerate(MODES)]}
+        if not self.answer:
             return None
         e = self.answer
         name = e["name"]
@@ -312,6 +360,7 @@ class PokemonQuiz:
             else:
                 board.append({"c": "", "k": "blank"})
         return {
+            "kind": "play",
             "mode": self.mode,
             "image": f"/api/pokemon/{e['id']}/image" if show_img else None,
             "grid": GRID,

@@ -102,7 +102,9 @@ async def test_dialogue_plays_without_llm(tmp_path):
     dm._wait_spoken = fast_wait
     await dm.on_wake(0)
     await dm.on_utterance(0, "포켓몬 그림 보고 맞추기 하자")
-    assert dm.quiz.active and any(m.get("type") == "game" and m["view"] for m in sent)
+    assert dm.quiz.phase == "confirm"                    # 고른 걸 반짝이며 한 번 더 묻는다
+    await dm.on_utterance(0, "응")
+    assert dm.quiz.active and dm.quiz.phase == "playing"
     await dm.on_utterance(1, "피카츄!")                  # 다른 아이가 맞혀도 된다
     speaks = [m["text"] for m in sent if m.get("type") == "speak"]
     assert "딩동댕! 정답은 피카츄야!" in speaks
@@ -139,3 +141,39 @@ async def test_no_pokedex_says_so_instead_of_chatting(tmp_path):
     speaks = [m["text"] for m in sent if m.get("type") == "speak"]
     assert "도감이 아직 없어서" in speaks[-1]
     assert dm.queue.active() is None
+
+
+def test_menu_pick_highlight_confirm(tmp_path):
+    q = quiz(tmp_path)
+    r = q.open_menu()
+    v = q.view()
+    assert v["kind"] == "menu" and v["selected"] is None and [i["num"] for i in v["items"]] == [1, 2, 3]
+    q.handle("2번")
+    assert q.view()["selected"] == "image" and q.phase == "confirm"
+    q.handle("아니 가린 그림")                            # 다른 걸 고르면 그쪽이 반짝
+    assert q.view()["selected"] == "peek"
+    q.handle("다른 거 할래")                              # 싫다는 말 ("할래" 가 있어도)
+    assert q.phase == "choosing" and q.view()["selected"] is None
+    q.handle("설명 듣고 맞추기")
+    r = q.handle("좋아")
+    assert q.phase == "playing" and q.mode == "describe" and q.view()["kind"] == "play"
+
+
+async def test_menu_answer_repeating_ribbon_is_not_echo(tmp_path):
+    """리본이가 읽어 준 게임 이름을 아이가 따라 말해도 에코로 버리지 않는다"""
+    sent = []
+
+    async def broadcast(m):
+        sent.append(m)
+    p = tmp_path / "pokedex.json"
+    p.write_text(json.dumps({"pokemon": MINI}, ensure_ascii=False), encoding="utf-8")
+    kids = KidRegistry([KidInfo(id="a", name="지우", mic_channel=0)])
+    dm = DialogueManager(Settings(), kids, None, BrowserTTS(), broadcast, pokedex=Pokedex(p))
+
+    async def fast_wait():
+        dm._pending_done.clear()
+    dm._wait_spoken = fast_wait
+    await dm.on_wake(0)
+    await dm.on_utterance(0, "포켓몬 맞추기 하자")        # 리본: "... 2번 그림 보고 맞추기 ..."
+    await dm.on_utterance(0, "그림 보고 맞추기")
+    assert dm.quiz.phase == "confirm" and dm.quiz.pending == "image"

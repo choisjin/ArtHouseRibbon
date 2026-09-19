@@ -156,9 +156,19 @@ export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string | null }
 /** DJI 송신기 호출 버튼이 눌렸다. 누가 눌렀는지 몰라서 channels 를 잠깐 듣는다 (관리자 대화 기록) */
 export interface ButtonMsg { type: "button"; channels: number[] }
 
+/** 포켓몬 맞추기 게임 고르기 화면: 카드 3장, 고른 것(selected)은 반짝이고 한 번 더 묻는다 */
+export interface GameMenuView {
+  kind: "menu";
+  selected: GameMode | null;
+  items: { mode: GameMode; num: number; title: string; sub: string; thumb: string }[];
+}
+export type GameMode = "describe" | "image" | "peek";
+
 /** 포켓몬 맞추기 게임 화면 (서버 games/pokemon_quiz.PokemonQuiz.view). null 이면 게임 없음 */
-export interface GameView {
-  mode: "describe" | "image" | "peek";
+export type GameView = GameMenuView | GamePlayView;
+export interface GamePlayView {
+  kind: "play";
+  mode: GameMode;
   image: string | null;          // 보일 그림 (설명 듣고 맞추기는 맞추기 전까지 null)
   grid: number;                  // 가린 그림 칸 수 (grid x grid)
   shown: number[] | null;        // 가린 그림에서 보이는 칸 (null = 다 보임)

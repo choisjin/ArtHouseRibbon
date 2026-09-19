@@ -147,7 +147,10 @@ class DialogueManager:
         if not text:
             return
         kid = self._kid_for_channel(channel)
-        if self._is_own_echo(text):
+        # 게임 고르기 화면에서는 아이가 리본이가 읽어 준 게임 이름을 따라 말한다 ("그림 보고 맞추기"). 짧은 말은 에코로 버리지 않는다
+        choosing = bool(self.quiz and self.quiz.active and self.quiz.phase in ("choosing", "confirm")
+                        and len(self._compact(text)) <= 12)
+        if not choosing and self._is_own_echo(text):
             log.info("리본이가 방금 한 말이 마이크로 들어온 것 같아 버림: ch=%s %s", channel, text)
             return
         log.info("%s> %s", kid.name, text)
@@ -257,8 +260,10 @@ class DialogueManager:
             ev.set()
 
     # ---------- 포켓몬 맞추기 게임 (games/pokemon_quiz.py) ----------
-    async def start_quiz(self, mode: str, kid: Optional[KidInfo] = None, channel: Optional[int] = None) -> None:
-        """게임 시작 (아이 말 또는 관리자 대시보드). mode "" 면 셋 중에 고르라고 묻는다"""
+    async def start_quiz(self, mode: str, kid: Optional[KidInfo] = None, channel: Optional[int] = None,
+                         confirm: bool = True) -> None:
+        """게임 시작. 아이가 하자고 하면(confirm) TV 에 고르기 화면 -> 고른 걸 반짝이며 한 번 더 묻고 시작.
+        선생님이 대시보드에서 누르면 바로 시작 (mode "" 면 고르기 화면)"""
         if not self.quiz or not len(self.pokedex or []):
             log.warning("포켓몬 맞추기를 하자는데 도감이 없습니다 (python tools/fetch_pokedex.py)")
             if channel is not None:
@@ -269,7 +274,7 @@ class DialogueManager:
         rc = self.store.config.ribbon if self.store else None
         self.quiz.max_id = rc.game_max_id if rc else 151
         log.info("포켓몬 맞추기 시작: %s", mode or "고르는 중")
-        await self._quiz_reply(self.quiz.start(mode), kid, channel)
+        await self._quiz_reply(self.quiz.open_menu(mode) if confirm else self.quiz.start(mode), kid, channel)
 
     async def stop_quiz(self) -> None:
         if self.quiz and self.quiz.active:

@@ -7,6 +7,7 @@ export class RibbonSocket {
   private ws: WebSocket | null = null;
   private handlers: Handler[] = [];
   private lastState: ServerMsg | null = null; // 핸들러 등록 전에 도착한 스냅샷을 나중에 재전달
+  private lastGame: ServerMsg | null = null;  // 하던 게임 화면도 (TV 를 새로 열었을 때)
   private retry = 1000;
   readonly url: string;
 
@@ -27,6 +28,7 @@ export class RibbonSocket {
       let msg: ServerMsg;
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "state") this.lastState = msg;
+      if (msg.type === "game") this.lastGame = msg;
       for (const h of this.handlers) h(msg);
     };
     ws.onclose = () => {
@@ -41,6 +43,7 @@ export class RibbonSocket {
   on(handler: Handler): void {
     this.handlers.push(handler);
     if (this.lastState) handler(this.lastState);
+    if (this.lastGame) handler(this.lastGame);
   }
 
   get connected(): boolean { return !!this.ws && this.ws.readyState === WebSocket.OPEN; }

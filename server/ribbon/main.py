@@ -214,6 +214,20 @@ async def api_pokemon_image(pid: int):
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
 
 
+@app.get("/api/game/thumb/{mode}")
+async def api_game_thumb(mode: str):
+    """게임 고르기 화면의 썸네일 (tools/make_game_thumbs.py 가 맥미니 MLX 로 만든 data/game_thumbs/*.png)"""
+    from fastapi.responses import FileResponse
+    if mode not in ("describe", "image", "peek"):
+        raise HTTPException(404, "없는 게임")
+    path = settings.pokedex_path().parent / "game_thumbs" / f"{mode}.png"
+    if not path.exists():
+        # 아직 안 만들었으면 포켓몬 공식 그림으로 (피카츄 / 이브이 / 팬텀)
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(f"/api/pokemon/{ {'describe': 25, 'image': 133, 'peek': 94}[mode] }/image")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
+
+
 # ---------- 리본이가 기억하는 약속 (memory.py) ----------
 
 @app.get("/api/memory")
@@ -704,7 +718,7 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         if msg.get("action") == "stop":
             _spawn(dialogue.stop_quiz())
         else:
-            _spawn(dialogue.start_quiz(str(msg.get("mode") or "")))
+            _spawn(dialogue.start_quiz(str(msg.get("mode") or ""), confirm=False))
     elif t == "admin.ignore":
         on = bool(msg.get("on"))
         if on:
