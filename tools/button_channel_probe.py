@@ -73,8 +73,8 @@ def open_button():
 def _quit_now(*_):
     # hidapi 가 읽거나 닫는 중이면 KeyboardInterrupt 가 늦거나 안 먹힌다 (맥).
     # 바로 끝낸다. 장치는 프로세스가 끝나면 운영체제가 풀어 준다
-    print("
-끝", flush=True)
+    print(flush=True)
+    print("끝", flush=True)
     os._exit(0)
 
 
