@@ -100,3 +100,13 @@ async def test_own_voice_coming_back_is_ignored():
     await dm.on_utterance(0, "그렇구나")            # 스피커 소리가 마이크로 다시 들어옴
     assert len(llm.heard) == n
     assert not [m for m in sent if m.get("type") == "transcript" and m["text"] == "그렇구나"]
+
+
+async def test_woken_by_voice_takes_that_speech_without_cue():
+    """마이크 말소리로 깨어나면 띵·말해봐 없이 (마이크를 막지 않고) 깨운 그 말에 바로 답한다"""
+    dm, sent, llm = make()
+    await dm.on_wake(0, by_voice=True)
+    assert not [m for m in sent if m.get("type") in ("cue", "speak")]
+    assert not dm.speaking()                      # 마이크를 막지 않는다
+    await dm.on_utterance(0, "공룡 그렸어")         # 리본아 없이 바로
+    assert llm.heard == ["공룡 그렸어"]

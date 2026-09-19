@@ -88,8 +88,10 @@ class DialogueManager:
         return kid
 
     # ---------- 이벤트 ----------
-    async def on_wake(self, channel: int, force: bool = False) -> None:
-        """호출. force 는 관리자가 누른 호출 (호출 무시 중에도 받는다)"""
+    async def on_wake(self, channel: int, force: bool = False, by_voice: bool = False) -> None:
+        """호출. force 는 관리자가 누른 호출 (호출 무시 중에도 받는다).
+        by_voice 는 마이크 말소리(호출어·energy)로 깨어난 것: 아이가 이미 말하는 중이라 "띵"·"말해봐"·줄 안내를
+        하지 않는다. 소리를 내면 에코 막기로 마이크를 잠깐 막아서, 깨운 그 말이 버려진다 ("리본아" 를 먼저 해야 했음)"""
         if self.ignore_calls and not force:
             log.info("호출 무시 중: ch=%s", channel)
             return
@@ -100,9 +102,9 @@ class DialogueManager:
             await self._broadcast_state()   # 줄을 선 것은 대답("응, 말해봐")이 끝나기 전에 바로 보여 준다
         if position == 0:
             await self._set_ribbon("listening", kid.id)
-            if created:
+            if created and not by_voice:
                 await self._listen_cue(kid)
-        elif created:
+        elif created and not by_voice:            # 말로 깨운 아이는 말을 기억해 두었다가 차례가 오면 답한다
             active = self.queue.active()
             active_name = call_name(self._kid_for_channel(active.channel)) if active else "친구"
             await self._say(persona.queue_notice(call_name(kid), active_name), kid.id, final=True)

@@ -595,7 +595,10 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
         return
     for kind, payload in proc.feed(pcm):
         if kind == "wake":
-            _spawn(dialogue.on_wake(channel))
+            if kids.by_channel(channel) is None and any(k.mic_channel is not None for k in kids.all()):
+                proc.stop_listening()        # 아이가 없는 채널의 잡음으로 깨어나지 않는다 (예: 안 쓰는 4번)
+                continue
+            _spawn(dialogue.on_wake(channel, by_voice=True))   # 깨운 말을 그대로 받는다 (리본아 없이)
         elif kind == "utterance" and payload is not None:
             _spawn(_transcribe_and_dispatch(channel, payload))
     won = button_call.check(channel)
