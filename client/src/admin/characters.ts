@@ -144,6 +144,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           <option value="voice">"응 ○○야, 말해봐." 라고 대답</option></select></label>
         <label>말이 끝났다고 보는 조용한 시간 (초, 아이가 말하다 자주 끊기면 늘리기)
           <input name="end_silence_s" type="number" step="0.1" min="0.5" max="3" /></label>
+        <label>호출 버튼을 누른 뒤 기다리는 시간 (초, 이 안에 먼저 말한 아이 차례)
+          <input name="button_window_s" type="number" step="1" min="2" max="20" /></label>
         <label>한 번에 최대 문장 수 (놀이 상대는 1~2) <input name="max_sentences" type="number" min="1" max="6" /></label>
         <label>첫 추임새까지 (초) <input name="filler_delay_s" type="number" step="0.5" min="0.5" max="10" /></label>
         <label>추임새 간격 (초) <input name="filler_interval_s" type="number" step="0.5" min="1" max="15" /></label>
@@ -165,6 +167,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     const r = rc()!;
     fld("max_sentences").value = String(r.max_sentences);
     fld("listen_cue").value = r.listen_cue ?? "sound";
+    fld("button_window_s").value = String(r.button_window_s ?? 6);
     fld("end_silence_s").value = String((r.end_silence_ms ?? 1300) / 1000);
     fld("filler_delay_s").value = String(r.filler_delay_s ?? 1.5);
     fld("filler_interval_s").value = String(r.filler_interval_s ?? 4);
@@ -184,6 +187,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         await api("PUT", "/api/config/ribbon", {
           max_sentences: Number(fld("max_sentences").value) || 2,
           listen_cue: fld("listen_cue").value,
+          button_window_s: Number(fld("button_window_s").value) || 6,
           end_silence_ms: Math.round((Number(fld("end_silence_s").value) || 1.3) * 1000),
           filler_delay_s: Number(fld("filler_delay_s").value) || 1.5,
           filler_interval_s: Number(fld("filler_interval_s").value) || 4,

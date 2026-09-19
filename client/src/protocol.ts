@@ -50,6 +50,8 @@ export interface RibbonConfig {
   /** 아이가 지적·금지한 것을 약속으로 기억 (서버 memory.py) */
   memory_enabled?: boolean;
   memory_max_per_kid?: number;
+  /** 호출 버튼을 누른 뒤 이 시간(초) 안에 먼저 말한 아이가 부른 아이 */
+  button_window_s?: number;
   filler_delay_s?: number;
   filler_interval_s?: number;
   look?: Partial<import("./world/doll").RibbonLook>;
@@ -145,7 +147,10 @@ export interface FacePositionsMsg {
 export interface SpeakStopMsg { type: "speak.stop" }
 
 /** 불렀을 때 "듣고 있어" 신호. TV 가 짧은 "띵" 소리를 낸다 */
-export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string }
+export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string | null }
+
+/** DJI 송신기 호출 버튼이 눌렸다. 누가 눌렀는지 몰라서 channels 를 잠깐 듣는다 (관리자 대화 기록) */
+export interface ButtonMsg { type: "button"; channels: number[] }
 
 /** 리본이가 기억하는 약속 (서버 memory.Rule). kid_id 가 null 이면 모든 아이 공통 */
 export interface MemoryRule { id: string; text: string; kid_id: string | null; source: string; created: string; by: "auto" | "admin" }
@@ -179,4 +184,4 @@ export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "o
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | CueMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg;
+  | SpeakStopMsg | CueMsg | ButtonMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg;

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # 대신 리본이가 말하는 중에는 다른 아이의 호출도 듣지 못한다 (목에 거는 마이크만 쓰면 꺼도 된다)
     echo_guard: bool = True
     echo_tail_ms: int = 700
+    # 호출 버튼: DJI 수신기 버튼 (audio/button.py). 서버가 수신기 HID 를 독점으로 연다 (pip install hidapi)
+    call_button_hid: bool = True
 
     waiting_timeout_s: float = 20.0
     turn_idle_timeout_s: float = 10.0   # 리본이가 "말해봐"를 끝낸 뒤부터 잰다

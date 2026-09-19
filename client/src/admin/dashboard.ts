@@ -240,6 +240,8 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
       addTalk(k ? kidLabel(k) : `마이크 ${m.channel + 1}`, m.text, "kid");
     } else if (m.type === "speak") {
       addTalk(ctx.config()?.ribbon?.name ?? "리본", m.text, "ribbon");
+    } else if (m.type === "button") {
+      addTalk("🔘 호출 버튼", `먼저 말하는 아이를 기다림 (마이크 ${m.channels.map((c) => c + 1).join(", ")})`, "ribbon");
     } else if (m.type === "memory.changed") {
       const k = ctx.kids().find((x) => x.id === m.kid_id);
       for (const t of m.added) addTalk("📝 약속", `${t}${k ? ` (${kidLabel(k)})` : ""}`, "ribbon");

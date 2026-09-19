@@ -19,6 +19,7 @@ from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .audio.button import ButtonCall, DjiButton
 from .audio.stream import ChannelProcessor
 from .audio.wakeword import make_wakeword
 from .config import settings
@@ -103,6 +104,7 @@ world.kid_ids = lambda: [k.id for k in kids.all()]
 processors: Dict[int, ChannelProcessor] = {
     ch: ChannelProcessor(ch, settings, make_wakeword(settings)) for ch in range(settings.channels)
 }
+button_call = ButtonCall(processors)   # 호출 버튼 뒤 먼저 말한 채널 고르기
 
 
 async def _ticker() -> None:
@@ -127,8 +129,15 @@ async def lifespan(app: FastAPI):
             if info is None or info["stale"]:
                 renderer.request(r)
     task = asyncio.create_task(_ticker())
+    button = None
+    if settings.call_button_hid:
+        loop = asyncio.get_running_loop()
+        button = DjiButton(lambda: loop.call_soon_threadsafe(_spawn, _on_button()))
+        button.start()
     yield
     task.cancel()
+    if button:
+        button.stop()
 
 
 app = FastAPI(title="Ribbon", lifespan=lifespan)
@@ -589,6 +598,19 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
             _spawn(dialogue.on_wake(channel))
         elif kind == "utterance" and payload is not None:
             _spawn(_transcribe_and_dispatch(channel, payload))
+    won = button_call.check(channel)
+    if won is not None:
+        _spawn(dialogue.claim(won))
+
+
+async def _on_button() -> None:
+    """DJI 송신기 버튼: 아이가 등록된 채널을 잠깐 듣고, 먼저 말한 아이가 부른 아이 (audio/button.py)"""
+    if dialogue.ignore_calls:
+        log.info("호출 무시 중이라 버튼을 받지 않음")
+        return
+    channels = sorted({k.mic_channel for k in kids.all() if k.mic_channel is not None}) or list(processors)
+    armed = button_call.press(channels, store.config.ribbon.button_window_s)
+    await dialogue.on_button(armed)
 
 
 async def _handle_text(ws: WebSocket, msg: dict) -> None:

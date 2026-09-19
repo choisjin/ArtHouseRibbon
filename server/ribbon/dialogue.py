@@ -108,6 +108,23 @@ class DialogueManager:
             await self._say(persona.queue_notice(call_name(kid), active_name), kid.id, final=True)
         await self._broadcast_state()
 
+    async def on_button(self, armed: List[int]) -> None:
+        """호출 버튼(DJI 송신기)이 눌렸다. 누가 눌렀는지 몰라서 "띵"만 하고, 먼저 말하는 아이를 기다린다 (claim)"""
+        log.info("호출 버튼: 채널 %s 듣는 중", [c + 1 for c in armed])
+        self._hold_until = time.time() + 0.35         # 띵 소리가 마이크로 들어가는 것만 막는다
+        await self.broadcast({"type": "button", "channels": armed})
+        await self.broadcast({"type": "cue", "kind": "listen", "kid_id": None})
+
+    async def claim(self, channel: int) -> None:
+        """버튼 뒤 가장 먼저 말을 시작한 채널: 그 아이 차례를 만든다 (말이 끝나면 바로 대답한다)"""
+        kid = self._kid_for_channel(channel)
+        turn, position, created = self.queue.request(kid.id, channel)
+        log.info("호출 버튼: %s 이(가) 먼저 말함 (ch=%s, 순서 %s)", kid.name, channel, position)
+        if position == 0 and not self._responding:
+            await self._set_ribbon("listening", kid.id)
+        if created:
+            await self._broadcast_state()
+
     async def on_utterance(self, channel: int, text: str) -> None:
         text = text.strip()
         if not text:
