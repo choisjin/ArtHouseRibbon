@@ -326,7 +326,7 @@ class DialogueManager:
                             kid.id if kid else None, final=True)
             return
         rc = self.store.config.ribbon if self.store else None
-        self.quiz.max_id = rc.game_max_id if rc else 151
+        self.quiz.max_id = rc.game_max_id if rc else 1025
         log.info("포켓몬 맞추기 시작: %s", mode or "고르는 중")
         if ask_first:
             reply = self.quiz.offer(mode)

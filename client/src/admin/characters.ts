@@ -189,7 +189,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     fld("save_recordings").checked = r.save_recordings ?? false;
     fld("barge_in").checked = r.barge_in ?? true;
     fld("barge_in_rms").value = String(r.barge_in_rms ?? 0.06);
-    fld("game_max_id").value = String(r.game_max_id ?? 151);
+    fld("game_max_id").value = String(r.game_max_id ?? 1025);
     fld("memory_max_per_kid").value = String(r.memory_max_per_kid ?? 20);
     fld("wander").checked = r.wander ?? true;
     fld("walk_speed").value = String(r.walk_speed ?? 1);
@@ -214,7 +214,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           save_recordings: fld("save_recordings").checked,
           barge_in: fld("barge_in").checked,
           barge_in_rms: Number(fld("barge_in_rms").value) || 0.06,
-          game_max_id: Math.max(10, Math.min(1025, Number(fld("game_max_id").value) || 151)),
+          game_max_id: Math.max(10, Math.min(1025, Number(fld("game_max_id").value) || 1025)),
           memory_max_per_kid: Number(fld("memory_max_per_kid").value) || 20,
           wander: fld("wander").checked, walk_speed: Number(fld("walk_speed").value) || 1,
           return_after_s: Number(fld("return_after_s").value) || 0,

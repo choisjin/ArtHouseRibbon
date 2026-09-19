@@ -110,3 +110,16 @@ async def test_woken_by_voice_takes_that_speech_without_cue():
     assert not dm.speaking()                      # 마이크를 막지 않는다
     await dm.on_utterance(0, "공룡 그렸어")         # 리본아 없이 바로
     assert llm.heard == ["공룡 그렸어"]
+
+
+def test_old_default_game_range_moves_to_all_once(tmp_path):
+    import json
+
+    from ribbon.settings_store import ConfigStore
+    p = tmp_path / "settings.json"
+    p.write_text(json.dumps({"ribbon": {"game_max_id": 151, "dialogue_style": 2}}), encoding="utf-8")
+    assert ConfigStore(p).config.ribbon.game_max_id == 1025          # 예전 기본값은 전체로
+    p.write_text(json.dumps({"ribbon": {"game_max_id": 251, "dialogue_style": 2}}), encoding="utf-8")
+    assert ConfigStore(p).config.ribbon.game_max_id == 251           # 관리자가 고른 값은 그대로
+    p.write_text(json.dumps({"ribbon": {"game_max_id": 151, "game_range_v": 2, "dialogue_style": 2}}), encoding="utf-8")
+    assert ConfigStore(p).config.ribbon.game_max_id == 151           # 옮긴 뒤 다시 151 로 고르면 그대로

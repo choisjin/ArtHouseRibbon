@@ -39,7 +39,8 @@ class RibbonConfig(BaseModel):
     memory_max_per_kid: int = 20 # 아이 한 명당 약속 수 (넘치면 오래된 것부터 뺀다)
     button_window_s: float = 6.0 # 호출 버튼을 누른 뒤 이 시간 안에 먼저 말한 아이가 부른 아이
     pokedex_enabled: bool = True # 아이 말에 포켓몬이 나오면 도감을 참고해 답한다 (knowledge/pokedex.py)
-    game_max_id: int = 151       # 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 (151 = 1세대)
+    game_max_id: int = 1025      # 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 (1025 = 전부, 151 = 1세대)
+    game_range_v: int = 2        # 2 = 기본 범위를 전체로 바꾼 뒤 (2026-09-20). 예전 기본값 151 을 한 번 옮길 때 쓴다
     save_recordings: bool = False  # 인식 개선용으로 아이 말 녹음을 data/recordings/ 에 저장 (tools/stt_eval.py)
     # 입력 방식: button = 버튼(또는 대시보드 호출)을 누른 뒤 말 한 번만 받는다. 이어 말하기·말로 깨우기·끼어들기 없음
     #           auto   = 대답 뒤 이어 말하기, 말소리로 깨우기(energy), 끼어들기까지
@@ -95,10 +96,20 @@ class LLMConfig(BaseModel):
     model: str = ""
 
 
+class MusicConfig(BaseModel):
+    """YouTube Music (관리자 '설정' 탭 → 음악). 계정 헤더는 여기 두지 않는다 (data/ytmusic_auth.json, music.py)"""
+    enabled: bool = False        # 리본이에게 말로 음악을 부탁할 수 있다
+    output: str = "tv"           # 재생할 곳: tv = TV 화면 | admin = 관리자 페이지를 연 컴퓨터(맥미니)
+    playlist_id: str = ""        # "내 목록 틀어줘" 의 목록 (비우면 라이브러리 첫 목록)
+    playlist_title: str = ""     # 화면 표시용
+    volume: int = 60             # 0 ~ 100. 리본이 목소리보다 작게
+
+
 class AppConfig(BaseModel):
     ribbon: RibbonConfig = Field(default_factory=RibbonConfig)
     characters: Dict[str, CharacterProfile] = Field(default_factory=dict)
     llm: Optional[LLMConfig] = None
+    music: MusicConfig = Field(default_factory=MusicConfig)
 
 
 class ConfigStore:
@@ -122,6 +133,12 @@ class ConfigStore:
             rc.ack_enabled = False
             rc.max_sentences = min(rc.max_sentences, 2)
             rc.dialogue_style = 2
+        if raw.get("ribbon") and "game_range_v" not in raw["ribbon"]:
+            # 문제 범위를 전체로 바꾸기 전 설정: 예전 기본값(151) 그대로면 전체로 (관리자가 고른 다른 값은 그대로)
+            rc = self.config.ribbon
+            if rc.game_max_id == 151:
+                rc.game_max_id = 1025
+            rc.game_range_v = 2
         self._seed_profiles(had_profiles=bool(raw.get("characters")))
         self._sync_main()
         return self.config
@@ -187,6 +204,16 @@ class ConfigStore:
         self._llm_from_env = False   # 관리자가 골랐다: 이제부터 .env 보다 앞선다
         self.save()
         return self.config.llm
+
+    def update_music(self, data: Dict) -> MusicConfig:
+        merged = self.config.music.model_dump()
+        merged.update({k: v for k, v in data.items() if v is not None and k in MusicConfig.model_fields})
+        if merged["output"] not in ("tv", "admin"):
+            raise ValueError(f"재생할 곳이 잘못됐습니다: {merged['output']}")
+        merged["volume"] = max(0, min(100, int(merged["volume"])))
+        self.config.music = MusicConfig(**merged)
+        self.save()
+        return self.config.music
 
     def update_character(self, cid: str, data: Dict, save: bool = True) -> CharacterProfile:
         merged = self.profile(cid).model_dump()

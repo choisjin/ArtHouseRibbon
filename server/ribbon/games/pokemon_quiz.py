@@ -177,7 +177,7 @@ class PokemonQuiz:
         self.solved = False
         self.appearance: List[str] = []   # 대화 모델이 만든 생김새 설명 (describe)
         self.pending = ""            # 고르기 화면에서 고른 게임 (확인 전)
-        self.max_id = 151
+        self.max_id = 1025
         self.recent: List[int] = []
         self.last_at = 0.0
         self.thumbs_dirs: List = []  # MLX 로 만든 게임 표지 폴더들, 앞의 것이 먼저 (main 이 정한다)
