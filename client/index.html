@@ -17,9 +17,7 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
-      #bubble.hearing { animation: hear .5s ease-in-out infinite alternate; box-shadow: 0 0 0 6px rgba(255,214,90,.7), 0 4px 14px rgba(0,0,0,.35); }
       @keyframes bob { 50% { margin-top: -8px; } }
-      @keyframes hear { from { scale: 1; } to { scale: 1.18; } }   /* transform 은 위치에 쓰므로 scale 로 */
       #debug { right: 16px; top: 16px; width: 320px; background: rgba(0,0,0,.75); border: 1px solid #555; border-radius: 10px; padding: 12px; display: none; }
       #debug label { display: block; margin: 6px 0 2px; color: #aaa; font-size: 12px; }
       #debug input, #debug select, #debug button { width: 100%; box-sizing: border-box; margin-bottom: 6px; padding: 6px; background: #1b1626; color: #eee; border: 1px solid #555; border-radius: 6px; }

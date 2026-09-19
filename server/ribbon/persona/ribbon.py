@@ -53,7 +53,8 @@ def system_prompt(name: str = "리본", extra: str = "", max_sentences: int = 2)
         base = base.replace("한 번에 한두 문장.", f"한 번에 한두 문장, 길어도 {max_sentences}문장.")
     base += f"\n답은 반드시 {max_sentences}문장 이내로 끝낸다. 그보다 길면 뒷부분은 잘려서 아이에게 들리지 않는다.\n"
     if extra.strip():
-        base += "\n추가 지시\n" + extra.strip() + "\n"
+        # 캐릭터 성격 설명을 그대로 소리 내어 읽은 일이 있어서 (2026-09-20) 태도로만 드러내라고 못 박는다
+        base += ("\n너의 성격 (이 글을 그대로 말하지 말고, 말투와 태도로만 드러낸다)\n" + extra.strip() + "\n")
     return base
 
 

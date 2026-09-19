@@ -25,12 +25,15 @@ class UtteranceSegmenter:
     """프레임을 받아 '말 시작 ~ 침묵 silence_ms' 단위의 발화를 잘라낸다."""
 
     def __init__(self, vad: EnergyVAD, sample_rate: int, silence_ms: int, max_utterance_s: int,
-                 pre_roll_ms: int = 300):
+                 pre_roll_ms: int = 300, min_voiced_ms: int = 250):
         self.vad = vad
         self.sample_rate = sample_rate
         self.silence_samples = int(sample_rate * silence_ms / 1000)
         self.max_samples = int(sample_rate * max_utterance_s)
         self.pre_roll_samples = int(sample_rate * pre_roll_ms / 1000)
+        # 소리가 큰 프레임이 이만큼도 안 되면 말이 아니라 잡음(딸깍, 부딪힘)으로 보고 버린다.
+        # Whisper 는 이런 조각에서 "감사합니다" 같은 문장을 지어낸다
+        self.min_voiced_samples = int(sample_rate * min_voiced_ms / 1000)
         self.reset()
 
     def reset(self) -> None:
@@ -38,6 +41,7 @@ class UtteranceSegmenter:
         self._buf: List[np.ndarray] = []
         self._buf_len = 0
         self._silence = 0
+        self._voiced = 0
         self._pre: List[np.ndarray] = []
         self._pre_len = 0
 
@@ -58,13 +62,19 @@ class UtteranceSegmenter:
                 self._buf = list(self._pre)
                 self._buf_len = self._pre_len
                 self._silence = 0
+                self._voiced = pcm.size
             return None
 
         self._buf.append(pcm)
         self._buf_len += pcm.size
         self._silence = 0 if speech else self._silence + pcm.size
+        if speech:
+            self._voiced += pcm.size
         if self._silence >= self.silence_samples or self._buf_len >= self.max_samples:
             out = np.concatenate(self._buf) if self._buf else np.zeros(0, dtype=np.int16)
+            voiced = self._voiced
             self.reset()
+            if voiced < self.min_voiced_samples:
+                return None                       # 짧은 잡음
             return out
         return None

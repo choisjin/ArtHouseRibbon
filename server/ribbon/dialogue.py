@@ -56,6 +56,7 @@ class DialogueManager:
         self._waiting: Optional[asyncio.Event] = None  # 지금 재생 완료를 기다리는 문장
         self._more: Optional[asyncio.Event] = None     # 답을 생각하는 중에 아이가 이어 말했다
         self._hold_until = 0.0                         # "띵" 소리가 마이크로 다시 들어가지 않게 잠깐 막는다
+        self._said: List[tuple] = []                   # (띄어쓰기 뺀 문장, 시각) 리본이가 방금 한 말 (자기 목소리 듣기 막기)
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
@@ -106,6 +107,9 @@ class DialogueManager:
         if not text:
             return
         kid = self._kid_for_channel(channel)
+        if self._is_own_echo(text):
+            log.info("리본이가 방금 한 말이 마이크로 들어온 것 같아 버림: ch=%s %s", channel, text)
+            return
         log.info("%s> %s", kid.name, text)
         await self.broadcast(TranscriptMessage(kid_id=kid.id, channel=channel, text=text).model_dump())
 
@@ -211,6 +215,19 @@ class DialogueManager:
             await self._after_turn()
 
     # ---------- 내부 ----------
+    @staticmethod
+    def _compact(text: str) -> str:
+        return "".join(ch for ch in text if ch.isalnum())
+
+    def _is_own_echo(self, text: str, window_s: float = 15.0) -> bool:
+        """들은 말이 리본이가 방금 한 말과 겹치면 스피커 소리가 다시 들어온 것 (에코 막기 시간이 지난 뒤의 울림 등)"""
+        now = time.time()
+        self._said = [(s, t) for s, t in self._said if now - t < window_s]
+        heard = self._compact(text)
+        if len(heard) < 4:
+            return False
+        return any(heard in s or (len(s) >= 4 and s in heard) for s, _ in self._said)
+
     def _is_cancel(self, text: str) -> bool:
         compact = text.replace(" ", "")
         return any(p.replace(" ", "") in compact for p in self.settings.cancel_phrases)
@@ -374,6 +391,7 @@ class DialogueManager:
                 return                                # 기다리는 사이 관리자가 중단했다
             utt_id = f"u{next(_utt_ids)}"
             log.info("리본> %s", text)
+            self._said.append((self._compact(text), time.time()))
             await self._set_ribbon("speaking", kid_id)
             if audio is None:
                 audio = await self.tts.synthesize(text)

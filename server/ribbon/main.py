@@ -509,8 +509,27 @@ async def _transcribe_and_dispatch(channel: int, pcm: np.ndarray) -> None:
     except Exception:
         log.exception("STT 실패 (ch=%s, %.1fs)", channel, len(pcm) / settings.sample_rate)
         return
-    if text:
+    if text and not _heard_elsewhere(channel, text):
         await dialogue.on_utterance(channel, text)
+
+
+_recent_text: Dict[str, tuple] = {}   # 들은 말 -> (채널, 시각)
+
+
+def _heard_elsewhere(channel: int, text: str, window_s: float = 2.5) -> bool:
+    """같은 말이 거의 같은 때 다른 채널에서도 들렸으면 한 소리(스피커·방 소리)가 여러 마이크로 들어간 것.
+    아이 둘이 똑같은 말을 동시에 할 일은 드물어서 뒤에 온 것은 버린다"""
+    key = "".join(ch for ch in text if ch.isalnum())
+    now = asyncio.get_running_loop().time()
+    prev = _recent_text.get(key)
+    _recent_text[key] = (channel, now)
+    for k, (_, at) in list(_recent_text.items()):
+        if now - at > window_s:
+            del _recent_text[k]
+    if prev and prev[0] != channel and now - prev[1] < window_s:
+        log.info("다른 채널(%d)에서 방금 들은 말이라 버림: ch=%d %s", prev[0], channel, text)
+        return True
+    return False
 
 
 _audio_seen: Dict[int, float] = {}
@@ -527,26 +546,12 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
     if settings.echo_guard and dialogue.speaking():
         proc.hold()                  # 리본이 목소리가 마이크로 다시 들어오는 것 (에코)
-        _report_hearing(channel, proc)
         return
     for kind, payload in proc.feed(pcm):
         if kind == "wake":
             _spawn(dialogue.on_wake(channel))
         elif kind == "utterance" and payload is not None:
             _spawn(_transcribe_and_dispatch(channel, payload))
-    _report_hearing(channel, proc)
-
-
-_hearing: Dict[int, bool] = {}
-
-
-def _report_hearing(channel: int, proc: ChannelProcessor) -> None:
-    """아이가 말하기 시작/멈춤을 TV 에 알린다 ("듣고 있어" 표시). 들을 차례일 때만"""
-    on = proc.state == "listening" and proc.segmenter.in_speech
-    if on != _hearing.get(channel, False):
-        _hearing[channel] = on
-        kid = kids.by_channel(channel)
-        _spawn(hub.broadcast({"type": "hearing", "channel": channel, "kid_id": kid.id if kid else None, "on": on}))
 
 
 async def _handle_text(ws: WebSocket, msg: dict) -> None:

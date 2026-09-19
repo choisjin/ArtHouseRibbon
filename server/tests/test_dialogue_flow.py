@@ -90,3 +90,13 @@ def test_old_settings_switch_to_play_partner_once(tmp_path):
                  encoding="utf-8")
     rc = ConfigStore(p).config.ribbon
     assert rc.ack_enabled is True and rc.max_sentences == 3
+
+
+async def test_own_voice_coming_back_is_ignored():
+    dm, sent, llm = make()
+    await dm.on_wake(0)
+    await dm.on_utterance(0, "공룡 그렸어")         # 리본이 답: "그렇구나!"
+    n = len(llm.heard)
+    await dm.on_utterance(0, "그렇구나")            # 스피커 소리가 마이크로 다시 들어옴
+    assert len(llm.heard) == n
+    assert not [m for m in sent if m.get("type") == "transcript" and m["text"] == "그렇구나"]
