@@ -348,6 +348,20 @@ class DialogueManager:
             await self._after_turn()
 
     # ---------- 내부 ----------
+    # ---------- 음성 인식 힌트 ----------
+    def stt_prompt(self) -> str:
+        """Whisper initial_prompt: 여기 나온 낱말(아이·캐릭터 이름, 게임 말)을 훨씬 잘 알아듣는다.
+        게임 정답은 넣지 않는다 (넣으면 그 이름을 지어내 정답 처리될 수 있다)"""
+        names = []
+        for k in self.kids.all():
+            names += [k.name] + ([k.nickname] if k.nickname and k.nickname != k.name else [])
+        chars = [self.ribbon_name] + ([p.name for p in self.store.config.characters.values()] if self.store else [])
+        words = list(dict.fromkeys(n for n in names + chars if n))
+        text = f"{', '.join(words)}. 아이가 {self.ribbon_name}에게 말한다. 그림, 포켓몬, 공룡, 선생님."
+        if self.quiz and self.quiz.active:
+            text += " 포켓몬 맞추기, 힌트, 정답, 모르겠어, 다음 문제, 1번, 2번, 3번, 설명 듣고, 그림 보고, 가린 그림, 응, 아니."
+        return text[:400]
+
     # ---------- 도감 (knowledge/) ----------
     def _knowledge(self, kid: KidInfo, text: str) -> str:
         """아이 말에 포켓몬이 나오면 도감 정보를 참고 자료로. 다음 두 번까지는 "걔는 뭐 먹어?" 도 알아듣게 이어 준다"""

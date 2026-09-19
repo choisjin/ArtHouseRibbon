@@ -19,6 +19,7 @@ from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .audio import recorder
 from .audio.button import ButtonCall, DjiButton
 from .audio.stream import ChannelProcessor
 from .audio.wakeword import make_wakeword
@@ -592,11 +593,16 @@ def _spawn(coro) -> None:
 
 
 async def _transcribe_and_dispatch(channel: int, pcm: np.ndarray) -> None:
+    prompt = dialogue.stt_prompt()           # 아이·캐릭터 이름, 게임 말을 미리 알려 준다
     try:
-        text = await stt.transcribe(pcm, settings.sample_rate)
+        text = await stt.transcribe(pcm, settings.sample_rate, prompt)
     except Exception:
         log.exception("STT 실패 (ch=%s, %.1fs)", channel, len(pcm) / settings.sample_rate)
         return
+    if store.config.ribbon.save_recordings:  # 인식 개선용 (tools/stt_eval.py)
+        kid = kids.by_channel(channel)
+        recorder.save(settings.settings_path().parent / "recordings", pcm, settings.sample_rate, channel, text,
+                      prompt, kid.id if kid else None)
     if text and not _heard_elsewhere(channel, text):
         await dialogue.on_utterance(channel, text)
 

@@ -56,6 +56,8 @@ export interface RibbonConfig {
   pokedex_enabled?: boolean;
   /** 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 */
   game_max_id?: number;
+  /** 인식 개선용으로 아이 말 녹음 저장 (data/recordings/, tools/stt_eval.py) */
+  save_recordings?: boolean;
   filler_delay_s?: number;
   filler_interval_s?: number;
   look?: Partial<import("./world/doll").RibbonLook>;

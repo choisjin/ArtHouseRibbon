@@ -64,6 +64,12 @@
   고르기 중에는 아이가 리본이가 읽어 준 게임 이름을 따라 말하므로 짧은 말은 에코로 버리지 않는다.
   썸네일: `python tools/make_game_thumbs.py` (mlx-serve 그림 모델 또는 mflux) -> `data/game_thumbs/`. 없으면 공식 그림
   (피카츄·이브이·팬텀). 집에서 아이와만 쓰므로 실제 포켓몬 그림을 쓴다 (사용자 결정).
+- **음성 인식 강화** (`providers/stt.py`): ① Whisper `initial_prompt` 에 아이 이름·별명·캐릭터 이름·자주 나오는 말,
+  게임 중엔 게임 말 (`dialogue.stt_prompt`, 정답 포켓몬은 넣지 않음). 힌트를 길게(12자+) 그대로 읊으면 버림.
+  ② 인식 전 소리 다듬기 `prepare`: 80Hz 아래 저음 줄이기 + 작은 목소리 키우기(최대 8배).
+  ③ 캐릭터 탭 "아이 말 녹음 저장" -> `data/recordings/<날짜>/` wav + index.jsonl (git 제외).
+  `python tools/stt_eval.py` 로 모델 비교 (large-v3-turbo vs large-v3-mlx, index.jsonl 의 correct 를 채우면 CER).
+  더 나은 모델이면 `.env` 의 `RIBBON_STT_MODEL` 을 바꾼다.
 
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**

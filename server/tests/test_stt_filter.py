@@ -32,3 +32,43 @@ def test_short_noise_burst_is_not_an_utterance():
     assert all(o is None for o in out)
     out = [seg.push(f) for f in _frames(3000, 25) + _frames(0, 20)]  # 말 0.5초
     assert any(o is not None for o in out)
+
+
+def test_prepare_boosts_quiet_voice_and_cuts_rumble():
+    from ribbon.providers.stt import prepare
+    sr = 16000
+    t = np.arange(sr) / sr
+    quiet = (0.03 * np.sin(2 * np.pi * 300 * t) * 32767).astype(np.int16)
+    y = prepare(quiet, sr)
+    assert 0.2 < float(np.abs(y).max()) <= 1.0                     # 작은 목소리를 키운다
+    rumble = (0.3 * np.sin(2 * np.pi * 20 * t) * 32767).astype(np.int16)
+    assert float(np.abs(prepare(rumble, sr)).std()) < float(np.abs(rumble / 32768).std())
+
+
+def test_prompt_echo_only_for_long_repeats():
+    from ribbon.providers.stt import _echoes_prompt
+    prompt = "지우, 리본. 아이가 리본에게 말한다. 포켓몬 맞추기, 힌트, 정답, 모르겠어, 다음 문제, 그림 보고."
+    assert _echoes_prompt("아이가 리본에게 말한다. 포켓몬 맞추기", prompt)
+    assert not _echoes_prompt("모르겠어", prompt) and not _echoes_prompt("다음 문제", prompt)
+
+
+async def test_dialogue_prompt_has_names_not_answer(tmp_path):
+    import json
+    from ribbon.config import Settings
+    from ribbon.dialogue import DialogueManager
+    from ribbon.kids.registry import KidRegistry
+    from ribbon.knowledge.pokedex import Pokedex
+    from ribbon.protocol import KidInfo
+    from ribbon.providers.tts import BrowserTTS
+    p = tmp_path / "pokedex.json"
+    p.write_text(json.dumps({"pokemon": [{"id": 25, "name": "피카츄", "genus": "", "types": ["전기"],
+                                          "height_m": 0.4, "weight_kg": 6.0, "evolution": "", "flavor": []}]},
+                            ensure_ascii=False), encoding="utf-8")
+
+    async def bc(m):
+        pass
+    kids = KidRegistry([KidInfo(id="a", name="김준호", nickname="준이", mic_channel=0)])
+    dm = DialogueManager(Settings(), kids, None, BrowserTTS(), bc, pokedex=Pokedex(p))
+    assert "준이" in dm.stt_prompt() and "김준호" in dm.stt_prompt()
+    dm.quiz.start("image")
+    assert "힌트" in dm.stt_prompt() and "피카츄" not in dm.stt_prompt()   # 정답은 넣지 않는다

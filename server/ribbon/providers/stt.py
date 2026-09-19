@@ -55,11 +55,37 @@ def clean_segments(segments: Iterable[Any]) -> str:
 
 
 class STT(Protocol):
-    async def transcribe(self, pcm: np.ndarray, sample_rate: int) -> str: ...
+    async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str: ...
+
+
+def prepare(pcm: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
+    """인식 전에 소리를 다듬는다: 직류 빼기, 80Hz 아래 웅웅거림 거르기, 작은 목소리 키우기 (아이들은 작게 말한다)"""
+    x = pcm.astype(np.float32) / 32768.0 if pcm.dtype != np.float32 else pcm.astype(np.float32)
+    if x.size == 0:
+        return x
+    x = x - float(np.mean(x))
+    # 80Hz 아래를 줄인다 (책상 울림·에어컨 같은 저음): 1/80초 이동 평균을 빼는 간단한 고역 통과
+    k = max(1, sample_rate // 80)
+    c = np.cumsum(np.concatenate([np.zeros(1, np.float32), x]))
+    lo = np.arange(x.size) - k // 2
+    hi = np.minimum(lo + k, x.size)
+    lo = np.maximum(lo, 0)
+    y = x - (c[hi] - c[lo]) / (hi - lo)
+    peak = float(np.max(np.abs(y))) or 1.0
+    if peak < 0.5:
+        y = y * min(0.8 / peak, 8.0)           # 너무 작으면 키운다 (잡음까지 너무 키우지 않게 최대 8배)
+    return np.clip(y, -1.0, 1.0).astype(np.float32)
+
+
+def _echoes_prompt(text: str, prompt: str) -> bool:
+    """조용한 소리에서 Whisper 가 인식 힌트(prompt)를 그대로 읊는 경우. 읊을 때는 길게 읊는다.
+    짧은 말("모르겠어", "그림 보고")은 힌트에도 있지만 아이가 진짜 한 말이라 버리지 않는다"""
+    t, p = _norm(text), _norm(prompt)
+    return bool(p) and len(t) >= 12 and t in p
 
 
 class MockSTT:
-    async def transcribe(self, pcm: np.ndarray, sample_rate: int) -> str:
+    async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str:
         return ""
 
 
@@ -70,15 +96,16 @@ class FasterWhisperSTT:
         self._model = WhisperModel(settings.stt_model, device="auto", compute_type="auto")
         self._language = settings.stt_language
 
-    async def transcribe(self, pcm: np.ndarray, sample_rate: int) -> str:
-        audio = pcm.astype(np.float32) / 32768.0
+    async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str:
+        audio = prepare(pcm, sample_rate)
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run, audio)
+        return await loop.run_in_executor(None, self._run, audio, prompt)
 
-    def _run(self, audio: np.ndarray) -> str:
-        segments, _ = self._model.transcribe(audio, language=self._language, vad_filter=False, beam_size=1,
-                                             condition_on_previous_text=False)
-        return clean_segments(segments)
+    def _run(self, audio: np.ndarray, prompt: str = "") -> str:
+        segments, _ = self._model.transcribe(audio, language=self._language, vad_filter=False, beam_size=5,
+                                             condition_on_previous_text=False, initial_prompt=prompt or None)
+        text = clean_segments(segments)
+        return "" if _echoes_prompt(text, prompt) else text
 
 
 class MLXWhisperSTT:
@@ -99,15 +126,20 @@ class MLXWhisperSTT:
         self._language = settings.stt_language
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-stt")
 
-    async def transcribe(self, pcm: np.ndarray, sample_rate: int) -> str:
-        audio = pcm.astype(np.float32) / 32768.0
+    async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str:
+        audio = prepare(pcm, sample_rate)
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._pool, self._run, audio)
+        return await loop.run_in_executor(self._pool, self._run, audio, prompt)
 
-    def _run(self, audio: np.ndarray) -> str:
+    def _run(self, audio: np.ndarray, prompt: str = "") -> str:
+        # initial_prompt: 아이 이름·캐릭터 이름·게임 말을 미리 알려 주면 그 낱말을 훨씬 잘 적는다
         result = self._mlx.transcribe(audio, path_or_hf_repo=self._repo, language=self._language,
-                                      condition_on_previous_text=False)
-        return clean_segments(result.get("segments") or [])
+                                      condition_on_previous_text=False, initial_prompt=prompt or None)
+        text = clean_segments(result.get("segments") or [])
+        if _echoes_prompt(text, prompt):
+            log.info("인식 힌트를 그대로 읊은 것 같아 버림: %r", text)
+            return ""
+        return text
 
 
 def make_stt(settings: Settings) -> STT:

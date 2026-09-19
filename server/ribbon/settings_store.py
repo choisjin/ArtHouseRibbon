@@ -40,6 +40,7 @@ class RibbonConfig(BaseModel):
     button_window_s: float = 6.0 # 호출 버튼을 누른 뒤 이 시간 안에 먼저 말한 아이가 부른 아이
     pokedex_enabled: bool = True # 아이 말에 포켓몬이 나오면 도감을 참고해 답한다 (knowledge/pokedex.py)
     game_max_id: int = 151       # 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 (151 = 1세대)
+    save_recordings: bool = False  # 인식 개선용으로 아이 말 녹음을 data/recordings/ 에 저장 (tools/stt_eval.py)
     filler_enabled: bool = True  # 답이 늦으면 "음..." 추임새
     filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
     filler_interval_s: float = 4.0  # 그 뒤 추임새 간격
