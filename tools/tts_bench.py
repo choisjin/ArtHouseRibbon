@@ -126,8 +126,12 @@ class Chatterbox:
     name = "chatterbox"
 
     def __init__(self, args):
+        import perth
         import torch
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+        if getattr(perth, "PerthImplicitWatermarker", None) is None:
+            # 워터마크 모듈이 import 에 실패하면 None 이 된다 (pkg_resources 없음 등). 비교에는 필요 없어서 빈 것으로
+            perth.PerthImplicitWatermarker = perth.DummyWatermarker
         device = "mps" if torch.backends.mps.is_available() else "cpu"
         self.model = ChatterboxMultilingualTTS.from_pretrained(device=device)
         self.sr = int(self.model.sr)
