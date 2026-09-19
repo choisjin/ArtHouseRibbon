@@ -5,6 +5,8 @@ import { Speaker } from "../speech/browserTts";
 import { RibbonBrain } from "./brain";
 import { GameBoard } from "./game";
 import { Hud } from "./hud";
+import { MusicBar } from "./musicbar";
+import { MusicPlayer } from "../music/player";
 import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
 import { renderNow, SEATS, type WorldView } from "../world/types";
@@ -50,6 +52,8 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   let faces: FacePosition[] = [];
   let facesAt = 0;
   const game = new GameBoard();
+  const musicBar = new MusicBar();
+  new MusicPlayer(socket, "tv", "리본 TV");   // 관리자 설정의 '재생할 곳'이 TV 면 이 화면이 Spotify 스피커
   const micBadge = document.getElementById("mic-badge")!;
   let placed = false;
   let walkSpeed = 1;
@@ -155,6 +159,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "speak.stop": speaker.stop(); break;
       case "cue": speaker.chime(); break;   // 불렀을 때 "띵" (듣고 있어)
       case "game": game.render(msg.view); break;   // 포켓몬 맞추기
+      case "music.state": musicBar.render(msg); break;   // 음악 상태바
       case "mic": micBadge.classList.toggle("on", msg.on); break;   // 말할 수 있을 때 오른쪽 위 마이크
       case "transcript": {
         const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";

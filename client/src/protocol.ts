@@ -96,10 +96,24 @@ export interface LLMConfig {
   model: string;
 }
 
+/** Spotify (관리자 '설정' 탭 → 음악, 서버 settings_store.MusicConfig). 앱 정보·토큰은 여기 없다 */
+export interface MusicConfig {
+  /** 리본이에게 말로 음악을 부탁할 수 있다 */
+  enabled: boolean;
+  /** 재생할 곳: tv = TV 화면 / admin = 관리자 페이지를 연 컴퓨터(맥미니) */
+  output: "tv" | "admin";
+  /** "내 목록 틀어줘" · 넣기 · 빼기 목록 (빈 값 = 내가 만든 첫 목록) */
+  playlist_id: string;
+  playlist_title: string;
+  /** 0 ~ 100 */
+  volume: number;
+}
+
 export interface AppConfig {
   ribbon: RibbonConfig;
   characters?: Record<string, CharacterProfile>;
   llm?: LLMConfig | null;
+  music?: MusicConfig;
   /** TV 에 보여줄 방과 그 배치 (서버 world_store.tv_view) */
   world?: import("./world/types").WorldView;
 }
@@ -222,5 +236,23 @@ export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "o
   | { action: "beep" | "labels" }
 );
 
+/** 지금 나오는 곡 (서버 music.track_info) */
+export interface MusicTrack {
+  uri: string;
+  title: string;
+  artists: string;
+  album_art: string;
+  duration_ms: number;
+}
+
+/** 재생 화면(music/player.ts)이 알린 Spotify 재생 상태를 서버가 모두에게 -> TV 아래 상태바 */
+export interface MusicStateMsg {
+  type: "music.state";
+  playing: boolean;
+  track: MusicTrack | null;
+  position_ms: number;
+}
+
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | CueMsg | ButtonMsg | MicMsg | GameMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg;
+  | SpeakStopMsg | CueMsg | ButtonMsg | MicMsg | GameMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg
+  | MusicStateMsg;

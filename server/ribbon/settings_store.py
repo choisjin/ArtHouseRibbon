@@ -97,10 +97,10 @@ class LLMConfig(BaseModel):
 
 
 class MusicConfig(BaseModel):
-    """YouTube Music (관리자 '설정' 탭 → 음악). 계정 헤더는 여기 두지 않는다 (data/ytmusic_auth.json, music.py)"""
-    enabled: bool = False        # 리본이에게 말로 음악을 부탁할 수 있다
+    """Spotify (관리자 '설정' 탭 → 음악). 앱 정보·토큰은 여기 두지 않는다 (data/spotify_auth.json, music.py)"""
+    enabled: bool = False        # 리본이에게 말로 음악을 부탁할 수 있다 (music_intent.py)
     output: str = "tv"           # 재생할 곳: tv = TV 화면 | admin = 관리자 페이지를 연 컴퓨터(맥미니)
-    playlist_id: str = ""        # "내 목록 틀어줘" 의 목록 (비우면 라이브러리 첫 목록)
+    playlist_id: str = ""        # "내 목록 틀어줘" · 넣기 · 빼기 목록 (비우면 내가 만든 첫 목록)
     playlist_title: str = ""     # 화면 표시용
     volume: int = 60             # 0 ~ 100. 리본이 목소리보다 작게
 

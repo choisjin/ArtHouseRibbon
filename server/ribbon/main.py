@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Set
 
 import numpy as np
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -29,6 +29,8 @@ from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
 from .memory import MemoryStore
+from .music import MusicError, SpotifyAccount
+from .music_intent import MusicControl
 from .knowledge.pokedex import Pokedex
 from .providers import llm as llm_mod
 from .providers.llm import make_llm
@@ -90,6 +92,8 @@ store = ConfigStore(settings.settings_path())
 memory = MemoryStore(settings.memory_path(), store.config.ribbon.memory_max_per_kid)
 pokedex = Pokedex(settings.pokedex_path(), settings.pokedex_path().parent / "pokemon_looks_cache.json")
 schedule = sched.ScheduleStore(settings.schedule_path())
+spotify = SpotifyAccount(settings.music_auth_path())
+music = MusicControl(spotify, store)
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 # 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다
 store.seed_llm(settings.llm_provider, settings.llm_base_url, settings.llm_model)
@@ -99,7 +103,8 @@ stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world, memory, pokedex)
+dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world, memory, pokedex, music)
+music.on_config = dialogue.notify_config_changed   # 말로 음량을 바꾸면 재생 화면에 알린다
 renderer = WorldRenderer(world, settings.blender_exe, settings.render_pct, settings.render_samples,
                          on_change=dialogue.notify_config_changed)
 world.render_info = renderer.info
@@ -144,6 +149,7 @@ async def lifespan(app: FastAPI):
         button.start()
     yield
     task.cancel()
+    await spotify.close()
     if button:
         button.stop()
 
@@ -341,6 +347,119 @@ async def api_llm_test():
     total = asyncio.get_running_loop().time() - t0
     return JSONResponse({"ok": True, "text": text.strip(), "first_s": round(first or total, 2), "total_s": round(total, 2),
                          "model": llm_settings.llm_model})
+
+
+# ---------- Spotify (관리자 '설정' 탭 → 음악, music.py / 말로 조작은 music_intent.py) ----------
+# 앱 Secret · 토큰은 내보내지 않는다. 재생 화면(Web Playback SDK)에는 접근 토큰만 준다
+
+def _music_fail(e: Exception) -> HTTPException:
+    return HTTPException(400 if isinstance(e, MusicError) else 502, str(e) if isinstance(e, MusicError) else f"{type(e).__name__}: {e}")
+
+
+def _redirect_uri(request: Request) -> str:
+    """Spotify 는 localhost 를 받지 않는다: 127.0.0.1 로 (앱 설정의 Redirect URI 에 이 주소를 똑같이 넣는다)"""
+    return f"http://127.0.0.1:{request.url.port or 8765}/api/music/callback"
+
+
+@app.get("/api/music/status")
+async def api_music_status(request: Request):
+    return JSONResponse({**spotify.status(), "redirect_uri": _redirect_uri(request),
+                         "devices": sorted(music.devices), "last_error": music.last_error})
+
+
+@app.put("/api/music/app")
+async def api_music_app(data: dict = Body(...)):
+    """Spotify 개발자 앱의 Client ID / Secret (Secret 을 비우면 예전 것을 그대로 쓴다)"""
+    try:
+        spotify.set_app(str(data.get("client_id") or ""), str(data.get("client_secret") or ""))
+    except MusicError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse(spotify.status())
+
+
+@app.get("/api/music/login")
+async def api_music_login(request: Request):
+    from fastapi.responses import RedirectResponse
+    try:
+        return RedirectResponse(spotify.login_url(_redirect_uri(request)))
+    except MusicError as e:
+        raise HTTPException(400, str(e))
+
+
+def _page(title: str, text: str) -> Response:
+    from html import escape
+    return Response(f"""<!doctype html><meta charset="utf-8"><title>{escape(title)}</title>
+<body style="font-family:system-ui,sans-serif;padding:40px;line-height:1.6"><h2>{escape(title)}</h2><p>{escape(text)}</p></body>""",
+                    media_type="text/html; charset=utf-8")
+
+
+@app.get("/api/music/callback")
+async def api_music_callback(code: str = "", state: str = "", error: str = ""):
+    if error:
+        return _page("Spotify 연결 안 됨", f"Spotify 가 거절했습니다: {error}")
+    try:
+        account = await spotify.finish(code, state)
+    except Exception as e:  # noqa: BLE001 - 화면에 이유를 보인다
+        return _page("Spotify 연결 안 됨", str(e))
+    await dialogue.notify_config_changed()
+    return _page("Spotify 연결됨", f"{account.get('name')} 계정으로 연결했습니다. 이 창을 닫고 관리자 페이지로 돌아가세요.")
+
+
+@app.post("/api/music/callback_url")
+async def api_music_callback_url(data: dict = Body(...)):
+    """다른 컴퓨터에서 로그인해 127.0.0.1 로 못 돌아온 경우: 그 창의 주소를 붙여 넣는다"""
+    try:
+        account = await spotify.finish_from_url(str(data.get("url") or ""))
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+    await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "account": account})
+
+
+@app.delete("/api/music/auth")
+async def api_music_logout():
+    spotify.disconnect()
+    log.info("Spotify 연결 끊음")
+    await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/music/playlists")
+async def api_music_playlists():
+    try:
+        return JSONResponse({"playlists": await spotify.playlists()})
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+
+
+@app.get("/api/music/token")
+async def api_music_token():
+    """재생 화면(Web Playback SDK)이 쓰는 접근 토큰 (1시간짜리, 필요할 때마다 다시 받는다)"""
+    if not store.config.music.enabled:
+        raise HTTPException(400, "음악이 꺼져 있습니다")
+    try:
+        return JSONResponse({"access_token": await spotify.access_token()})
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+
+
+@app.post("/api/music/command")
+async def api_music_command(data: dict = Body(...)):
+    """관리자 '음악' 설정의 시험 칸: 리본이에게 하듯 말을 넣어 본다 (리본이는 말하지 않는다)"""
+    lines = await music.handle(str(data.get("text") or ""), dialogue.ribbon_name)
+    return JSONResponse({"understood": lines is not None, "lines": lines or [], "error": music.last_error})
+
+
+@app.put("/api/config/music")
+async def api_config_music(data: dict = Body(...)):
+    try:
+        cfg = store.update_music(data)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    log.info("음악 설정: 켜기=%s 재생할 곳=%s 목록=%s 음량=%s", cfg.enabled, cfg.output,
+             cfg.playlist_title or cfg.playlist_id or "(첫 목록)", cfg.volume)
+    await dialogue.notify_config_changed()
+    return JSONResponse(cfg.model_dump())
 
 
 # ---------- 시간표 (대시보드). 정규 수업은 아이마다(KidInfo.schedule), 끌어 옮긴 건 그날만 ----------
@@ -720,6 +839,8 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
             await ws.send_text(json.dumps(devices.snapshot(), ensure_ascii=False))
         await ws.send_text(json.dumps(dialogue.snapshot().model_dump(), ensure_ascii=False))
         await ws.send_text(json.dumps({"type": "mic", "on": _mic_on}))   # 마이크 표시
+        if music.state:                              # 음악 상태바
+            await ws.send_text(json.dumps(music.state, ensure_ascii=False))
         if dialogue.quiz and dialogue.quiz.active:   # TV 를 새로 열어도 하던 게임 화면이 나오게
             await ws.send_text(json.dumps({"type": "game", "view": dialogue.quiz.view()}, ensure_ascii=False))
     elif t == "tts.done":
@@ -779,6 +900,18 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         _spawn(dialogue.on_kid_enter(str(msg.get("kid_id", ""))))
     elif t == "kid.leave":
         _spawn(dialogue.on_kid_leave(str(msg.get("kid_id", ""))))
+    elif t == "music.device":
+        # 재생 화면(Web Playback SDK)이 Spotify 스피커로 준비됐다 / 닫혔다
+        role = hub.clients.get(ws, "?")
+        music.set_device(role, str(msg.get("device_id") or ""))
+        log.info("Spotify 스피커 %s: %s", "준비" if msg.get("device_id") else "닫힘", role)
+    elif t == "music.state":
+        # 재생 화면이 알려 온 재생 상태 -> TV 아래 상태바. 지금 '재생할 곳' 화면의 것만 받는다
+        if hub.clients.get(ws) == store.config.music.output:
+            state = {"type": "music.state", "playing": bool(msg.get("playing")), "track": msg.get("track"),
+                     "position_ms": int(msg.get("position_ms") or 0)}
+            music.set_state(state)
+            await hub.broadcast(state)
     elif t == "face.positions":
         # TV 위 카메라 클라이언트 -> TV 화면(시선 추적)으로 그대로 중계
         await hub.broadcast(msg, roles={"tv"})
@@ -812,7 +945,13 @@ async def ws_endpoint(ws: WebSocket):
         pass
     finally:
         aid = hub.agent(ws)
+        role = hub.clients.get(ws)
         hub.clients.pop(ws, None)
+        if role in music.devices and role not in hub.clients.values():
+            music.set_device(role, "")                  # 재생 화면이 모두 닫혔다
+            if role == store.config.music.output and music.state:
+                music.set_state({"type": "music.state", "playing": False, "track": None, "position_ms": 0})
+                await hub.broadcast(music.state)        # 상태바 내리기
         hub.ids.pop(ws, None)
         if not any(hub.agent(w) == aid for w in hub.ids) and devices.drop_agent(aid):
             await hub.broadcast(devices.snapshot(), roles={"admin"})   # 그 화면이 닫혔다

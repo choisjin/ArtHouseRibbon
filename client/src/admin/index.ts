@@ -2,6 +2,7 @@ import "./style.css";
 import type { AppConfig, KidInfo, ServerMsg, StateMsg } from "../protocol";
 import { Mic } from "../audio/mic";
 import { FaceCam } from "../camera/facecam";
+import { MusicPlayer } from "../music/player";
 import type { RibbonSocket } from "../ws";
 import { mountCharacters } from "./characters";
 import { mountDashboard } from "./dashboard";
@@ -52,6 +53,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   let toastTimer = 0;
   const mic = new Mic(socket, { autoStart: true });
   const cam = new FaceCam(socket, { autoStart: true });
+  new MusicPlayer(socket, "admin", "리본 관리자");   // '재생할 곳'이 관리자 페이지면 이 컴퓨터(맥미니)가 Spotify 스피커
   const ctx: AdminCtx = {
     socket,
     mic,

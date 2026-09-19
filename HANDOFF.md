@@ -93,6 +93,16 @@
   버튼을 누르면 말은 하지 않고 바로 `button_window_s` 동안 듣는다 ("지금 말해줘" 는 2026-09-20 삭제).
   **말을 받을 수 있는 동안만 TV 오른쪽 위에 빨간 마이크** (`main._update_mic` -> `{"type":"mic"}`, 리본이가 말하는 중엔 꺼짐).
   추임새는 서버가 켜질 때·목소리를 바꿀 때 미리 합성해 둔다 (`dialogue.prewarm`, `_tts_cache`).
+- **Spotify 음악** (2026-09-20, 사용자가 YouTube Music 대신 Spotify 로 결정): 관리자 설정 → 🎵 음악.
+  Spotify 개발자 앱 Client ID/Secret(`data/spotify_auth.json`, git 제외, 상태 방송에 안 나감) -> "Spotify 로그인"(OAuth, 갱신 토큰).
+  Redirect URI 는 `http://127.0.0.1:<포트>/api/music/callback` (Spotify 가 localhost 를 안 받음) -> **로그인은 맥미니 브라우저에서**,
+  다른 PC 면 실패한 창 주소를 붙여 넣기. 앱 주인 Premium 필수, 개발 모드 5명, 재생목록 API 는 `/playlists/{id}/items`(2026-03 변경), 검색 10개까지.
+  재생할 곳(TV 화면 / 관리자 페이지)이 Web Playback SDK 로 Spotify 스피커가 되고(`client/src/music/player.ts`, `music.device`),
+  서버가 Web API 로 튼다(`server/ribbon/music.py`). 말은 규칙으로 알아듣는다(`music_intent.py`, 대화 모델 안 거침, 게임 중엔 안 봄):
+  "피카츄 노래 틀어줘"(검색 5곡) · "내 목록 틀어줘" · 꺼줘 · 다시 · 다음/앞 노래 · 소리 키워/줄여 · 이 노래 넣어줘/빼줘(설정의 내 목록) · 이 노래 뭐야.
+  소리·"뭐야"·앞 노래는 음악이 나올 때만 음악 이야기로 본다. 리본이가 말하거나 마이크가 켜지면 음악을 0.2배로 줄인다.
+  TV 아래 상태바(`tv/musicbar.ts`, `music.state`), 멈춘 뒤 1분이면 내린다. 설정의 "시험" 칸 = `/api/music/command`.
+  **아직 실제 계정으로 확인 못 함** (앱·Premium 계정 필요). 맥미니에서 앱 만들고 로그인한 뒤 TV 에서 재생·조작 확인할 것.
 
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**

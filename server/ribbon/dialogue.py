@@ -10,7 +10,7 @@ import itertools
 import logging
 import re
 import time
-from typing import Awaitable, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Dict, List, Optional
 
 from .config import Settings
 from .kids.profile import call_name
@@ -28,6 +28,9 @@ from .knowledge.pokedex import Pokedex, knowledge_block
 from .games.pokemon_quiz import PokemonQuiz, detect_start, explicit_pokemon
 from .settings_store import ConfigStore
 
+if TYPE_CHECKING:
+    from .music_intent import MusicControl
+
 log = logging.getLogger("ribbon.dialogue")
 Broadcast = Callable[[dict], Awaitable[None]]
 _utt_ids = itertools.count(1)
@@ -38,7 +41,8 @@ _SENTENCE_END = re.compile(r"(?<=[.!?。！？…])\s+|\n+")
 class DialogueManager:
     def __init__(self, settings: Settings, kids: KidRegistry, llm: LLM, tts: TTS, broadcast: Broadcast,
                  store: Optional[ConfigStore] = None, world: Optional["WorldStore"] = None,
-                 memory: Optional[MemoryStore] = None, pokedex: Optional[Pokedex] = None):
+                 memory: Optional[MemoryStore] = None, pokedex: Optional[Pokedex] = None,
+                 music: Optional["MusicControl"] = None):
         self.settings = settings
         self.kids = kids
         self.llm = llm
@@ -49,6 +53,7 @@ class DialogueManager:
         self.memory = memory
         self.pokedex = pokedex
         self.quiz: Optional[PokemonQuiz] = PokemonQuiz(pokedex) if pokedex is not None else None
+        self.music = music                             # Spotify 부탁 ("피카츄 노래 틀어줘", music_intent.py)
         self._recent_dex: Dict[str, tuple] = {}         # 아이 -> (최근에 이야기한 포켓몬들, 남은 턴) "걔는 뭐 먹어?" 용
         self._learn_lock = asyncio.Lock()              # 약속 뽑기는 한 번에 하나씩 (대화 모델 부담)
         self._bg: set = set()                          # 뒤에서 도는 약속 뽑기 작업
@@ -216,6 +221,13 @@ class DialogueManager:
             await self.start_quiz(mode, kid, channel, ask_first=not explicit_pokemon(text))
             return
 
+        # 음악 부탁: 게임 중이 아니면 먼저 본다 (대화 모델을 거치지 않는다)
+        if self.music is not None and not (self.quiz and self.quiz.active):
+            lines = await self.music.handle(text, self.ribbon_name)
+            if lines is not None:
+                await self._music_reply(lines, kid, channel)
+                return
+
         if self._is_cancel(text):
             active = self.queue.active()
             if active is not None and active.channel == channel:
@@ -361,6 +373,16 @@ class DialogueManager:
         elif self.quiz.active:
             await self._set_ribbon("idle", None)
         await self._broadcast_state()
+
+    async def _music_reply(self, lines: List[str], kid: KidInfo, channel: int) -> None:
+        """음악 부탁에 짧게 답하고 이 아이 차례를 끝낸다"""
+        self.queue.cancel(channel)
+        for i, line in enumerate(lines):
+            await self._say(line, kid.id, final=i == len(lines) - 1)
+        if self._responding:
+            await self._broadcast_state()              # 다른 아이에게 답하는 중이었다: 그 흐름은 그대로
+        else:
+            await self._after_turn()
 
     async def _pokemon_png(self, pid: int) -> Optional[bytes]:
         """공식 그림 (서버가 받아 둔 data/pokemon_img/ 에 있으면 그것)"""
