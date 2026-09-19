@@ -96,9 +96,9 @@ def main():
     try:
         import pyworld  # noqa: F401
         has_world = True
-    except ImportError:
+    except ImportError as e:
         has_world = False
-        print("pyworld 가 없어 아이 목소리 변환은 건너뜁니다 (pip install pyworld)")
+        print(f"pyworld 를 불러오지 못해 아이 목소리 변환은 건너뜁니다: {e!r}")
     if has_world:
         for v, p, f in [("F1", 1.15, 1.08), ("F1", 1.2, 1.12), ("F1", 1.3, 1.18), ("F3", 1.2, 1.12),
                         ("M1", 1.3, 1.15), ("M1", 1.5, 1.2), ("F1", 1.0, 1.12)]:
