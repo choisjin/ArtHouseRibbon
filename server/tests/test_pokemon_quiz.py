@@ -109,3 +109,33 @@ async def test_dialogue_plays_without_llm(tmp_path):
     await dm.on_utterance(1, "그만")
     assert not dm.quiz.active
     assert any(m.get("type") == "game" and m["view"] is None for m in sent)   # TV 게임 화면을 닫는다
+
+
+def test_start_phrases_with_speech_recognition_slips():
+    for t in ["포캣몬 맞추기 하자", "포켓몬 마추기 하자", "포켓몬 퀴즈 내줘", "포켓몬 게임 하자!", "포켓몬 이름 맞히기"]:
+        assert detect_start(t) is not None, t
+
+
+async def test_no_pokedex_says_so_instead_of_chatting(tmp_path):
+    sent = []
+
+    async def broadcast(m):
+        sent.append(m)
+
+    class NoLLM:
+        async def stream(self, messages):
+            raise AssertionError("게임 하자는 말은 대화 모델로 넘기지 않는다")
+            yield ""
+
+    kids = KidRegistry([KidInfo(id="a", name="지우", mic_channel=0)])
+    dm = DialogueManager(Settings(), kids, NoLLM(), BrowserTTS(), broadcast,
+                         pokedex=Pokedex(tmp_path / "없음.json"))
+
+    async def fast_wait():
+        dm._pending_done.clear()
+    dm._wait_spoken = fast_wait
+    await dm.on_wake(0)
+    await dm.on_utterance(0, "포켓몬 맞추기 하자")
+    speaks = [m["text"] for m in sent if m.get("type") == "speak"]
+    assert "도감이 아직 없어서" in speaks[-1]
+    assert dm.queue.active() is None

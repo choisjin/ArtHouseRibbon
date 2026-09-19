@@ -157,8 +157,8 @@ class DialogueManager:
         if self.quiz and self.quiz.active:
             if await self._quiz_turn(kid, channel, text):
                 return
-        elif self.quiz and len(self.pokedex or []) and (mode := detect_start(text)) is not None:
-            await self.start_quiz(mode, kid, channel)
+        elif (mode := detect_start(text)) is not None:
+            await self.start_quiz(mode, kid, channel)   # 도감이 없으면 없다고 알려 준다 (대화 모델로 넘기지 않는다)
             return
 
         if self._is_cancel(text):
@@ -260,6 +260,9 @@ class DialogueManager:
     async def start_quiz(self, mode: str, kid: Optional[KidInfo] = None, channel: Optional[int] = None) -> None:
         """게임 시작 (아이 말 또는 관리자 대시보드). mode "" 면 셋 중에 고르라고 묻는다"""
         if not self.quiz or not len(self.pokedex or []):
+            log.warning("포켓몬 맞추기를 하자는데 도감이 없습니다 (python tools/fetch_pokedex.py)")
+            if channel is not None:
+                self.queue.cancel(channel)
             await self._say("포켓몬 도감이 아직 없어서 맞추기를 못 해. 선생님께 도감을 받아 달라고 해 줘.",
                             kid.id if kid else None, final=True)
             return

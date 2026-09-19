@@ -64,10 +64,16 @@ def _has(text: str, *keys: str) -> bool:
     return any(k in c for k in keys)
 
 
+# 음성 인식이 "포켓몬" 을 다르게 적는 경우들
+_POKEMON_WORDS = ("포켓몬", "포캣몬", "포켄몬", "포케몬", "포켓몽", "포켄몽", "포게몬", "포켓문", "pokemon", "포켓")
+_GAME_WORDS = ("맞추", "맞히", "맞춰", "맞혀", "맞출", "맞힐", "마추", "마춰", "마치기", "맞치", "퀴즈", "게임", "누구게",
+               "알아맞", "문제내", "문제 내", "이름맞")
+
+
 def detect_start(text: str) -> Optional[str]:
     """게임을 하자는 말인가. 하자는 말이면 모드("" 는 아직 안 고름), 아니면 None"""
-    c = _compact(text)
-    if "포켓몬" not in c or not any(k in c for k in ("맞추", "맞히", "맞춰", "맞혀", "퀴즈", "게임", "누구게", "알아맞")):
+    c = _compact(text).lower()
+    if not any(w in c for w in _POKEMON_WORDS) or not any(k.replace(" ", "") in c for k in _GAME_WORDS):
         return None
     return detect_mode(text) or ""
 
