@@ -354,16 +354,53 @@ class DialogueManager:
         kid_id = kid.id if kid else None
         for i, line in enumerate(reply.lines):
             await self._say(line, kid_id, final=i == len(reply.lines) - 1)
-        if reply.new_round and self.quiz.mode == "describe":
-            self._spawn_bg(self._quiz_appearance(self.quiz.answer))
+        if reply.new_round and self.quiz.mode == "describe" and not self.quiz.answer.get("look"):
+            self._spawn_bg(self._quiz_appearance(self.quiz.answer))   # 생김새 설명이 아직 없는 포켓몬: 그림을 보고 만든다
         if self.quiz.active and not self._button_only():
             await self._set_ribbon("listening", None)  # 답을 기다린다 (버튼 방식이면 버튼을 눌러야 들으니 표시하지 않는다)
         elif self.quiz.active:
             await self._set_ribbon("idle", None)
         await self._broadcast_state()
 
+    async def _pokemon_png(self, pid: int) -> Optional[bytes]:
+        """공식 그림 (서버가 받아 둔 data/pokemon_img/ 에 있으면 그것)"""
+        path = self.settings.pokedex_path().parent / "pokemon_img" / f"{pid}.png"
+        if path.exists():
+            return path.read_bytes()
+        import httpx
+        url = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{pid}.png"
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as c:
+                r = await c.get(url)
+                r.raise_for_status()
+        except httpx.HTTPError:
+            return None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(r.content)
+        return r.content
+
     async def _quiz_appearance(self, entry: Dict) -> None:
-        """설명 듣고 맞추기의 "생김새" 힌트를 대화 모델에게 뒤에서 받아 둔다 (도감에는 생김새가 없다)"""
+        """설명 듣고 맞추기: 생김새 설명이 없는 포켓몬이면 공식 그림을 대화 모델에게 보여 주고 받아서 힌트로 쓰고 저장한다.
+        그림을 못 보는 모델이면 이름만으로 (덜 정확) 받는다"""
+        import base64
+        from .knowledge.pokedex import LOOK_PROMPT, clean_look
+        png = await self._pokemon_png(entry["id"])
+        if png:
+            msgs = [{"role": "user", "content": [
+                {"type": "text", "text": LOOK_PROMPT.format(name=entry["name"]) + " /no_think"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}]}]
+            try:
+                lines = clean_look("".join([d async for d in self.llm.stream(msgs)]), entry["name"])
+            except Exception:  # noqa: BLE001 - 그림을 못 보는 모델 등
+                log.warning("그림을 보고 생김새 설명 만들기 실패 - 이름만으로 해 본다")
+                lines = []
+            if len(lines) >= 2:
+                if self.pokedex:
+                    self.pokedex.save_look(entry["id"], lines)
+                if self.quiz.answer is entry:
+                    self.quiz.appearance = lines
+                log.info("생김새 설명 (그림을 보고): %s", lines)
+                return
         msgs = [{"role": "system", "content": "너는 포켓몬을 잘 아는 도우미야. 모르면 모른다고만 한다."},
                 {"role": "user", "content": (
                     f"포켓몬 '{entry['name']}'({entry.get('genus', '')}, {'/'.join(entry.get('types') or [])} 타입)의 "

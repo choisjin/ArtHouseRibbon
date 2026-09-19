@@ -48,6 +48,11 @@ def eun(word: str) -> str:
     return word + ("은" if _batchim(word) else "는")
 
 
+def _with_rang(words: List[str]) -> str:
+    """["고스트", "독"] -> "고스트랑 독", ["바위", "물"] -> "바위랑 물", ["풀", "독"] -> "풀이랑 독" """
+    return " ".join(w + (("이랑" if _batchim(w) else "랑") if i < len(words) - 1 else "") for i, w in enumerate(words))
+
+
 def iya(word: str) -> str:
     """리자몽이야 / 피카츄야"""
     return word + ("이야" if _batchim(word) else "야")
@@ -250,8 +255,17 @@ class PokemonQuiz:
         self.appearance = []
         n = len(self.answer["name"])
         if self.mode == "describe":
-            self.hints = ["genus", "look", "size", "flavor0", "evolution", "flavor1", "count", "cho", "letter"]
-            first = f"자, 문제! 이 포켓몬은 {'이랑 '.join(self.answer['types'])} 타입이야. 누구일까?"
+            # 첫 문제에 정보를 넉넉히 (타입만으로는 못 맞힌다, 2026-09-20): 타입 + 분류 + 그림을 보고 만든 생김새 두 문장
+            e = self.answer
+            look = list(e.get("look") or [])
+            genus = e.get("genus") or ""
+            parts = [f"자, 문제! 이 포켓몬은 {_with_rang(e['types'])} 타입이고"
+                     + (f", {genus}{'이라고' if _batchim(genus) else '라고'} 불려." if genus else "이야.")]
+            parts += look[:2]
+            parts.append("누구일까?")
+            first = " ".join(parts)
+            self.appearance = look[2:]                             # 나머지 생김새는 힌트로
+            self.hints = ["look", "look", "size", "flavor0", "evolution", "flavor1", "count", "cho", "letter"]
         elif self.mode == "image":
             self.hints = ["count", "cho"] + ["letter"] * max(1, n - 1)
             first = "이 포켓몬 이름이 뭘까?"
@@ -372,8 +386,6 @@ class PokemonQuiz:
         return self._solved(first=f"{prefix} 정답은 {ieosseo(name)}!".strip())
 
     def _hint_line(self, kind: str, e: Dict, name: str) -> str:
-        if kind == "genus" and e.get("genus"):
-            return f"힌트! {e['genus']}이라고 불려."
         if kind == "look":
             return f"힌트! {self.appearance.pop(0)}" if self.appearance else ""
         if kind == "size":

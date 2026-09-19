@@ -88,7 +88,7 @@ devices = DeviceBoard()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
 memory = MemoryStore(settings.memory_path(), store.config.ribbon.memory_max_per_kid)
-pokedex = Pokedex(settings.pokedex_path())
+pokedex = Pokedex(settings.pokedex_path(), settings.pokedex_path().parent / "pokemon_looks_cache.json")
 schedule = sched.ScheduleStore(settings.schedule_path())
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 # 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다

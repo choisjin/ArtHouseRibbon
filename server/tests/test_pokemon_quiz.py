@@ -274,3 +274,38 @@ def test_menu_items_have_art_and_thumb_only_if_made(tmp_path):
     assert items["image"]["thumb"] and items["peek"]["thumb"] and items["describe"]["thumb"] is None
     assert q.thumb_file("peek").suffix == ".jpg"
     assert items["peek"]["art"].endswith("/94/image")               # 팬텀
+
+
+def test_describe_first_question_is_rich(tmp_path):
+    entry = dict(MINI[0], look=["온몸이 노란색이야.", "통통한 몸을 가졌어.", "볼에 빨간 동그라미가 있어.", "번개 모양 꼬리가 있어."])
+    q = quiz(tmp_path, [entry])
+    r = q.start("describe")
+    first = r.lines[-1]
+    assert "전기 타입" in first and "쥐포켓몬이라고 불려" in first
+    assert "온몸이 노란색이야." in first and "통통한 몸을 가졌어." in first and first.endswith("누구일까?")
+    assert "피카츄" not in first
+    assert q.handle("힌트").lines[0] == "힌트! 볼에 빨간 동그라미가 있어."      # 나머지 생김새가 먼저
+    assert q.handle("힌트").lines[0] == "힌트! 번개 모양 꼬리가 있어."
+
+
+def test_clean_look_drops_name_and_numbers():
+    from ribbon.knowledge.pokedex import clean_look
+    raw = "1. 온몸이 노란색이야\n- 피카츄는 귀엽다.\n\n• 볼이 빨개."
+    assert clean_look(raw, "피카츄") == ["온몸이 노란색이야.", "볼이 빨개."]
+
+
+def test_pokedex_loads_and_saves_looks(tmp_path):
+    p = tmp_path / "pokedex.json"
+    p.write_text(json.dumps({"pokemon": MINI}, ensure_ascii=False), encoding="utf-8")
+    cache = tmp_path / "looks_cache.json"
+    d = Pokedex(p, cache)
+    d.save_look(25, ["노란색이야.", "통통해."])
+    again = Pokedex(p, cache)
+    assert again.find("피카츄")[0]["look"] == ["노란색이야.", "통통해."]
+
+
+def test_type_particles():
+    from ribbon.games.pokemon_quiz import _with_rang
+    assert _with_rang(["고스트", "독"]) == "고스트랑 독"
+    assert _with_rang(["풀", "독"]) == "풀이랑 독"
+    assert _with_rang(["전기"]) == "전기"
