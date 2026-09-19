@@ -292,3 +292,8 @@
   #admin .map-note { display: block; }
   #admin #map-frame { min-height: 360px; }
 }
+
+/* 리본이가 기억하는 약속 (promises.ts) */
+#admin ul.promises { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; }
+#admin ul.promises li { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+#admin ul.promises li small { display: block; }

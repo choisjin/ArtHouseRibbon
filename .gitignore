@@ -13,6 +13,7 @@ client/dist/
 data/kids.json
 data/settings.json
 data/schedule.json
+data/memory.json*
 data/faces/
 data/recordings/
 data/artworks/

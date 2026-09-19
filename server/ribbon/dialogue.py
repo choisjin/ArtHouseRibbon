@@ -22,6 +22,8 @@ from .providers.llm import LLM
 from .providers.tts import TTS
 from .queue import Turn, TurnQueue
 from .world_store import WorldStore
+from . import memory as mem
+from .memory import MemoryStore
 from .settings_store import ConfigStore
 
 log = logging.getLogger("ribbon.dialogue")
@@ -33,7 +35,8 @@ _SENTENCE_END = re.compile(r"(?<=[.!?。！？…])\s+|\n+")
 
 class DialogueManager:
     def __init__(self, settings: Settings, kids: KidRegistry, llm: LLM, tts: TTS, broadcast: Broadcast,
-                 store: Optional[ConfigStore] = None, world: Optional["WorldStore"] = None):
+                 store: Optional[ConfigStore] = None, world: Optional["WorldStore"] = None,
+                 memory: Optional[MemoryStore] = None):
         self.settings = settings
         self.kids = kids
         self.llm = llm
@@ -41,6 +44,9 @@ class DialogueManager:
         self.broadcast = broadcast
         self.store = store
         self.world = world
+        self.memory = memory
+        self._learn_lock = asyncio.Lock()              # 약속 뽑기는 한 번에 하나씩 (대화 모델 부담)
+        self._bg: set = set()                          # 뒤에서 도는 약속 뽑기 작업
         self.queue = TurnQueue()
         self.ribbon_state: RibbonState = "idle"
         self.target_kid: Optional[str] = None
@@ -215,6 +221,46 @@ class DialogueManager:
             await self._after_turn()
 
     # ---------- 내부 ----------
+    # ---------- 약속 기억하기 (memory.py) ----------
+    def _memory_on(self) -> bool:
+        rc = self.store.config.ribbon if self.store else None
+        return self.memory is not None and (rc is None or rc.memory_enabled)
+
+    def _promises(self, kid: KidInfo) -> str:
+        if not self._memory_on():
+            return ""
+        kid_id = None if kid.id.startswith("unknown_") else kid.id
+        return mem.prompt_block(self.memory.for_kid(kid_id), call_name(kid))
+
+    def _maybe_learn(self, kid: KidInfo, kid_said: str, reply: str, before: List[Dict[str, str]]) -> None:
+        """아이 말에 지적·금지 표현이 있으면 대답이 끝난 뒤 뒤에서 약속을 뽑는다 (대답은 기다리지 않는다)"""
+        if not self._memory_on() or kid.id.startswith("unknown_") or not mem.looks_like_correction(kid_said):
+            return
+        # 아이가 고친 것은 보통 리본이가 그 전에 한 말이다
+        prev = next((m["content"] for m in reversed(before) if m["role"] == "assistant"), "")
+        task = asyncio.create_task(self._learn(kid, kid_said, prev or reply))
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+
+    async def _learn(self, kid: KidInfo, kid_said: str, ribbon_said: str) -> None:
+        assert self.memory is not None
+        async with self._learn_lock:
+            mine = self.memory.list(kid.id)
+            msgs = mem.extract_messages(self.ribbon_name, call_name(kid), mine, ribbon_said, kid_said)
+            try:
+                raw = "".join([d async for d in self.llm.stream(msgs)])
+            except Exception:  # noqa: BLE001 - 약속 뽑기가 실패해도 대화는 계속된다
+                log.exception("약속 뽑기 실패")
+                return
+            changes = mem.parse_changes(raw)
+            removed = [r.text for r in mine if r.id in changes["remove"] and self.memory.remove(r.id)]
+            if self.store:
+                self.memory.max_per_kid = self.store.config.ribbon.memory_max_per_kid
+            added = [r.text for t in changes["add"] if (r := self.memory.add(t, kid.id, source=kid_said))]
+            if added or removed:
+                log.info("약속 %s: +%s -%s", kid.name, added, removed)
+                await self.broadcast({"type": "memory.changed", "kid_id": kid.id, "added": added, "removed": removed})
+
     @staticmethod
     def _compact(text: str) -> str:
         return "".join(ch for ch in text if ch.isalnum())
@@ -255,7 +301,7 @@ class DialogueManager:
                 messages = persona.build_messages(
                     kid if not kid.id.startswith("unknown_") else None, history, text,
                     name=rc.name if rc else "리본", extra=rc.persona_extra if rc else "",
-                    max_sentences=max_sentences)
+                    max_sentences=max_sentences, promises=self._promises(kid))
                 sentences: List[str] = []
                 synth: List[asyncio.Task] = []   # 문장이 완성되는 즉시 합성을 시작한다 (pipelining)
                 first_ready = asyncio.Event()
@@ -295,6 +341,7 @@ class DialogueManager:
             history.append({"role": "user", "content": text})
             history.append({"role": "assistant", "content": " ".join(sentences)})
             del history[:-16]
+            self._maybe_learn(kid, text, " ".join(sentences), history[:-2])
         except Exception:
             log.exception("LLM 응답 실패")
             await self._say("미안, 잠깐 생각이 안 났어. 다시 말해줄래?", kid.id, final=True)

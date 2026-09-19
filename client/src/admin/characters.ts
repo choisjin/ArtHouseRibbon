@@ -1,6 +1,7 @@
 import type { CharacterProfile, RibbonConfig } from "../protocol";
 import type { Ribbon3D } from "../tv/ribbon3d";
 import { CHARACTERS, characterOf, DEFAULT_LOOK, type RibbonLook } from "../world/doll";
+import { mountPromises } from "./promises";
 import { api, type AdminCtx, esc, mountPreview, snapshot } from "./shared";
 
 /** 서버 ribbon/voices.py 의 목소리 (기본 10개 + 섞은 조합) */
@@ -17,6 +18,8 @@ const TINT_NAME: Record<string, string> = { hair: "머리", bow: "머리 리본"
 export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: string): void } {
   const shots = new Map<string, string>();       // 캐릭터 id + 옷·색 → 사진 dataURL
   let voices: VoiceInfo[] = [];                   // 서버에서 한 번 읽는다
+  const commonPromisesEl = document.createElement("div");   // 목록을 다시 그려도 같은 것을 다시 붙인다
+  const commonPromises = mountPromises(commonPromisesEl, ctx);
   let current: string | undefined;                // 지금 보는 설정 페이지
   let rendered = "";                              // 목록을 마지막으로 그린 설정 (같으면 다시 안 그림)
 
@@ -76,6 +79,11 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           ${Object.values(CHARACTERS).map((c) => card(c.id)).join("")}
         </div>
         ${commonForm()}
+        <section class="card">
+          <h2>모든 아이와의 약속</h2>
+          <div id="common-promises"></div>
+          <p class="hint">어느 캐릭터가 주인공이든 모든 아이와 대화할 때 지킵니다. 아이 한 명과의 약속은 아이들 탭에서 봅니다.</p>
+        </section>
       </div>`;
     const main = el.querySelector("#main-sel") as HTMLSelectElement;
     const friend = el.querySelector("#friend-sel") as HTMLSelectElement;
@@ -93,6 +101,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     el.querySelectorAll<HTMLButtonElement>("[data-edit]").forEach((b) => { b.onclick = () => ctx.go(`characters/${b.dataset.edit}`); });
     el.querySelectorAll<HTMLImageElement>("img[data-shot]").forEach((img) => void fillShot(img));
     bindCommon();
+    (el.querySelector("#common-promises") as HTMLElement).appendChild(commonPromisesEl);
+    commonPromises.show(null);
   }
 
   function card(id: string): string {
@@ -139,6 +149,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         <label>추임새 간격 (초) <input name="filler_interval_s" type="number" step="0.5" min="1" max="15" /></label>
         <label class="inline"><input name="ack_enabled" type="checkbox" /> 알아들으면 바로 짧게 반응 ("응!", "아하!")</label>
         <label class="inline"><input name="filler_enabled" type="checkbox" /> 답이 늦으면 추임새 ("음...")</label>
+        <label class="inline"><input name="memory_enabled" type="checkbox" /> 아이가 지적하거나 하지 말라고 한 것을 약속으로 기억하기</label>
+        <label>아이 한 명당 약속 수 (넘치면 오래된 것부터 지움) <input name="memory_max_per_kid" type="number" min="1" max="50" /></label>
         <label class="inline"><input name="wander" type="checkbox" /> 평소에 방을 돌아다니기 (끄면 "부르면 오는 자리"에 서 있음)</label>
         <label>걷는 속도 <input name="walk_speed" type="range" min="0.5" max="2" step="0.1" /> <output id="walk-out"></output></label>
         <label>대화가 끝나고 다시 돌아다니기까지 (초) <input name="return_after_s" type="number" step="1" min="0" max="120" /></label>
@@ -158,6 +170,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     fld("filler_interval_s").value = String(r.filler_interval_s ?? 4);
     fld("ack_enabled").checked = r.ack_enabled ?? true;
     fld("filler_enabled").checked = r.filler_enabled ?? true;
+    fld("memory_enabled").checked = r.memory_enabled ?? true;
+    fld("memory_max_per_kid").value = String(r.memory_max_per_kid ?? 20);
     fld("wander").checked = r.wander ?? true;
     fld("walk_speed").value = String(r.walk_speed ?? 1);
     fld("return_after_s").value = String(r.return_after_s ?? 8);
@@ -174,6 +188,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           filler_delay_s: Number(fld("filler_delay_s").value) || 1.5,
           filler_interval_s: Number(fld("filler_interval_s").value) || 4,
           ack_enabled: fld("ack_enabled").checked, filler_enabled: fld("filler_enabled").checked,
+          memory_enabled: fld("memory_enabled").checked,
+          memory_max_per_kid: Number(fld("memory_max_per_kid").value) || 20,
           wander: fld("wander").checked, walk_speed: Number(fld("walk_speed").value) || 1,
           return_after_s: Number(fld("return_after_s").value) || 0,
         });

@@ -25,6 +25,7 @@ from .config import settings
 from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
+from .memory import MemoryStore
 from .providers import llm as llm_mod
 from .providers.llm import make_llm
 from .providers.stt import make_stt
@@ -82,6 +83,7 @@ hub = Hub()
 devices = DeviceBoard()
 kids = KidRegistry.load(settings.kids_path())
 store = ConfigStore(settings.settings_path())
+memory = MemoryStore(settings.memory_path(), store.config.ribbon.memory_max_per_kid)
 schedule = sched.ScheduleStore(settings.schedule_path())
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 # 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다
@@ -92,7 +94,7 @@ stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world)
+dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world, memory)
 renderer = WorldRenderer(world, settings.blender_exe, settings.render_pct, settings.render_samples,
                          on_change=dialogue.notify_config_changed)
 world.render_info = renderer.info
@@ -170,7 +172,42 @@ async def api_kid_delete(kid_id: str):
         raise HTTPException(404, "없는 아이")
     world.forget_kid_room(room)          # 전시실에 걸어 둔 그림 목록도 같이 지운다 (사진 파일은 남는다)
     schedule.drop_kid(kid_id)
+    memory.forget_kid(kid_id)            # 그 아이와 한 약속
     await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True})
+
+
+# ---------- 리본이가 기억하는 약속 (memory.py) ----------
+
+@app.get("/api/memory")
+async def api_memory_list(kid_id: str | None = None, common: bool = False):
+    """kid_id 면 그 아이 약속, common=true 면 모든 아이 공통 약속, 둘 다 없으면 전부"""
+    return JSONResponse([r.model_dump() for r in memory.list(kid_id, only_global=common)])
+
+
+@app.post("/api/memory")
+async def api_memory_add(data: dict = Body(...)):
+    """관리자가 직접 적는 약속. kid_id 가 없으면 모든 아이 공통"""
+    memory.max_per_kid = store.config.ribbon.memory_max_per_kid
+    rule = memory.add(str(data.get("text") or ""), data.get("kid_id") or None, by="admin")
+    if rule is None:
+        raise HTTPException(400, "비어 있거나 이미 있는 약속입니다")
+    return JSONResponse(rule.model_dump())
+
+
+@app.put("/api/memory/{rule_id}")
+async def api_memory_update(rule_id: str, data: dict = Body(...)):
+    """글 고치기, 또는 kid_id=null 로 모든 아이 공통으로 올리기"""
+    rule = memory.update(rule_id, data)
+    if rule is None:
+        raise HTTPException(404, "없는 약속")
+    return JSONResponse(rule.model_dump())
+
+
+@app.delete("/api/memory/{rule_id}")
+async def api_memory_delete(rule_id: str):
+    if not memory.remove(rule_id):
+        raise HTTPException(404, "없는 약속")
     return JSONResponse({"ok": True})
 
 

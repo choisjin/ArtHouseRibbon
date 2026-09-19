@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     kids_file: str = "../data/kids.json"
     settings_file: str = "../data/settings.json"
     schedule_file: str = "../data/schedule.json"   # 시간표의 하루짜리 변경 (schedule.py)
+    memory_file: str = "../data/memory.json"       # 리본이가 기억하는 약속 (memory.py)
     world_dir: str = "../data/world"          # 방별 가구 배치 (world_store.py)
     artworks_dir: str = "../data/artworks"    # 벽에 거는 그림
     world_catalog: str = "../client/public/world/catalog.json"   # tools/sync_world.py 가 가져온 카탈로그
@@ -71,6 +72,9 @@ class Settings(BaseSettings):
 
     def settings_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.settings_file).resolve()
+
+    def memory_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.memory_file).resolve()
 
     def schedule_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.schedule_file).resolve()

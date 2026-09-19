@@ -47,6 +47,9 @@ export interface RibbonConfig {
   /** 이만큼(ms) 조용하면 아이 말이 끝난 것으로 본다 */
   end_silence_ms?: number;
   filler_enabled?: boolean;
+  /** 아이가 지적·금지한 것을 약속으로 기억 (서버 memory.py) */
+  memory_enabled?: boolean;
+  memory_max_per_kid?: number;
   filler_delay_s?: number;
   filler_interval_s?: number;
   look?: Partial<import("./world/doll").RibbonLook>;
@@ -144,6 +147,12 @@ export interface SpeakStopMsg { type: "speak.stop" }
 /** 불렀을 때 "듣고 있어" 신호. TV 가 짧은 "띵" 소리를 낸다 */
 export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string }
 
+/** 리본이가 기억하는 약속 (서버 memory.Rule). kid_id 가 null 이면 모든 아이 공통 */
+export interface MemoryRule { id: string; text: string; kid_id: string | null; source: string; created: string; by: "auto" | "admin" }
+
+/** 대화 중 아이의 지적·금지로 약속이 생기거나 없어졌을 때 (관리자 화면) */
+export interface MemoryChangedMsg { type: "memory.changed"; kid_id: string; added: string[]; removed: string[] }
+
 /** 관리자 조작에 대한 서버 알림 (예: 마이크가 없는 아이를 호출) */
 export interface AdminMsg { type: "admin.msg"; text: string; error?: boolean }
 
@@ -170,4 +179,4 @@ export type DeviceControlMsg = { type: "device.control"; agent: string; kind: "o
 );
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
-  | SpeakStopMsg | CueMsg | AdminMsg | DevicesMsg | DeviceControlMsg;
+  | SpeakStopMsg | CueMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg;

@@ -1,4 +1,5 @@
 import type { ClassSlot, KidInfo } from "../protocol";
+import { mountPromises } from "./promises";
 import { ageOf, api, type AdminCtx, DAYS, esc, kidLabel, toMin } from "./shared";
 
 /**
@@ -39,6 +40,11 @@ export function mountKids(el: HTMLElement, ctx: AdminCtx): { select(id: string):
             <p class="hint">리본이가 이 아이와 이야기할 때 참고합니다. 메모는 아이에게 그대로 말하지 않습니다.
               생일이면 축하하고, 별명이 있으면 별명으로 부릅니다.</p>
           </fieldset>
+          <fieldset><legend>리본이와의 약속</legend>
+            <div id="kid-promises"></div>
+            <p class="hint">아이가 대화 중에 지적하거나 하지 말라고 한 것을 리본이가 약속으로 기억해 다음 대화부터 지킵니다.
+              잘못 생긴 약속은 지우고, 다른 아이에게도 지킬 것은 "모두에게"로 올리세요.</p>
+          </fieldset>
           <div class="actions"><button type="submit" class="primary">저장</button><button type="button" id="kid-delete" class="danger">삭제</button></div>
         </form>
       </section>
@@ -47,6 +53,7 @@ export function mountKids(el: HTMLElement, ctx: AdminCtx): { select(id: string):
   const form = $("#kid-form") as HTMLFormElement;
   const field = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
   let selected: KidInfo | null = null;
+  const promises = mountPromises($("#kid-promises"), ctx);
 
   function renderList(): void {
     const q = ($("#kid-search") as HTMLInputElement).value.trim();
@@ -111,6 +118,7 @@ export function mountKids(el: HTMLElement, ctx: AdminCtx): { select(id: string):
     setSlots(k?.schedule ?? []);
     $("#kid-title").textContent = k ? kidLabel(k) : "새 아이";
     $("#kid-delete").hidden = !k;
+    promises.show(k?.id);
     showAge();
   }
 
@@ -144,6 +152,7 @@ export function mountKids(el: HTMLElement, ctx: AdminCtx): { select(id: string):
       field("id").value = saved.id;
       $("#kid-title").textContent = kidLabel(saved);
       $("#kid-delete").hidden = false;
+      promises.show(saved.id);
       ctx.msg(`${saved.name} 저장됨`);
     } catch (err) { ctx.msg(String(err), true); }
   };
