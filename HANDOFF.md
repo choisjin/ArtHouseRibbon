@@ -70,6 +70,11 @@
   ③ 캐릭터 탭 "아이 말 녹음 저장" -> `data/recordings/<날짜>/` wav + index.jsonl (git 제외).
   `python tools/stt_eval.py` 로 모델 비교 (large-v3-turbo vs large-v3-mlx, index.jsonl 의 correct 를 채우면 CER).
   더 나은 모델이면 `.env` 의 `RIBBON_STT_MODEL` 을 바꾼다.
+  모델 이름은 `mlx_repo` 가 바꾼다 (large-v3 -> whisper-large-v3-mlx). 못 받으면 turbo 로 돌아간다.
+- **끼어들기** (`audio/bargein.py`): 리본이가 말하는 동안(에코 막기 중)에도 채널별 최근 0.5초를 기억, `barge_in_rms`(기본 0.06)
+  보다 큰 소리가 0.3초 이어지면 리본이를 멈추고(`dialogue.barge_in`) 그 소리부터 이어서 듣는다. 끼어든 뒤엔 리본이가
+  다시 말할 때까지 에코 막기를 쉰다(`_barged`). 리본이가 한 번 말할 때마다 로그 "리본이 목소리가 마이크 N 에 들어온 크기"
+  = 에코 크기 -> 기준은 그보다 넉넉히 크게 (캐릭터 탭).
 
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**

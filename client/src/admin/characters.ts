@@ -154,6 +154,9 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         <label class="inline"><input name="pokedex_enabled" type="checkbox" /> 포켓몬 이야기가 나오면 도감을 보고 답하기 (tools/fetch_pokedex.py 로 받아 둔 도감)</label>
         <label>포켓몬 맞추기에 나올 포켓몬 (도감 1번 ~ 이 번호, 151 = 1세대, 1025 = 전부)
           <input name="game_max_id" type="number" min="10" max="1025" /></label>
+        <label class="inline"><input name="barge_in" type="checkbox" /> 리본이가 말하는 중에 아이가 말하면 멈추고 듣기 (끼어들기)</label>
+        <label>끼어들기 소리 크기 기준 (서버 로그 "리본이 목소리가 마이크에 들어온 크기" 보다 넉넉히 크게. 잘 안 멈추면 낮추기)
+          <input name="barge_in_rms" type="number" step="0.005" min="0.01" max="0.5" /></label>
         <label class="inline"><input name="save_recordings" type="checkbox" /> 인식 개선용으로 아이 말 녹음 저장 (data/recordings/, tools/stt_eval.py 로 모델 비교)</label>
         <label class="inline"><input name="memory_enabled" type="checkbox" /> 아이가 지적하거나 하지 말라고 한 것을 약속으로 기억하기</label>
         <label>아이 한 명당 약속 수 (넘치면 오래된 것부터 지움) <input name="memory_max_per_kid" type="number" min="1" max="50" /></label>
@@ -180,6 +183,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     fld("memory_enabled").checked = r.memory_enabled ?? true;
     fld("pokedex_enabled").checked = r.pokedex_enabled ?? true;
     fld("save_recordings").checked = r.save_recordings ?? false;
+    fld("barge_in").checked = r.barge_in ?? true;
+    fld("barge_in_rms").value = String(r.barge_in_rms ?? 0.06);
     fld("game_max_id").value = String(r.game_max_id ?? 151);
     fld("memory_max_per_kid").value = String(r.memory_max_per_kid ?? 20);
     fld("wander").checked = r.wander ?? true;
@@ -202,6 +207,8 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           memory_enabled: fld("memory_enabled").checked,
           pokedex_enabled: fld("pokedex_enabled").checked,
           save_recordings: fld("save_recordings").checked,
+          barge_in: fld("barge_in").checked,
+          barge_in_rms: Number(fld("barge_in_rms").value) || 0.06,
           game_max_id: Math.max(10, Math.min(1025, Number(fld("game_max_id").value) || 151)),
           memory_max_per_kid: Number(fld("memory_max_per_kid").value) || 20,
           wander: fld("wander").checked, walk_speed: Number(fld("walk_speed").value) || 1,

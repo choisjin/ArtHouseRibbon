@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .audio import recorder
+from .audio.bargein import BargeIn
 from .audio.button import ButtonCall, DjiButton
 from .audio.stream import ChannelProcessor
 from .audio.wakeword import make_wakeword
@@ -592,6 +593,9 @@ def _spawn(coro) -> None:
     task.add_done_callback(_tasks.discard)
 
 
+_barge: Dict[int, BargeIn] = {}      # 채널별 끼어들기 감지 (audio/bargein.py)
+
+
 async def _transcribe_and_dispatch(channel: int, pcm: np.ndarray) -> None:
     prompt = dialogue.stt_prompt()           # 아이·캐릭터 이름, 게임 말을 미리 알려 준다
     try:
@@ -639,9 +643,25 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
         return
     proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
     proc.follow_up_s = 20.0 if (dialogue.quiz and dialogue.quiz.active) else None   # 게임 중엔 답할 시간을 넉넉히
+    barge = _barge.setdefault(channel, BargeIn())
     if settings.echo_guard and dialogue.speaking():
+        rc = store.config.ribbon
+        if rc.barge_in and kids.by_channel(channel) is not None:
+            frames = barge.feed(pcm, rc.barge_in_rms)
+            if frames is not None:
+                # 아이가 끼어들었다: 리본이를 멈추고, 기억해 둔 0.5초(말 앞부분)부터 이어서 듣는다
+                dialogue.note_barge_in()
+                proc.start_listening()
+                for f in frames:
+                    proc.feed(f)
+                _spawn(dialogue.barge_in(channel))
+                return
         proc.hold()                  # 리본이 목소리가 마이크로 다시 들어오는 것 (에코)
         return
+    if barge.peak:
+        peak = barge.end()           # 리본이가 한 번 말하는 동안 이 마이크에 들어온 가장 큰 소리 = 에코 크기
+        log.info("리본이 목소리가 마이크 %d 에 들어온 크기: %.3f (끼어들기 기준 %.3f)", channel + 1, peak,
+                 store.config.ribbon.barge_in_rms)
     for kind, payload in proc.feed(pcm):
         if kind == "wake":
             if kids.by_channel(channel) is None and any(k.mic_channel is not None for k in kids.all()):

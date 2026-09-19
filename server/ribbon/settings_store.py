@@ -41,6 +41,8 @@ class RibbonConfig(BaseModel):
     pokedex_enabled: bool = True # 아이 말에 포켓몬이 나오면 도감을 참고해 답한다 (knowledge/pokedex.py)
     game_max_id: int = 151       # 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 (151 = 1세대)
     save_recordings: bool = False  # 인식 개선용으로 아이 말 녹음을 data/recordings/ 에 저장 (tools/stt_eval.py)
+    barge_in: bool = True        # 리본이가 말하는 중에 아이가 말하면 멈추고 그 말을 받는다 (audio/bargein.py)
+    barge_in_rms: float = 0.06   # 끼어들기 소리 크기 기준. 로그의 "리본이 목소리가 마이크에 들어온 크기" 보다 넉넉히 크게
     filler_enabled: bool = True  # 답이 늦으면 "음..." 추임새
     filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
     filler_interval_s: float = 4.0  # 그 뒤 추임새 간격

@@ -68,6 +68,7 @@ class DialogueManager:
         self._more: Optional[asyncio.Event] = None     # 답을 생각하는 중에 아이가 이어 말했다
         self._hold_until = 0.0                         # "띵" 소리가 마이크로 다시 들어가지 않게 잠깐 막는다
         self._said: List[tuple] = []                   # (띄어쓰기 뺀 문장, 시각) 리본이가 방금 한 말 (자기 목소리 듣기 막기)
+        self._barged = False                           # 아이가 끼어들었다: 리본이가 다시 말할 때까지 에코 막기를 쉰다
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
@@ -115,6 +116,23 @@ class DialogueManager:
             await self._say(persona.queue_notice(call_name(kid), active_name), kid.id, final=True)
         await self._broadcast_state()
 
+    def note_barge_in(self) -> None:
+        """끼어들기를 알아챈 바로 그 순간 (main 이 오디오를 처리하며 부른다): 다음 소리 조각부터 마이크를 막지 않는다"""
+        self._barged = True
+
+    async def barge_in(self, channel: int) -> None:
+        """아이가 리본이 말하는 중에 말을 시작했다 (audio/bargein.py). 리본이는 하던 말·생각을 멈추고 그 말을 기다린다"""
+        kid = self._kid_for_channel(channel)
+        log.info("끼어들기: %s (ch=%s) - 리본이 말 멈춤", kid.name, channel)
+        self._barged = True
+        if self._responding or self._pending_done or self._speak_lock.locked() or self._waiting:
+            await self.stop(advance=False, reason=f"{kid.name} 끼어들기")
+        else:
+            await self.broadcast({"type": "speak.stop"})
+        self._barged = True                            # stop 이 에코 막기를 되살리지 않게
+        if self.queue.active() is None or (self.quiz and self.quiz.active):
+            await self._set_ribbon("listening", kid.id)
+
     def busy(self) -> bool:
         """말하거나 생각하거나, 차례를 기다리는 아이가 있는가"""
         return self._responding or self._speak_lock.locked() or bool(self._pending_done) or len(self.queue) > 0
@@ -128,6 +146,7 @@ class DialogueManager:
         """호출 버튼(DJI 송신기)이 눌렸다. 누가 눌렀는지 몰라서 "띵"만 하고, 먼저 말하는 아이를 기다린다 (claim)"""
         log.info("호출 버튼: 채널 %s 듣는 중", [c + 1 for c in armed])
         await self._set_ribbon("listening", None)
+        self._barged = False
         self._hold_until = time.time() + 0.35         # 띵 소리가 마이크로 들어가는 것만 막는다
         await self.broadcast({"type": "button", "channels": armed})
         await self.broadcast({"type": "cue", "kind": "listen", "kid_id": None})
@@ -247,6 +266,8 @@ class DialogueManager:
     def speaking(self, now: Optional[float] = None) -> bool:
         """리본이 목소리가 스피커에서 나오고 있을 수 있는가 (말하는 중 + 끝난 뒤 echo_tail_ms)"""
         now = time.time() if now is None else now
+        if self._barged:
+            return False                               # 끼어든 아이 말을 받는 중 (마이크를 막지 않는다)
         if now < self._hold_until:
             return True
         if self._speak_lock.locked() or self._pending_done or self._waiting is not None:
@@ -568,6 +589,7 @@ class DialogueManager:
         if rc is not None and rc.listen_cue == "voice":
             await self._say(persona.listening_prompt(call_name(kid)), kid.id, final=True)
             return
+        self._barged = False
         self._hold_until = time.time() + 0.35         # 띵 소리(0.25초)가 마이크로 들어가는 것만 막는다
         self._last_spoken_at = time.time()           # 여기부터 "말 안 하면 끝내기" 시간을 잰다
         await self.broadcast({"type": "cue", "kind": "listen", "kid_id": kid.id})
@@ -596,6 +618,7 @@ class DialogueManager:
             if gen != self._stop_gen:
                 return                                # 기다리는 사이 관리자가 중단했다
             utt_id = f"u{next(_utt_ids)}"
+            self._barged = False                       # 리본이가 다시 말한다: 에코 막기 다시
             log.info("리본> %s", text)
             self._said.append((self._compact(text), time.time()))
             await self._set_ribbon("speaking", kid_id)
