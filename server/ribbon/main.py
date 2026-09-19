@@ -608,6 +608,9 @@ async def _on_button() -> None:
     if dialogue.ignore_calls:
         log.info("호출 무시 중이라 버튼을 받지 않음")
         return
+    await dialogue.reset_for_button()          # 하던 대화를 멈추고 처음부터 듣는다
+    for proc in processors.values():
+        proc.stop_listening()                    # 이어 말하기로 듣던 채널도 버튼 기준으로 새로
     channels = sorted({k.mic_channel for k in kids.all() if k.mic_channel is not None}) or list(processors)
     armed = button_call.press(channels, store.config.ribbon.button_window_s)
     await dialogue.on_button(armed)

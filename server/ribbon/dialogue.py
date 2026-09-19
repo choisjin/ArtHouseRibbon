@@ -108,9 +108,19 @@ class DialogueManager:
             await self._say(persona.queue_notice(call_name(kid), active_name), kid.id, final=True)
         await self._broadcast_state()
 
+    def busy(self) -> bool:
+        """말하거나 생각하거나, 차례를 기다리는 아이가 있는가"""
+        return self._responding or self._speak_lock.locked() or bool(self._pending_done) or len(self.queue) > 0
+
+    async def reset_for_button(self) -> None:
+        """호출 버튼: 하던 대화(말·생각·대기 줄)를 모두 멈추고 새로 들을 준비. 누가 눌렀는지 몰라 줄도 비운다"""
+        if self.busy():
+            await self.stop(clear_queue=True, advance=False, reason="호출 버튼으로 대화 멈춤")
+
     async def on_button(self, armed: List[int]) -> None:
         """호출 버튼(DJI 송신기)이 눌렸다. 누가 눌렀는지 몰라서 "띵"만 하고, 먼저 말하는 아이를 기다린다 (claim)"""
         log.info("호출 버튼: 채널 %s 듣는 중", [c + 1 for c in armed])
+        await self._set_ribbon("listening", None)
         self._hold_until = time.time() + 0.35         # 띵 소리가 마이크로 들어가는 것만 막는다
         await self.broadcast({"type": "button", "channels": armed})
         await self.broadcast({"type": "cue", "kind": "listen", "kid_id": None})
@@ -137,6 +147,13 @@ class DialogueManager:
         await self.broadcast(TranscriptMessage(kid_id=kid.id, channel=channel, text=text).model_dump())
 
         if self._is_cancel(text):
+            active = self.queue.active()
+            if active is not None and active.channel == channel:
+                # 지금 이 아이 차례: 생각·말하던 것도 멈추고 차례를 끝낸다
+                await self.stop(advance=False, reason=f"{kid.name} 음성 취소")
+                await self._say(persona.cancel_notice(call_name(kid)), kid.id, final=True)
+                await self._after_turn()
+                return
             turn = self.queue.cancel(channel)
             if turn:
                 log.info("cancel ch=%s", channel)
@@ -179,9 +196,9 @@ class DialogueManager:
         log.info("호출 무시 %s", "켬" if on else "끔")
         await self._broadcast_state()
 
-    async def stop(self, clear_queue: bool = False) -> None:
+    async def stop(self, clear_queue: bool = False, advance: bool = True, reason: str = "관리자 중단") -> None:
         """지금 하던 말·생각을 멈추고 이 차례를 끝낸다. clear_queue 면 기다리는 아이들도 모두 지운다.
-        기다리는 아이가 남아 있으면 다음 차례로 넘어간다."""
+        advance 면 기다리는 아이가 남아 있을 때 다음 차례로 넘어간다 (아니면 부른 쪽이 이어서 처리)."""
         task = self._respond_task
         if task and not task.done() and task is not asyncio.current_task():
             task.cancel()
@@ -203,8 +220,11 @@ class DialogueManager:
             self.queue.clear()
         else:
             self.queue.complete_active()
-        log.info("관리자 중단 (대기열 %s)", "비움" if clear_queue else f"{len(self.queue)}명 남음")
-        await self._after_turn()
+        log.info("%s (대기열 %s)", reason, "비움" if clear_queue else f"{len(self.queue)}명 남음")
+        if advance:
+            await self._after_turn()
+        else:
+            await self._broadcast_state()
 
     def speaking(self, now: Optional[float] = None) -> bool:
         """리본이 목소리가 스피커에서 나오고 있을 수 있는가 (말하는 중 + 끝난 뒤 echo_tail_ms)"""
@@ -292,8 +312,7 @@ class DialogueManager:
         return any(heard in s or (len(s) >= 4 and s in heard) for s, _ in self._said)
 
     def _is_cancel(self, text: str) -> bool:
-        compact = text.replace(" ", "")
-        return any(p.replace(" ", "") in compact for p in self.settings.cancel_phrases)
+        return persona.is_cancel(text, tuple(self.settings.cancel_phrases), (self.ribbon_name,))
 
     async def _maybe_respond(self) -> None:
         active = self.queue.active()

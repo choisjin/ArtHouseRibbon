@@ -98,7 +98,39 @@ def queue_notice(kid_name: str, active_name: str) -> str:
 
 
 def cancel_notice(kid_name: str) -> str:
-    return f"알겠어 {call(kid_name)}, 취소했어."
+    return f"알겠어 {call(kid_name)}, 나중에 또 불러줘."
+
+
+# 음성 취소: 말 전체가 이것(과 군말)뿐일 때만 취소로 본다. "공룡 얘기 그만해" 는 취소가 아니라 지적이다
+_CANCEL = ["취소", "나중에할게", "나중에할래", "나중에해", "나중에", "다음에할게", "다음에할래", "다음에",
+           "됐어", "됐다", "됐고", "안할래", "안할게", "안해", "그만할래", "그만할게", "이제그만", "그만",
+           "아무것도아니야", "아무것도아냐", "아무것도", "잘못불렀어", "잘못눌렀어", "잘못", "할말없어", "없어"]
+# 취소 말 앞뒤에 붙는 군말 (긴 것부터 지운다)
+_FILLER = ["리본아", "리본", "아니야", "아니", "미안해", "미안", "그냥", "이제", "지금", "그럼", "근데", "에이",
+           "했어", "할게", "해줘", "해", "요", "야", "아", "어", "음", "응", "나", "난", "내말", "내"]
+
+
+def is_cancel(text: str, extra: tuple = (), names: tuple = ()) -> bool:
+    """이 말이 부른 것을 물리는 말인가 ("취소", "아 나중에 할게", "리본아 됐어")"""
+    compact = "".join(ch for ch in text if ch.isalnum())
+    if not compact or len(compact) > 16:
+        return False
+    phrases = sorted({p.replace(" ", "") for p in [*_CANCEL, *extra]}, key=len, reverse=True)
+    hit = next((p for p in phrases if p and p in compact), None)
+    if hit is None:
+        return False
+    rest = compact.replace(hit, "", 1)
+    fillers = sorted({*_FILLER, *(n.replace(" ", "") for n in names if n),
+                      *(call(n) for n in names if n)}, key=len, reverse=True)
+    changed = True
+    while rest and changed:                     # 앞뒤 군말을 벗긴다
+        changed = False
+        for f in fillers:
+            if rest.startswith(f):
+                rest, changed = rest[len(f):], True
+            elif rest.endswith(f):
+                rest, changed = rest[:-len(f)], True
+    return len(rest) <= 1
 
 
 def expired_notice(kid_name: str) -> str:
