@@ -45,6 +45,8 @@ def guess(report):
         for code in (report[i], v):
             if code in USAGES and USAGES[code] not in found:
                 found.append(USAGES[code])
+    if not found and len(report) >= 2 and report[1] & 0x01 and not any(report[2:]):
+        found.append("눌림 (첫 번째 키, DJI 는 볼륨 올림)")   # DJI Mic Mini 수신기: [06 01 00]
     return ", ".join(found) or ("(놓음)" if not any(report[1:]) else "?")
 
 
