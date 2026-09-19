@@ -143,6 +143,9 @@ def listening_prompt(kid_name: str) -> str:
     return f"응 {call(kid_name)}, 말해봐."
 
 
+BUTTON_PROMPT = "지금 말해줘."
+
+
 def turn_prompt(kid_name: str) -> str:
     """기다리던 아이 차례가 왔을 때 (이름을 불러야 누구 차례인지 안다)"""
     return f"{call(kid_name)}, 이제 네 차례야."

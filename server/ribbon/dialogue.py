@@ -69,6 +69,7 @@ class DialogueManager:
         self._hold_until = 0.0                         # "띵" 소리가 마이크로 다시 들어가지 않게 잠깐 막는다
         self._said: List[tuple] = []                   # (띄어쓰기 뺀 문장, 시각) 리본이가 방금 한 말 (자기 목소리 듣기 막기)
         self._barged = False                           # 아이가 끼어들었다: 리본이가 다시 말할 때까지 에코 막기를 쉰다
+        self._tts_cache: Dict[tuple, Optional[bytes]] = {}   # (말, 목소리 설정) -> 합성한 소리
 
     # ---------- 조회 ----------
     def snapshot(self) -> SessionSnapshot:
@@ -82,6 +83,34 @@ class DialogueManager:
     async def notify_config_changed(self) -> None:
         """관리자 페이지 저장 후 호출: 모든 화면에 새 설정을 보낸다."""
         await self._broadcast_state()
+        self._spawn_bg(self.prewarm())                 # 목소리를 바꿨으면 자주 쓰는 말을 새 목소리로 다시
+
+    # ---------- 자주 쓰는 말은 미리 합성 (버튼 "지금 말해줘." 가 바로 나오게) ----------
+    def _voice_key(self) -> tuple:
+        rc = self.store.config.ribbon if self.store else None
+        return (rc.voice, rc.speed, rc.steps, rc.pitch) if rc else ()
+
+    def _cacheable(self, text: str) -> bool:
+        return text == persona.BUTTON_PROMPT or text in persona._FILLERS
+
+    async def _synth(self, text: str) -> Optional[bytes]:
+        if not self._cacheable(text):
+            return await self.tts.synthesize(text)
+        key = (text, self._voice_key())
+        if key not in self._tts_cache:
+            self._tts_cache[key] = await self.tts.synthesize(text)
+        return self._tts_cache[key]
+
+    async def prewarm(self) -> None:
+        """서버가 켜질 때·목소리를 바꿨을 때: 버튼 말·추임새를 미리 만들어 둔다"""
+        vk = self._voice_key()
+        self._tts_cache = {k: v for k, v in self._tts_cache.items() if k[1] == vk}
+        for text in [persona.BUTTON_PROMPT, *persona._FILLERS]:
+            try:
+                await self._synth(text)
+            except Exception:  # noqa: BLE001 - 미리 만들기 실패는 말할 때 다시 해 본다
+                log.exception("미리 합성 실패: %s", text)
+                return
 
     @property
     def ribbon_name(self) -> str:
@@ -145,14 +174,14 @@ class DialogueManager:
         if self.busy():
             await self.stop(clear_queue=True, advance=False, reason="호출 버튼으로 대화 멈춤")
 
-    async def on_button(self, armed: List[int]) -> None:
-        """호출 버튼(DJI 송신기)이 눌렸다. 누가 눌렀는지 몰라서 "띵"만 하고, 먼저 말하는 아이를 기다린다 (claim)"""
-        log.info("호출 버튼: 채널 %s 듣는 중", [c + 1 for c in armed])
-        await self._set_ribbon("listening", None)
+    async def on_button(self, channels: List[int]) -> None:
+        """호출 버튼(DJI 송신기)이 눌렸다. 누가 눌렀는지 몰라서 "지금 말해줘." 라고만 하고 (미리 합성해 둔 소리라
+        바로 나온다), 끝나면 main 이 채널들을 듣기 시작해 먼저 말하는 아이를 기다린다 (claim)"""
+        log.info("호출 버튼: 채널 %s", [c + 1 for c in channels])
         self._barged = False
-        self._hold_until = time.time() + 0.35         # 띵 소리가 마이크로 들어가는 것만 막는다
-        await self.broadcast({"type": "button", "channels": armed})
-        await self.broadcast({"type": "cue", "kind": "listen", "kid_id": None})
+        await self.broadcast({"type": "button", "channels": channels})
+        await self._say(persona.BUTTON_PROMPT, None, final=True)
+        await self._set_ribbon("listening", None)
 
     async def claim(self, channel: int) -> None:
         """버튼 뒤 가장 먼저 말을 시작한 채널: 그 아이 차례를 만든다 (말이 끝나면 바로 대답한다)"""
@@ -628,7 +657,7 @@ class DialogueManager:
             self._said.append((self._compact(text), time.time()))
             await self._set_ribbon("speaking", kid_id)
             if audio is None:
-                audio = await self.tts.synthesize(text)
+                audio = await self._synth(text)
             audio_b64 = None
             if audio:
                 import base64

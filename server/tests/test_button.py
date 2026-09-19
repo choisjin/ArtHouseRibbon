@@ -54,13 +54,39 @@ async def test_claim_gives_turn_without_talking():
         sent.append(m)
     kids = KidRegistry([KidInfo(id="a", name="지우", mic_channel=0), KidInfo(id="b", name="민수", mic_channel=1)])
     dm = DialogueManager(Settings(), kids, MockLLM(), BrowserTTS(), broadcast)
+
+    async def fast_wait():
+        dm._pending_done.clear()
+    dm._wait_spoken = fast_wait
     await dm.on_button([0, 1])
-    assert {"type": "cue", "kind": "listen", "kid_id": None} in sent
+    assert [m["text"] for m in sent if m.get("type") == "speak"] == ["지금 말해줘."]   # 버튼 누르면 바로
     await dm.claim(1)
     active = dm.queue.active()
     assert active is not None and active.kid_id == "b"
     assert dm.ribbon_state == "listening"
-    assert not [m for m in sent if m.get("type") == "speak"]
+    assert len([m for m in sent if m.get("type") == "speak"]) == 1              # 차례를 줄 때는 말하지 않는다
+
+
+async def test_button_prompt_is_synthesized_ahead():
+    calls = []
+
+    class CountTTS:
+        async def synthesize(self, text):
+            calls.append(text)
+            return b"RIFF"
+
+    async def broadcast(m):
+        pass
+    dm = DialogueManager(Settings(), KidRegistry([]), MockLLM(), CountTTS(), broadcast)
+
+    async def fast_wait():
+        dm._pending_done.clear()
+    dm._wait_spoken = fast_wait
+    await dm.prewarm()
+    n = calls.count("지금 말해줘.")
+    await dm.on_button([0])
+    await dm.on_button([0])
+    assert n == 1 and calls.count("지금 말해줘.") == 1                        # 미리 만든 소리를 다시 쓴다
 
 
 def test_button_mode_takes_one_utterance_then_closes():

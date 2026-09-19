@@ -134,6 +134,7 @@ async def lifespan(app: FastAPI):
             if info is None or info["stale"]:
                 renderer.request(r)
     task = asyncio.create_task(_ticker())
+    _spawn(dialogue.prewarm())                   # 버튼 "지금 말해줘." 를 미리 합성
     button = None
     if settings.call_button_hid:
         loop = asyncio.get_running_loop()
@@ -687,8 +688,9 @@ async def _on_button() -> None:
     for proc in processors.values():
         proc.stop_listening()                    # 이어 말하기로 듣던 채널도 버튼 기준으로 새로
     channels = sorted({k.mic_channel for k in kids.all() if k.mic_channel is not None}) or list(processors)
-    armed = button_call.press(channels, store.config.ribbon.button_window_s)
-    await dialogue.on_button(armed)
+    await dialogue.on_button(channels)          # "지금 말해줘." (미리 합성해 둔 소리)
+    armed = button_call.press(channels, store.config.ribbon.button_window_s)   # 말이 끝난 뒤부터 듣는다
+    log.info("호출 버튼: 마이크 %s 듣는 중", [c + 1 for c in armed])
 
 
 async def _handle_text(ws: WebSocket, msg: dict) -> None:
