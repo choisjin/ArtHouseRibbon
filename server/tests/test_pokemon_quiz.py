@@ -177,3 +177,22 @@ async def test_menu_answer_repeating_ribbon_is_not_echo(tmp_path):
     await dm.on_utterance(0, "포켓몬 맞추기 하자")        # 리본: "... 2번 그림 보고 맞추기 ..."
     await dm.on_utterance(0, "그림 보고 맞추기")
     assert dm.quiz.phase == "confirm" and dm.quiz.pending == "image"
+
+
+def test_play_words_open_the_game():
+    for t in ["게임하자", "놀이하자", "놀아줘", "리본아 놀자", "심심해", "뭐 하고 놀까?", "퀴즈 내줘", "게임!",
+              "재밌는 거 하자", "맞추기 게임 할래", "그림 맞추기 하자"]:
+        assert detect_start(t) is not None, t
+    assert detect_start("그림 맞추기 하자") == "image"
+
+
+def test_stories_about_play_do_not_open_the_game():
+    for t in ["친구랑 게임했어", "놀이터 갔었어", "어제 친구랑 놀았어", "놀이공원 가고 싶어", "오늘 그림 그렸어"]:
+        assert detect_start(t) is None, t
+
+
+def test_saying_no_on_menu_goes_back_to_chat(tmp_path):
+    q = quiz(tmp_path)
+    q.open_menu()
+    r = q.handle("아니 소꿉놀이 하자")
+    assert r.passthrough and not q.active

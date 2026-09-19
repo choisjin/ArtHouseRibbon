@@ -72,10 +72,25 @@ _GAME_WORDS = ("맞추", "맞히", "맞춰", "맞혀", "맞출", "맞힐", "마�
                "알아맞", "문제내", "문제 내", "이름맞")
 
 
+# 놀자는 말 (2026-09-20 "게임하자, 놀이하자, 놀아줘 등 놀이와 관련된 모든 말로"). 지금 게임은 포켓몬 맞추기뿐이라 그 고르기 화면을 연다
+_PLAY_DIRECT = ("놀자", "놀아줘", "놀아주", "놀래", "놀까", "놀고싶", "노는거하자", "심심", "뭐하고놀", "뭐할까",
+                "뭐하지", "재밌는거", "재미있는거", "할거없", "할게없")
+_PLAY_WORDS = ("게임", "놀이", "퀴즈", "맞추기", "맞히기", "수수께끼")
+_PLAY_ASK = ("하자", "할래", "해줘", "해주", "하고싶", "할까", "해요", "시작", "내줘", "내봐", "하쟈", "할꺼")
+_NOT_PLAY = ("놀이터", "놀이공원", "놀이동산")   # 장소 이야기
+
+
 def detect_start(text: str) -> Optional[str]:
-    """게임을 하자는 말인가. 하자는 말이면 모드("" 는 아직 안 고름), 아니면 None"""
+    """게임(놀이)을 하자는 말인가. 하자는 말이면 모드("" 는 아직 안 고름), 아니면 None.
+    "친구랑 게임했어" 처럼 지난 이야기는 게임을 열지 않는다 (하자·할래·해줘… 가 붙을 때만)"""
     c = _compact(text).lower()
-    if not any(w in c for w in _POKEMON_WORDS) or not any(k.replace(" ", "") in c for k in _GAME_WORDS):
+    pokemon_game = any(w in c for w in _POKEMON_WORDS) and any(k.replace(" ", "") in c for k in _GAME_WORDS)
+    rest = c
+    for w in _NOT_PLAY:
+        rest = rest.replace(w, "")
+    direct = any(w in rest for w in _PLAY_DIRECT)
+    asked = any(w in rest for w in _PLAY_WORDS) and (any(a in rest for a in _PLAY_ASK) or rest in _PLAY_WORDS)
+    if not (pokemon_game or direct or asked):
         return None
     return detect_mode(text) or ""
 
@@ -203,6 +218,11 @@ class PokemonQuiz:
             mode = detect_mode(text)
             if _has(text, "그만", "안할래", "끝", "됐어"):
                 return self.stop()
+            if not mode and _is_no(text):
+                # "아니, 소꿉놀이 하자" 같은 다른 놀이: 게임 화면을 닫고 보통 대화(대화 모델)로 같이 논다
+                self.active = False
+                self.phase = ""
+                return Reply(ended=True, passthrough=True)
             if not mode:
                 return Reply(["1번 설명 듣고, 2번 그림 보고, 3번 가린 그림 중에 골라 줘!"])
             return self._pick(mode)
