@@ -41,8 +41,8 @@ const MARKUP = `
     <button id="reset" title="Character_Creator 카탈로그의 기본 배치로 (저장해야 반영)">기본 배치</button>
   </div>
   <div class="group">
-    <button id="setActive" title="관리자 페이지의 'TV 에 보여줄 방'과 같습니다">📺 TV 에 보여주기</button>
-    <button id="renderBg" title="블렌더로 TV 배경을 다시 렌더 (저장하면 자동으로도 함)">🎬 배경 렌더</button>
+    <button id="setActive" title="관리자 페이지의 'TV 에 보여줄 방'과 같습니다">TV 에 보여주기</button>
+    <button id="renderBg" title="블렌더로 TV 배경을 다시 렌더 (저장하면 자동으로도 함)">배경 렌더</button>
     <span id="renderStatus"></span>
     <a class="button" id="adminLink" href="/?mode=admin">관리자 페이지</a>
   </div>
@@ -175,7 +175,7 @@ async function addGalleries(): Promise<void> {
     for (const k of [...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))) {
       const o = document.createElement("option");
       o.value = `kid:${k.id}`;
-      o.textContent = `🖼 ${k.name} 전시실`;
+      o.textContent = `${k.name} 전시실`;
       g.appendChild(o);
     }
     document.getElementById("room")!.appendChild(g);

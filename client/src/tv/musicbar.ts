@@ -35,17 +35,17 @@ export class MusicBar {
       (this.el.querySelector("b") as HTMLElement).textContent = t.title;
       (this.el.querySelector(".mb-text span") as HTMLElement).textContent = t.artists;
     }
-    // 무엇을 틀고 있나: 검색해서 튼 한 곡이면 🔎, 재생목록이면 📃 와 목록 이름
+    // 무엇을 틀고 있나: 검색해서 튼 한 곡이면 , 재생목록이면 와 목록 이름
     const src = m.source;
     const srcEl = this.el.querySelector(".mb-src") as HTMLElement;
-    srcEl.textContent = !src ? "" : src.kind === "playlist" ? `📃 ${src.title}`
-      : src.kind === "search" ? "🔎 찾은 노래 한 곡" : src.kind === "album" ? "💿 앨범"
-      : src.kind === "artist" ? "🎤 가수 노래" : "";
+    srcEl.textContent = !src ? "" : src.kind === "playlist" ? `${src.title}`
+      : src.kind === "search" ? "찾은 노래 한 곡" : src.kind === "album" ? "앨범"
+      : src.kind === "artist" ? "가수 노래" : "";
     // 반복·섞기 (Spotify 앱에서 바꿔도 여기에 그대로 보인다)
     const repeat = m.repeat ?? "off";
     (this.el.querySelector(".mb-modes") as HTMLElement).innerHTML =
-      `<span class="${repeat === "off" ? "off" : ""}">${repeat === "track" ? "🔂 한 곡 반복" : repeat === "context" ? "🔁 목록 반복" : "🔁 반복 없음"}</span>` +
-      `<span class="${m.shuffle ? "" : "off"}">${m.shuffle ? "🔀 섞기" : "🔀 순서대로"}</span>`;
+      `<span class="${repeat === "off" ? "off" : ""}">${repeat === "track" ? "한 곡 반복" : repeat === "context" ? "목록 반복" : "반복 없음"}</span>` +
+      `<span class="${m.shuffle ? "" : "off"}">${m.shuffle ? "섞기" : "순서대로"}</span>`;
     (this.el.querySelector(".mb-icon") as HTMLElement).textContent = m.playing ? "♪" : "❚❚";
     this.el.classList.toggle("paused", !m.playing);
     this.tick();

@@ -10,7 +10,7 @@ export class Hud {
     for (const t of queue) {
       const el = document.createElement("div");
       el.className = "chip" + (t.state === "active" ? " active" : "");
-      el.textContent = t.state === "active" ? `★ ${name(t.kid_id)}` : `✋ ${t.position}. ${name(t.kid_id)}`;
+      el.textContent = t.state === "active" ? `★ ${name(t.kid_id)}` : `${t.position}. ${name(t.kid_id)}`;
       this.hud.appendChild(el);
     }
   }

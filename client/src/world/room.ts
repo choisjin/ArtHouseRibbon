@@ -248,6 +248,7 @@ export class RoomModel {
     const MM = (v: number) => (v / 1000) * U;
     const g = new THREE.Group();
     g.userData.art = a.id;
+    g.userData.artW = a.width;   // 지을 때의 가로 (전시실 꾸미기가 크기 막대를 끄는 동안 이것에 대고 늘린다)
     const w = a.width * U, h = w * a.aspect;
     // 그림과 액자는 'art-core' 에 모은다 (전시실 꾸미기가 고른 그림의 테두리를 여기에 맞춘다. 그림자·하이라이트 빛은 빼고)
     const core = new THREE.Group();

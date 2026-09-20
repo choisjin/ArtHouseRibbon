@@ -13,14 +13,14 @@ const ROLE_NAME: Record<string, string> = { admin: "관리자", member: "일반"
 export function mountAccounts(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   el.innerHTML = `
     <section class="card">
-      <h2>👤 계정 <small class="hint">누가 관리 화면에 들어올 수 있는지</small></h2>
+      <h2>계정 <small class="hint">누가 관리 화면에 들어올 수 있는지</small></h2>
       <p class="hint">관리자는 모든 화면을 쓸 수 있고, 일반 회원은 작품 찍어 보내기와 보기만 할 수 있습니다.
         새로 가입한 사람은 일반 회원으로 시작합니다.</p>
       <div data-role="list" class="accounts"></div>
       <p class="hint" data-role="msg"></p>
     </section>
     <section class="card">
-      <h3>🔑 내 비밀번호 바꾸기</h3>
+      <h3>내 비밀번호 바꾸기</h3>
       <label>지금 비밀번호 <input name="current" type="password" autocomplete="current-password" /></label>
       <label>새 비밀번호 (8자 이상) <input name="next" type="password" autocomplete="new-password" /></label>
       <div class="actions"><button data-act="password">바꾸기</button></div>

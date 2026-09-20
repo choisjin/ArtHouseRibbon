@@ -8,7 +8,7 @@ import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../wor
 /**
  * 부모님께 보내는 전시실 (?mode=gallery&k=<열쇠>). **보기 전용**이고 로그인하지 않는다.
  *
- * 전시실 꾸미기(?mode=art)의 🔗 공유에서 복사한 주소로 들어온다. 열쇠가 맞으면 서버(GET /api/share/<열쇠>)가
+ * 전시실 꾸미기(?mode=art)의 공유에서 복사한 주소로 들어온다. 열쇠가 맞으면 서버(GET /api/share/<열쇠>)가
  * 그 아이의 전시실들(1실·2실…)과 걸린 작품을 준다. 방 가운데에 선 것처럼 보여 주고, **쓸어 넘기면** 왼쪽·오른쪽 벽으로
  * 고개가 돌아간다 (world/lookaround.ts, 배경은 360° 파노라마 렌더). 두 손가락·휠로 당겨 본다.
  * 작품을 누르면(방 안의 그림이든 아래 작은 그림이든) 올린 그대로의 크기로 크게 보고 내려받을 수 있다.
@@ -30,7 +30,7 @@ export async function startGallery(): Promise<void> {
   }
   const data = await res.json() as Shared;
   document.title = `${data.name}의 전시실`;
-  $("#title").textContent = `🖼 ${data.name}의 전시실`;
+  $("#title").textContent = `${data.name}의 전시실`;
 
   const stage = new Stage($("#view"), await fetchCatalog());
   stage.setLooking(true);
@@ -181,7 +181,7 @@ const PAGE = `
   <div class="pic"><canvas id="big-cv"></canvas></div>
   <div class="bar"><b id="big-name"></b>
     <label>배경색 <input id="big-bg" type="color" value="#ffffff"></label>
-    <button id="big-save" class="on">⬇ 이 배경으로 받기</button>
-    <a id="big-raw" class="btn" download>⬇ 배경 없는 원본</a>
+    <button id="big-save" class="on">이 배경으로 받기</button>
+    <a id="big-raw" class="btn" download>배경 없는 원본</a>
     <button id="big-close">닫기</button></div>
 </div>`;

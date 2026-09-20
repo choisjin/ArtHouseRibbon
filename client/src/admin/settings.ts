@@ -41,37 +41,37 @@ systemDark.addEventListener("change", () => { if (readPref() === "system") apply
 
 export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: string): void } {
   const themes: [ThemePref, string, string][] = [
-    ["light", "☀️ 라이트", "밝은 화면"],
-    ["dark", "🌙 다크", "어두운 화면"],
-    ["system", "📱 기기 설정 따르기", "휴대폰·컴퓨터의 다크 모드를 따라갑니다"],
+    ["light", "라이트", "밝은 화면"],
+    ["dark", "다크", "어두운 화면"],
+    ["system", "기기 설정 따르기", "휴대폰·컴퓨터의 다크 모드를 따라갑니다"],
   ];
   el.innerHTML = `
     <div class="subtabs seg many">
-      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="accounts">👤 계정</button><button data-sub="theme">🎨 화면</button>
+      <button data-sub="mic">마이크</button><button data-sub="cam">카메라</button><button data-sub="output">TV 소리</button><button data-sub="llm">대화 모델</button><button data-sub="music">음악</button><button data-sub="accounts">계정</button><button data-sub="theme">화면</button>
     </div>
     <div class="settings">
       <section class="card" data-subpanel="mic" hidden>
-        <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <h2>마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
         <div data-role="role-note"></div>
         <div id="mic" class="agent"></div>
         <hr />
-        <h3>🔘 주소로 리본이 부르기</h3>
+        <h3>주소로 리본이 부르기</h3>
         <p class="hint">폰에 DJI 수신기를 꽂으면 송신기 버튼이 <b>폰 볼륨만 올립니다</b> (웹페이지는 USB 장치를 잡을 수 없습니다).
           폰의 매크로 앱(MacroDroid·Tasker)에서 <b>볼륨 올림 키</b>를 눌렀을 때 아래 주소를 열게 하면 호출 버튼과 똑같이 동작합니다.
-          블루투스 리모컨이나 TV 화면의 "🎤 리본아!" 단추를 써도 됩니다.</p>
+          블루투스 리모컨이나 TV 화면의 "리본아!" 단추를 써도 됩니다.</p>
         <div class="row"><code class="grow" data-role="call-url"></code><button data-act="copy-call">복사</button></div>
         <hr />
         <p class="hint">무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 관리자 페이지를 열어 두세요. 한 번 켜 두면 이 브라우저가 기억해서
           다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 듣지 못합니다.</b> 다른 탭으로 옮겨도 계속 받습니다.</p>
       </section>
       <section class="card" data-subpanel="cam" hidden>
-        <h2>📷 카메라 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <h2>카메라 <small class="hint">이 컴퓨터에서 받기</small></h2>
         <div data-role="role-note"></div>
         <div id="cam" class="agent"></div>
         <p class="hint">TV 위에 단 웹캠으로 아이들 얼굴 위치를 찾아 리본이가 그쪽을 바라봅니다. 영상은 저장하거나 보내지 않습니다.
           마이크처럼 한 번 켜 두면 이 브라우저가 기억해서 다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 아이들을 보지 못합니다.</b></p>
         <hr />
-        <h3>📱 폰으로 작품 찍어 보내기</h3>
+        <h3>폰으로 작품 찍어 보내기</h3>
         <p class="hint">폰 카메라로 QR 을 찍으면 작품 찍는 화면이 열립니다. 찍어서 보내면 그 아이 작품으로 저장됩니다
           (전시실 벽에 거는 것은 <a href="/?mode=art" target="_blank">전시실 꾸미기</a>에서).</p>
         <div class="snapqr">
@@ -83,11 +83,11 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
         </div>
       </section>
       <section class="card" data-subpanel="output" hidden>
-        <h2>🔈 TV 소리 출력</h2>
+        <h2>TV 소리 출력</h2>
         <div id="outputs" class="agents"></div>
       </section>
       <section class="card" data-subpanel="llm" hidden>
-        <h2>🧠 대화 모델 <small class="hint">리본이가 답할 때 쓰는 AI</small></h2>
+        <h2>대화 모델 <small class="hint">리본이가 답할 때 쓰는 AI</small></h2>
         <div id="llm" class="agent">
           <label>어디서 <select name="provider">
             <option value="mlx">MLX (맥미니 mlx-serve)</option>
@@ -103,7 +103,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
           <p class="hint" data-role="list"></p>
           <div class="actions">
             <button data-act="save" class="primary">저장</button>
-            <button data-act="test">💬 시험해 보기</button>
+            <button data-act="test">시험해 보기</button>
             <button data-act="reload">모델 목록 다시 읽기</button>
           </div>
           <p class="hint" data-role="result"></p>
@@ -113,7 +113,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
       <div class="music-tab" data-subpanel="music" hidden></div>
       <div class="music-tab" data-subpanel="accounts" hidden></div>
       <section class="card" data-subpanel="theme" hidden>
-        <h2>🎨 화면 스타일</h2>
+        <h2>화면 스타일</h2>
         <div class="theme-options">
           ${themes.map(([v, n, d]) => `<label class="theme-opt"><input type="radio" name="theme" value="${v}" /><b>${n}</b><span class="hint">${d}</span></label>`).join("")}
         </div>
@@ -209,9 +209,9 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   el.querySelectorAll<HTMLElement>("[data-role=role-note]").forEach((note) => {
     note.className = "role-note";
     note.innerHTML = ctx.host
-      ? `<b>🖥 이 화면이 학원 컴퓨터입니다.</b> 마이크·카메라·음악 재생을 이 컴퓨터가 맡습니다.
+      ? `<b>이 화면이 학원 컴퓨터입니다.</b> 마이크·카메라·음악 재생을 이 컴퓨터가 맡습니다.
          <button data-act="to-remote">리모컨으로 바꾸기</button>`
-      : `<b>📱 이 화면은 리모컨입니다.</b> 마이크·카메라는 학원 컴퓨터(맥미니)에서 돕니다.
+      : `<b>이 화면은 리모컨입니다.</b> 마이크·카메라는 학원 컴퓨터(맥미니)에서 돕니다.
          여기서 켜면 <b>이 기기</b>의 마이크·카메라를 쓰게 됩니다.
          <button data-act="to-host">이 기기를 학원 컴퓨터로 쓰기</button>`;
     note.querySelector("[data-act=to-remote]")?.addEventListener("click", () => ctx.setHost(false));
@@ -223,6 +223,8 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   // ---- 주소로 호출하기 (마이크 탭): 폰 매크로 앱이 DJI 버튼을 잡아 부를 때 ----
   const callUrlEl = el.querySelector("[data-role=call-url]") as HTMLElement;
   let callUrl = "";
+  let netBase = "";                    // 밖에서 들어오는 주소 (/api/net). 아래 QR 에서 채운다.
+                                       // ctx.onState 는 이미 받아 둔 상태가 있으면 바로 한 번 부르므로 여기서 먼저 만들어 둔다
   ctx.onState((st) => {
     const token = st.config?.ribbon?.call_token;
     if (!token) return;
@@ -236,7 +238,6 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   };
 
   // ---- 폰으로 작품 찍어 보내기: 주소 QR (카메라 탭) ----
-  let netBase = "";
   void (async () => {
     const box = el.querySelector("[data-role=snap-url]") as HTMLElement;
     const warn = el.querySelector("[data-role=snap-warn]") as HTMLElement;
@@ -389,7 +390,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
           ${o.devices.map((dv) => `<option value="${esc(dv.deviceId)}" ${dv.deviceId === o.current ? "selected" : ""}>${esc(dv.label)}</option>`).join("")}
         </select></label>
         <div class="actions">
-          <button data-act="beep">🔊 삐 소리 시험</button>
+          <button data-act="beep">삐 소리 시험</button>
           ${o.mobile ? "" : `<button data-act="labels" title="TV 컴퓨터에서 마이크 권한을 물어볼 수 있습니다">장치 이름 보기</button>`}
         </div>
         ${o.mobile

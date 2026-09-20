@@ -28,13 +28,13 @@ import type { AdminCtx } from "./shared";
  * 저장은 REST API 로, 화면 반영은 서버가 보내는 state 브로드캐스트로 이뤄진다.
  */
 const TABS = [
-  { id: "dashboard", name: "대시보드", icon: "📋" },
-  { id: "games", name: "게임", icon: "🎮" },
-  { id: "logs", name: "로그", icon: "📜" },
-  { id: "kids", name: "아이들", icon: "🧒" },
-  { id: "characters", name: "캐릭터", icon: "🎀" },
-  { id: "map", name: "맵", icon: "🗺" },
-  { id: "settings", name: "설정", icon: "⚙️" },
+  { id: "dashboard", name: "대시보드" },
+  { id: "games", name: "게임" },
+  { id: "logs", name: "로그" },
+  { id: "kids", name: "아이들" },
+  { id: "characters", name: "캐릭터" },
+  { id: "map", name: "맵" },
+  { id: "settings", name: "설정" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -55,8 +55,8 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   root.innerHTML = `
   <div id="admin">
     <header class="topbar">
-      <h1>🎀 리본 관리자</h1>
-      <nav>${TABS.map((t) => `<a href="#${t.id}" data-tab="${t.id}"><span class="ic">${t.icon}</span><span>${t.name}</span></a>`).join("")}</nav>
+      <h1>리본 관리자</h1>
+      <nav>${TABS.map((t) => `<a href="#${t.id}" data-tab="${t.id}"><span>${t.name}</span></a>`).join("")}</nav>
       <a id="mic-badge" class="mic-badge" href="#settings/mic" hidden></a>
       <span id="live" class="live" title="서버 연결">●</span>
     </header>
@@ -145,7 +145,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   const showMic = () => {
     badge.hidden = !mic.running;
     badge.className = `mic-badge${mic.locked ? " warn" : ""}`;
-    badge.textContent = mic.locked ? "🎙 잠김: 화면을 한 번 누르세요" : "🎙 마이크 켜짐";
+    badge.textContent = mic.locked ? "잠김: 화면을 한 번 누르세요" : "마이크 켜짐";
   };
   const micListeners: (() => void)[] = [showMic];
   mic.onChange = () => micListeners.forEach((f) => f());

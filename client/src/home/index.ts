@@ -7,15 +7,15 @@
  */
 const HOME_URL = "https://arthouseribbon.com";
 
-interface Item { mode: string; icon: string; title: string; desc: string; admin?: boolean }
+interface Item { mode: string; title: string; desc: string; admin?: boolean }
 
 const ITEMS: Item[] = [
-  { mode: "snap", icon: "🎨", title: "작품 찍어 보내기", desc: "폰으로 아이 작품을 찍어 보냅니다" },
-  { mode: "art", icon: "🖼", title: "전시실 꾸미기", desc: "보낸 작품을 아이 전시실 벽에 겁니다", admin: true },
-  { mode: "admin", icon: "⚙️", title: "관리자", desc: "아이들·캐릭터·음악·마이크 설정", admin: true },
-  { mode: "tv", icon: "📺", title: "TV 화면", desc: "교실 TV 에 띄우는 리본이 화면" },
-  { mode: "mic", icon: "🎙", title: "마이크", desc: "무선 마이크 수신기를 꽂은 기기에서 열어 둡니다" },
-  { mode: "editor", icon: "🗺", title: "맵 편집기", desc: "방 가구 배치 (컴퓨터에서)", admin: true },
+  { mode: "snap", title: "작품 찍어 보내기", desc: "폰으로 아이 작품을 찍어 보냅니다" },
+  { mode: "art", title: "전시실 꾸미기", desc: "보낸 작품을 아이 전시실 벽에 겁니다", admin: true },
+  { mode: "admin", title: "관리자", desc: "아이들·캐릭터·음악·마이크 설정", admin: true },
+  { mode: "tv", title: "TV 화면", desc: "교실 TV 에 띄우는 리본이 화면" },
+  { mode: "mic", title: "마이크", desc: "무선 마이크 수신기를 꽂은 기기에서 열어 둡니다" },
+  { mode: "editor", title: "맵 편집기", desc: "방 가구 배치 (컴퓨터에서)", admin: true },
 ];
 
 export async function startHome(): Promise<void> {
@@ -36,7 +36,6 @@ function render(items: Item[], who: string, logout: () => void): void {
       .sub { color: #7a7289; font-size: 14px; margin: 0 0 20px; }
       a.item { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit;
         background: #fff; border: 1px solid #e3dcee; border-radius: 16px; padding: 16px; margin-bottom: 10px; }
-      a.item .ic { font-size: 28px; }
       a.item b { display: block; font-size: 17px; }
       a.item span { font-size: 13px; color: #7a7289; }
       .back { display: inline-block; margin-top: 16px; font-size: 14px; color: #7b4bd8; }
@@ -44,11 +43,11 @@ function render(items: Item[], who: string, logout: () => void): void {
       .who button { font: inherit; border: 1px solid #cfc6dc; background: #fff; color: #4d4560; border-radius: 10px; padding: 6px 12px; }
     </style>
     <div class="wrap">
-      <h1>🎀 리본</h1>
+      <h1>리본</h1>
       <p class="sub">아트하우스 리본 교실 화면들</p>
       ${who ? `<div class="who"><span>${who} 님</span><button data-act="logout">로그아웃</button></div>` : ""}
       ${items.map((i) => `<a class="item" href="/?mode=${i.mode}">
-        <span class="ic">${i.icon}</span><span><b>${i.title}</b><span>${i.desc}</span></span></a>`).join("")}
+        <span><b>${i.title}</b><span>${i.desc}</span></span></a>`).join("")}
       <a class="back" href="${HOME_URL}">← 학원 홈페이지로</a>
     </div>`;
   document.querySelector("[data-act=logout]")?.addEventListener("click", () => logout());

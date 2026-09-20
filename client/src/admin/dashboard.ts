@@ -20,7 +20,7 @@ const STATE_NAME: Record<string, string> = { idle: "쉬는 중", listening: "듣
 export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => boolean): { show(sub?: string): void } {
   el.innerHTML = `
     <div class="subtabs seg">
-      <button data-sub="control">🎮 캐릭터 조작</button><button data-sub="schedule">📅 수업 시간표</button>
+      <button data-sub="control">캐릭터 조작</button><button data-sub="schedule">수업 시간표</button>
     </div>
     <div class="dash" data-subpanel="control">
       <div class="dash-col">
@@ -28,8 +28,8 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
           <h2>캐릭터 조작</h2>
           <div class="status"><span class="dot"></span><b id="ctl-state">-</b><span id="ctl-target" class="hint"></span></div>
           <div class="ctl-buttons">
-            <button id="ctl-stop" title="Esc">⏹ 중단 <kbd>Esc</kbd></button>
-            <button id="ctl-ignore" title="M">🔔 호출 허용 <kbd>M</kbd></button>
+            <button id="ctl-stop" title="Esc">중단 <kbd>Esc</kbd></button>
+            <button id="ctl-ignore" title="M">호출 허용 <kbd>M</kbd></button>
           </div>
         </section>
         <section class="card">
@@ -47,10 +47,10 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
           </div>
         </section>
         <section class="card">
-          <h2>🎨 작품</h2>
+          <h2>작품</h2>
           <div class="actions">
-            <button id="art-shoot" class="primary">📷 작품 촬영</button>
-            <button id="art-show">🖼 작품 전시</button>
+            <button id="art-shoot" class="primary">작품 촬영</button>
+            <button id="art-show">작품 전시</button>
           </div>
           <p class="hint">촬영하면 고른 아이의 작품으로 서버에 저장됩니다. 전시는 그 아이 전시실을 열어 벽에 겁니다.</p>
           <input id="art-file" type="file" accept="image/*" capture="environment" hidden />
@@ -98,7 +98,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     const w = s.config?.world;
     const box = $("#tv-room");
     box.innerHTML = rooms.map(([id, n]) => `<button data-room="${id}" class="${w?.room === id ? "on" : ""}">${esc(n)}</button>`).join("")
-      + (w && !rooms.some(([id]) => id === w.room) ? `<button class="on" disabled>🖼 전시실 보는 중</button>` : "");
+      + (w && !rooms.some(([id]) => id === w.room) ? `<button class="on" disabled>전시실 보는 중</button>` : "");
     box.querySelectorAll<HTMLButtonElement>("[data-room]").forEach((b) => {
       b.onclick = async () => {
         try { await api("PUT", "/api/world/active", { room: b.dataset.room }); ctx.msg(`TV 방: ${b.textContent}`); }
@@ -107,7 +107,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     });
     const r = w?.render;
     $("#render-info").textContent = !w ? "" :
-      (w.rendering ? `⏳ 배경 렌더 중 (${w.rendering}) · ` : "") +
+      (w.rendering ? `배경 렌더 중 (${w.rendering}) · ` : "") +
       (r ? `배경: 블렌더 렌더 ${new Date(r.rendered_at * 1000).toLocaleString()}${r.stale ? " (배치가 바뀌어 다시 렌더 필요)" : ""}`
          : "배경: 렌더 없음 → 실시간 3D");
   }
@@ -157,7 +157,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     $("#ctl-target").textContent = s.target_kid ? ` · ${name(s.target_kid)}` : "";
     const ign = $("#ctl-ignore");
     ign.classList.toggle("on", !!s.ignore_calls);
-    ign.innerHTML = s.ignore_calls ? "🔕 호출 거부 <kbd>M</kbd>" : "🔔 호출 허용 <kbd>M</kbd>";
+    ign.innerHTML = s.ignore_calls ? "호출 거부 <kbd>M</kbd>" : "호출 허용 <kbd>M</kbd>";
   }
 
   // ---- 지금 수업 ----
@@ -198,7 +198,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
         <div class="who"><b>${esc(kidLabel(k))}</b><span class="hint">${o ? `${o.start}~${o.end}${o.moved ? " (옮김)" : ""}` : "수업 외"}</span></div>
         <button data-act="presence" class="${k.present ? "" : "primary"}">${k.present ? "하원" : "등원"}</button>
         <div class="seg mic" title="마이크">${mics}</div>
-        <button data-act="wake" title="이 아이 마이크로 호출">📣</button>
+        <button data-act="wake" title="이 아이 마이크로 호출">호출</button>
       </li>`;
     }).join("") : `<li class="hint">지금 시간에 수업이 없습니다. 아래에서 아이를 추가할 수 있습니다.</li>`;
 

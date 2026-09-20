@@ -129,7 +129,7 @@ export class Speaker {
       el.id = "unlock";
       el.className = "overlay";
       el.style.cssText = "left:50%;top:14vh;transform:translateX(-50%);background:#ffd54a;color:#222;padding:14px 24px;border-radius:14px;font-size:24px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.35)";
-      el.textContent = "🔊 소리 켜기 (화면을 한 번 클릭하세요)";
+      el.textContent = "소리 켜기 (화면을 한 번 클릭하세요)";
       document.body.appendChild(el);
     }
     el.style.display = "block";

@@ -10,6 +10,7 @@ import { bgOf, composeArt, DEFAULT_BG, lookSize, MAX_PAD, padOf, type Pad } from
  * 올라가는 파일은 **배경 없는 원본**(투명 PNG)이고, 여백과 배경색은 값으로만 저장한다 — 그래서 나중에 다시 편집해도
  * AI 를 또 돌리지 않고, 부모님은 배경 없는 원본도 내려받을 수 있다. 이미 올린 작품의 여백·배경색만 바꾸면
  * 파일은 그대로 두고 값만 고친다 (PUT /api/artworks/meta, 걸려 있는 곳도 서버가 같이 맞춘다).
+ * 이미 올린 작품을 편집할 때는 여기서 지울 수도 있다 (벽에 걸려 있으면 먼저 내려야 한다).
  */
 
 export interface Artwork {
@@ -30,7 +31,8 @@ async function send<T>(method: string, url: string, body: unknown): Promise<{ st
 }
 
 export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Artwork) => Promise<void>,
-                          msg: (t: string, e?: boolean) => void): Cropper {
+                          msg: (t: string, e?: boolean) => void,
+                          remove: (a: Artwork) => Promise<boolean>): Cropper {
   const $ = <T extends HTMLElement>(s: string) => document.querySelector(s) as T;
   const file = $<HTMLInputElement>("#file");
   const dlg = $<HTMLDivElement>("#crop");
@@ -72,6 +74,7 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     cutIn.checked = !hasHoles(src);
     $("#crop-name").textContent = name;
     $("#crop-ok").textContent = old ? "저장" : "올리기";
+    $("#crop-del").hidden = !old;
     dlg.classList.add("open");
     session++;
     status.textContent = cutIn.checked ? "" : "배경이 이미 지워진 작품입니다. 여백과 배경색을 바꿀 수 있어요.";
@@ -178,6 +181,10 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     session++;
   };
   $("#crop-cancel").onclick = close;
+  $("#crop-del").onclick = async () => {
+    const old = editing;
+    if (old && await remove(old)) close();
+  };
   $("#crop-ok").onclick = async () => {
     const pic = picture();
     if (!pic) return;
@@ -391,6 +398,7 @@ export const CROP_HTML = `
     <div class="row wrap"><b>배경색</b> <input id="bg" type="color" value="${DEFAULT_BG}"> <span id="swatches" class="row"></span></div>
     <div class="row"><span class="hint" id="crop-size"></span>
       <span class="grow"></span>
+      <button id="crop-del" class="ghost" hidden>작품 지우기</button>
       <button id="crop-cancel" class="ghost">취소</button>
       <button id="crop-ok" class="on">올리기</button></div>
   </div>

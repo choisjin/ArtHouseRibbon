@@ -7,7 +7,7 @@ import { type AdminCtx, api, esc } from "./shared";
  *   2. 내 목록     목록 고르기(리본이가 "내 목록 틀어줘" 로 쓰는 목록) · 새 목록 만들기 · 다시 읽기 · 목록 틀기
  *   3. 곡 목록     고른 목록의 곡: ▶ 들어보기 · ▲▼ 순서 · ✕ 빼기
  *   4. 검색        노래를 찾아 ＋ 로 목록에 넣기
- *   5. 맨 아래     ⚙ 계정·설정 버튼 -> 모달 (Spotify 앱 정보, 로그인, 말로 부탁하기 켜기, 시험 칸)
+ *   5. 맨 아래     계정·설정 버튼 -> 모달 (Spotify 앱 정보, 로그인, 말로 부탁하기 켜기, 시험 칸)
  * 재생 상태는 서버가 보내 주는 music.state 로 갱신한다 (재생 화면 = TV 또는 이 페이지, music/player.ts).
  */
 type Track = { uri: string; title: string; artists: string; album_art: string };
@@ -17,7 +17,7 @@ type Status = {
 };
 type Playlist = { id: string; title: string; count: number | null; mine: boolean };
 const REPEATS: MusicStateMsg["repeat"][] = ["off", "context", "track"];
-const REPEAT_LABEL: Record<string, string> = { off: "🔁 반복 없음", context: "🔁 목록 반복", track: "🔂 한 곡 반복" };
+const REPEAT_LABEL: Record<string, string> = { off: "반복 없음", context: "목록 반복", track: "한 곡 반복" };
 
 export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   el.innerHTML = `
@@ -32,16 +32,16 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
         <div class="p-right">
           <div class="p-src" data-role="src"></div>
           <div class="actions">
-            <button data-act="prev" title="앞 노래">⏮</button>
+            <button data-act="prev" title="앞 노래">◀◀</button>
             <button data-act="toggle" class="primary" title="재생 · 멈춤">▶</button>
-            <button data-act="next" title="다음 노래">⏭</button>
-            <button data-act="repeat">🔁 반복 없음</button>
-            <button data-act="shuffle">🔀 순서대로</button>
+            <button data-act="next" title="다음 노래">▶▶</button>
+            <button data-act="repeat">반복 없음</button>
+            <button data-act="shuffle">순서대로</button>
           </div>
         </div>
       </div>
       <div class="row">
-        <label class="inline">🔊 음량 <input type="range" name="volume" min="10" max="100" step="5" /></label>
+        <label class="inline">음량 <input type="range" name="volume" min="10" max="100" step="5" /></label>
         <label class="inline">재생할 곳 <select name="output">
           <option value="tv">TV 화면 (브라우저)</option>
           <option value="admin">이 컴퓨터 (관리자 페이지)</option>
@@ -66,7 +66,7 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
     </section>
 
     <section class="card">
-      <h3>🔎 노래 찾아서 넣기</h3>
+      <h3>노래 찾아서 넣기</h3>
       <div class="row">
         <input name="q" class="grow" placeholder="노래 제목이나 가수 (예: 상어가족)" spellcheck="false" />
         <button data-act="search" class="primary">검색</button>
@@ -75,12 +75,12 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       <div class="tracks" data-role="results"></div>
     </section>
 
-    <div class="actions"><button data-act="open-settings">⚙ 계정 · 설정</button>
+    <div class="actions"><button data-act="open-settings">계정 · 설정</button>
       <span class="hint" data-role="account-line"></span></div>
 
     <dialog class="modal" data-role="settings">
       <button class="x" data-act="close" aria-label="닫기">✕</button>
-      <h3>🎵 음악 계정 · 설정</h3>
+      <h3>음악 계정 · 설정</h3>
       <label class="inline"><input type="checkbox" name="enabled" /> 리본이에게 말로 음악 부탁하기</label>
       <p class="hint">"피카츄 노래 틀어줘", "내 목록 틀어줘", "플레이리스트 보여줘", "노래 꺼줘", "다음 노래", "소리 줄여줘",
         "노래 멈춰 / 스포티파이 종료", "이 노래 넣어줘 / 빼줘", "이 노래 뭐야", "반복해줘", "섞어줘"</p>
@@ -202,7 +202,7 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       ? `<br><span class="warn-text">이 화면은 리모컨이라 여기서는 소리가 나지 않습니다. 재생할 곳을 <b>TV 화면</b>으로 두세요.</span>` : "";
     const err = status?.error || status?.last_error;
     q<HTMLElement>("[data-role=where]").innerHTML = !cfg?.enabled
-      ? `음악이 꺼져 있습니다. <b>⚙ 계정 · 설정</b> 에서 켜세요.`
+      ? `음악이 꺼져 있습니다. <b>계정 · 설정</b> 에서 켜세요.`
       : (ready
         ? `<span class="ok-text">${esc(where)}${spotifyDev ? " 에서 틉니다." : "이 Spotify 스피커로 준비됐습니다."}</span>`
           + (spotifyDev ? ` 그 기기에서 Spotify 앱을 켜 두세요 (앱이 꺼져 있으면 목록에서 사라집니다).` : "")
@@ -222,15 +222,15 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
     q<HTMLElement>("[data-role=artist]").textContent = t?.artists ?? "";
     const src = now?.source;
     q<HTMLElement>("[data-role=src]").textContent = !t || !src ? ""
-      : src.kind === "playlist" ? `📃 ${src.title}` : src.kind === "search" ? "🔎 찾은 노래 한 곡"
-        : src.kind === "album" ? "💿 앨범" : src.kind === "artist" ? "🎤 가수 노래" : "";
+      : src.kind === "playlist" ? `${src.title}` : src.kind === "search" ? "찾은 노래 한 곡"
+        : src.kind === "album" ? "앨범" : src.kind === "artist" ? "가수 노래" : "";
     q<HTMLButtonElement>("[data-act=toggle]").textContent = now?.playing ? "❚❚" : "▶";
     const rep = now?.repeat ?? "off";
     const repBtn = q<HTMLButtonElement>("[data-act=repeat]");
     repBtn.textContent = REPEAT_LABEL[rep];
     repBtn.classList.toggle("on", rep !== "off");
     const shBtn = q<HTMLButtonElement>("[data-act=shuffle]");
-    shBtn.textContent = now?.shuffle ? "🔀 섞기" : "🔀 순서대로";
+    shBtn.textContent = now?.shuffle ? "섞기" : "순서대로";
     shBtn.classList.toggle("on", !!now?.shuffle);
     const pos = (now?.position_ms ?? 0) + (now?.playing ? Date.now() - nowAt : 0);
     const pct = t?.duration_ms ? Math.min(100, (pos / t.duration_ms) * 100) : 0;
@@ -283,7 +283,7 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
     listed = true;
   }
   async function loadTracks(): Promise<void> {
-    if (!status?.connected) { plMsg.innerHTML = `<span class="warn-text">아래 <b>⚙ 계정 · 설정</b> 에서 Spotify 를 먼저 연결하세요.</span>`; return; }
+    if (!status?.connected) { plMsg.innerHTML = `<span class="warn-text">아래 <b>계정 · 설정</b> 에서 Spotify 를 먼저 연결하세요.</span>`; return; }
     plMsg.textContent = "읽는 중…";
     try {
       if (!listed) await loadPlaylists();

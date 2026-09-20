@@ -1,4 +1,4 @@
-"""Spotify (관리자 '설정' 탭 → 🎵 음악, 말로 조작은 music_intent.py).
+"""Spotify (관리자 '설정' 탭 → 음악, 말로 조작은 music_intent.py).
 
 로그인: developer.spotify.com 에서 만든 앱의 Client ID/Secret 을 설정에 넣고 "Spotify 로그인" -> 동의 ->
   http://127.0.0.1:<포트>/api/music/callback 으로 돌아오면 갱신 토큰(refresh token)을 저장한다.

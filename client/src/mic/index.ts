@@ -94,7 +94,7 @@ const PAGE = `
   a { color: #7b4bd8; font-size: 13px; }
 </style>
 <div class="wrap">
-  <h1>🎙 리본 마이크 <span id="state"></span></h1>
+  <h1>리본 마이크 <span id="state"></span></h1>
   <p class="sub">무선 마이크 수신기를 꽂은 기기에서 이 화면을 열어 두세요. 이 창을 닫거나 화면이 꺼지면 리본이가 듣지 못합니다.
     소리는 다른 기기(TV 화면)에서 납니다.</p>
   <div id="body"></div>

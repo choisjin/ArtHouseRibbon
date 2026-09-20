@@ -207,7 +207,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
     stage.render();
     // 말풍선: 생각 중 (귀 모양 "듣는 중"은 없앰 2026-09-20)
     const s = ribbon.state;
-    const text = s === "thinking" ? "💭" : "";
+    const text = s === "thinking" ? "…" : "";
     if (text && placed) {
       const p = stage.toScreen(ribbon.headTop(head));
       bubble.textContent = text;

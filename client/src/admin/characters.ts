@@ -245,7 +245,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
               ${role === "main" ? "" : `<button type="button" id="make-main">이 캐릭터를 주인공으로</button>`}
             </div>
             <div class="resume-photo"><div id="char-preview"></div>
-              <div class="actions"><button type="button" id="greet">👋 인사</button></div></div>
+              <div class="actions"><button type="button" id="greet">인사</button></div></div>
           </div>
           <section><h3>성격 · 말투</h3>
             <textarea name="personality" rows="4" placeholder="예: 밝고 호기심이 많다. 그림을 보면 색 이름을 영어로도 한 번 말해 준다."></textarea>
@@ -257,7 +257,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
               <label>품질 <input name="steps" type="range" min="5" max="12" step="1" /> <output data-out="steps"></output></label>
               <label>피치 (반음. 아이 목소리 조합은 이미 어리게 바뀌어 있어 0 권장) <input name="pitch" type="range" min="-6" max="8" step="0.5" /> <output data-out="pitch"></output></label>
             </div>
-            <div class="row"><input name="preview_text" class="grow" /><button type="button" id="tts">🔊 미리 듣기</button></div></section>
+            <div class="row"><input name="preview_text" class="grow" /><button type="button" id="tts">미리 듣기</button></div></section>
           <section><h3>옷</h3>
             <div class="cols">
               <label>옷 <select name="outfit">${spec.outfits.map((o) => `<option value="${o.id}">${o.name}</option>`).join("")}</select></label>

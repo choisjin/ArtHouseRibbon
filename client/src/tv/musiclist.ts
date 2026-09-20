@@ -29,7 +29,7 @@ export class MusicList {
       </div>`).join("");
     const what = view.kind === "search" ? "번호를 말하면 틀어요" : "번호를 말하면 목록에서 빼요";
     this.el.innerHTML = `
-      <div class="ml-head">${view.kind === "search" ? "🔎 " : "📃 "}${esc(view.title)}
+      <div class="ml-head">${view.kind === "search" ? "" : ""}${esc(view.title)}
         <small>${view.total}곡${view.pages > 1 ? ` · ${view.page}/${view.pages}쪽` : ""}</small></div>
       ${rows}
       <div class="ml-foot">${what}${view.page < view.pages ? ` · "다음" 이라고 하면 더 보여요` : ""}</div>`;

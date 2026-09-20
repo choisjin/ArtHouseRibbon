@@ -7,12 +7,11 @@ import { type AdminCtx, api, esc, kidLabel } from "./shared";
  * 오늘 날짜를 보고 있으면 새 말이 들어올 때 바로 이어 붙인다.
  */
 interface Row { at: string; kind: string; who: string; text: string }
-const KIND_ICON: Record<string, string> = { kid: "🧒", ribbon: "🎀", button: "🔘", memory: "📝" };
 
 export function mountLogs(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   el.innerHTML = `
     <section class="card">
-      <div class="row"><h2>📜 대화 로그</h2><span class="grow"></span>
+      <div class="row"><h2>대화 로그</h2><span class="grow"></span>
         <label class="inline">날짜 <select name="day"></select></label>
         <button data-act="reload">다시 읽기</button>
       </div>
@@ -27,7 +26,7 @@ export function mountLogs(el: HTMLElement, ctx: AdminCtx): { show(): void } {
 
   function line(r: Row): string {
     return `<li class="${esc(r.kind)}"><span class="at">${esc(r.at)}</span>
-      <b>${KIND_ICON[r.kind] ?? ""} ${esc(r.who)}</b> ${esc(r.text)}</li>`;
+      <b>${esc(r.who)}</b> ${esc(r.text)}</li>`;
   }
 
   async function load(day?: string): Promise<void> {

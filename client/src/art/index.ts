@@ -1,36 +1,33 @@
 import * as THREE from "three";
 import { Stage, fetchCatalog } from "../tv/stage";
 import type { WallMount } from "../world/room";
-import { renderNow, type Catalog, type Layout, type LayoutArt, type WorldRender } from "../world/types";
+import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 import { bgOf, lookSize, padOf } from "../world/artimage";
 import { FRAME_STYLES } from "../world/frames";
-import { FX_LIMIT, FX_PRESETS, fxOf, type ArtFx } from "../world/artfx";
+import { FX_PRESETS, fxOf, type ArtFx } from "../world/artfx";
 import { LookAround } from "../world/lookaround";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
 /**
  * 아이 전시실 꾸미기 (?mode=art).
  *
- * **TV 에 보이는 그대로 보면서 건다** (2026-09-21): 벽을 하나씩 골라 평면으로 보던 것을 접고, TV 와 같은 3D 방을
- * 띄워 그 위에서 그림을 끌어 옮긴다. 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다.
- *   - 작품 목록과 사진 올리기는 모달(🖼 작품)로
- *   - 고른 그림은 아래 막대에서 크기·액자를 바꾸고 내린다. 비율은 그대로이고, 벽을 넘는 크기로는 못 키운다
- *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
- *   - **쓸어 넘겨 둘러본다** (world/lookaround.ts): 방 가운데에 서서 고개를 돌리듯 왼쪽·오른쪽 벽을 본다. 배경은 같은
- *     자리에서 구운 360° 파노라마라 어느 벽이든 렌더 품질 그대로다. 📺 단추로 TV 에 나오는 화면도 볼 수 있다
- *   - 액자는 world/frames.ts 의 종류에서 고르고, 그림마다 이미지 필터와 하이라이트를 건다 (world/artfx.ts)
- *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 작품 목록은 모든 아이 것을 아이별로 묶어 보여 준다
+  * **방 안에 서서 보면서 건다** (2026-09-21): 벽을 하나씩 골라 평면으로 보던 것을 접고, 쓸어 넘겨 둘러보는 3D 방에서
+ * 그림을 끌어 옮긴다 (world/lookaround.ts). 배경은 같은 자리에서 구운 360° 파노라마라 어느 벽이든 렌더 품질 그대로다.
+ *   - 아래 설정 창은 네 탭: **작품**(슬라이드로 고르기·크기·액자·올리기) · **필터** · **하이라이트** · **조명**(방 밝기)
+ *   - 그림은 비율 그대로 크기만 바꾸고, 벽을 넘는 크기로는 못 키운다. 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다
+ *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색 · 지우기)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
+ *   - 액자는 world/frames.ts, 작품마다 거는 이미지 필터와 하이라이트는 world/artfx.ts
+ *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 슬라이드는 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
- *   - 🔗 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
+ *   - 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
  * 저장하면 그 아이 전시실(kid-<아이 id>)의 arts 만 바뀐다. 배경은 모든 아이가 같은 렌더(kidbase)를 쓰므로
  * 다시 렌더할 필요가 없고, TV 가 그 배경 위에 그림만 실시간으로 그린다.
  */
 
 interface Kid { id: string; name: string }
 
-type Tab = "size" | "fx" | "glow";
-const TABS: [Tab, string][] = [["size", "📐 크기"], ["fx", "🎨 필터"], ["glow", "✨ 하이라이트"]];
-const GALLERY = "room:gallery";           // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
+type Tab = "art" | "fx" | "glow" | "light";
+const GALLERY = "gallery";                // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
 const WALL_FILL = 0.96;                   // 벽을 꽉 채우지는 않게
@@ -47,7 +44,6 @@ async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export async function startArt(): Promise<void> {
   document.body.innerHTML = PAGE;
-  if (new URLSearchParams(location.search).has("embed")) document.getElementById("adminLink")?.remove();   // 관리자 '맵' 탭 안
   const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
   const msg = (t: string, err = false) => {
     const el = $("#msg");
@@ -57,13 +53,10 @@ export async function startArt(): Promise<void> {
 
   const kids = await api<Kid[]>("GET", "/api/kids");
   const kidSel = $<HTMLSelectElement>("#kid");
-  // 고를 곳: 전시장 + 아이들 전시실은 여기서, 그 밖의 방(미술실)은 맵 편집기로 간다
-  const rooms = await api<{ catalog: Catalog }>("GET", "/api/world")
-    .then((w) => Object.entries(w.catalog.rooms ?? {}).map(([id, r]) => [id, r.name] as [string, string]))
-    .catch(() => [["classroom", "미술실"], ["gallery", "전시장"]] as [string, string][]);
-  kidSel.innerHTML = `<optgroup label="방">${rooms.map(([id, n]) => `<option value="room:${id}">${esc(n)}</option>`).join("")}</optgroup>`
-    + `<optgroup label="아이들 전시실">${[...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))
-      .map((k) => `<option value="${k.id}">🖼 ${esc(k.name)} 전시실</option>`).join("")}</optgroup>`;
+  // 전시장(모두의 방) + 아이들 전시실. 가구를 놓는 방(미술실)은 관리자의 맵 탭에서 따로 꾸민다
+  kidSel.innerHTML = `<option value="${GALLERY}">전시장</option>`
+    + [...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))
+      .map((k) => `<option value="${esc(k.id)}">${esc(k.name)}</option>`).join("");
   const query = new URLSearchParams(location.search);
   const wanted = query.get("room") === "gallery" ? GALLERY : query.get("kid") || decodeURIComponent(location.hash.slice(1));
   kidSel.value = wanted === GALLERY || kids.some((k) => k.id === wanted) ? wanted : kids[0]?.id ?? GALLERY;
@@ -92,7 +85,7 @@ export async function startArt(): Promise<void> {
   let mounts: WallMount[] = [];
   let picked: string | null = null;
   let dirty = false;
-  let tab: Tab = "size";                           // 고른 작품 설정에서 보고 있는 탭 (그림을 바꿔도 그대로)
+  let tab: Tab = "art";                           // 고른 작품 설정에서 보고 있는 탭 (그림을 바꿔도 그대로)
   const lightIn = $<HTMLInputElement>("#light");
 
   if (new URLSearchParams(location.search).has("debug")) (window as unknown as { stage?: Stage }).stage = stage;
@@ -110,7 +103,7 @@ export async function startArt(): Promise<void> {
       ? { hall: 1, halls: 1, ...await api<{ room: string; layout: Layout | null; artworks: Artwork[] }>("GET", "/api/world?room=gallery") }
       : await api<{ room: string; hall: number; halls: number; layout: Layout | null; artworks: Artwork[] }>(
         "GET", `/api/kids/${encodeURIComponent(kid)}/gallery?hall=${hall}`);
-    $("#halls").hidden = gallery;
+    $("#hall-row").hidden = gallery;
     $("#open-share").hidden = gallery;
     $("#up-who").hidden = !gallery;
     room = d.room;
@@ -119,6 +112,7 @@ export async function startArt(): Promise<void> {
     layout = d.layout;
     light = d.layout?.light ?? 1;
     lightIn.value = String(light);
+    showLight();
     drawHalls();
     arts = (d.layout?.arts ?? []).map((a) => ({ ...a }));
     mine = d.artworks;
@@ -130,7 +124,7 @@ export async function startArt(): Promise<void> {
     const before = JSON.stringify(arts);
     for (const a of arts) fit(a, wallOf(a));    // 편집으로 비율이 바뀌어 벽을 넘게 됐으면 안으로 들인다
     if (JSON.stringify(arts) !== before) { dirty = true; await rebuild(); }
-    drawList();
+    drawSlides();
     msg("");
     void watchPano();
   }
@@ -235,7 +229,7 @@ export async function startArt(): Promise<void> {
       marker.renderOrder = 10;
       stage.scene.add(marker);
     }
-    drawPicked();
+    syncPanel();
   }
 
   // ---------- 3D 에서 고르고 끌기 ----------
@@ -327,61 +321,43 @@ export async function startArt(): Promise<void> {
       return;
     }
     dragging = null;
-    drawPicked();
+    syncPanel();
     void rebuild();
   };
   canvas.onpointerup = drop;
   canvas.onpointercancel = drop;
 
-  // ---------- 작품 모달 (목록 · 사진 올리기) ----------
-  const artsBox = $("#arts");
-  const openArts = (on: boolean) => artsBox.classList.toggle("open", on);
-  $("#open-arts").onclick = () => { drawList(); openArts(true); };
-  $("#close-arts").onclick = () => openArts(false);
-  artsBox.onclick = (ev) => { if (ev.target === artsBox) openArts(false); };
-
-  function drawList(): void {
-    const box = $("#list");
+  // ---------- 작품 슬라이드 (설정 창의 '작품' 탭) ----------
+  /** 올린 작품들을 옆으로 넘겨 보는 띠. 누르면 지금 보고 있는 벽에 걸린다 */
+  function drawSlides(): void {
+    const box = $("#slides");
     if (!mine.length) {
-      box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 아래에서 사진을 올려 보세요.</p>`;
+      box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 오른쪽 '작품 올리기' 로 사진을 올려 보세요.</p>`;
       return;
     }
-    const card = (a: Artwork): string => {
+    const list = [...mine];
+    if (inGallery()) {   // 전시장은 모든 아이의 작품을 아이별로 묶어 보여 준다
+      list.sort((x, y) => kidName(x.kid_id).localeCompare(kidName(y.kid_id), "ko") || x.name.localeCompare(y.name, "ko"));
+    }
+    let last: string | null = null;
+    box.innerHTML = list.map((a) => {
+      const who = a.kid_id ?? "";
+      const head = inGallery() && who !== last ? `<span class="slide-kid">${esc(kidName(a.kid_id))}</span>` : "";
+      last = who;
       const hung = arts.filter((x) => x.image === a.file).length;
-      return `<div class="card" data-file="${esc(a.file)}">
+      return `${head}<div class="slide" data-file="${esc(a.file)}" title="${esc(a.name)}">
         <img src="/${esc(a.file)}" alt="" loading="lazy" style="background:${bgOf(a)}">
-        <div class="card-body">
-          <b>${esc(a.name)}</b>
-          <small>${a.width}×${a.height}${hung ? ` · 걸린 것 ${hung}개` : ""}</small>
-          <div class="row wrap">
-            <button data-act="hang" class="on">벽에 걸기</button>
-            <button data-act="cut">편집</button>
-            <button data-act="del" class="ghost">삭제</button>
-          </div>
-        </div>
+        <span class="s-name">${esc(a.name)}</span>
+        ${hung ? `<span class="s-badge">${hung}</span>` : ""}
+        <button class="s-edit" data-act="cut">편집</button>
       </div>`;
-    };
-    if (inGallery()) {
-      // 아이를 갈래로: 이름 순, 작품이 걸려 있는 아이는 펼쳐 둔다
-      const groups = new Map<string, Artwork[]>();
-      for (const a of mine) groups.set(a.kid_id ?? "", [...(groups.get(a.kid_id ?? "") ?? []), a]);
-      const order = [...groups.keys()].sort((x, y) => (x ? 0 : 1) - (y ? 0 : 1) || kidName(x).localeCompare(kidName(y), "ko"));
-      box.innerHTML = order.map((id, i) => {
-        const list = groups.get(id)!;
-        const hung = list.filter((a) => arts.some((x) => x.image === a.file)).length;
-        return `<details class="group" ${hung || (i === 0 && !arts.length) ? "open" : ""}>
-          <summary><b>${esc(kidName(id))}</b> <small>${list.length}점${hung ? ` · 걸린 것 ${hung}점` : ""}</small></summary>
-          ${list.map(card).join("")}</details>`;
-      }).join("");
-    } else box.innerHTML = mine.map(card).join("");
-    box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-      b.onclick = () => {
-        const file = (b.closest("[data-file]") as HTMLElement).dataset.file!;
-        const a = mine.find((x) => x.file === file);
-        if (!a) return;
-        if (b.dataset.act === "hang") void hang(a);
-        else if (b.dataset.act === "cut") void edit(a);
-        else void removeArtwork(a);
+    }).join("");
+    box.querySelectorAll<HTMLElement>("[data-file]").forEach((el) => {
+      const a = mine.find((x) => x.file === el.dataset.file);
+      if (!a) return;
+      el.onclick = (ev) => {
+        if ((ev.target as HTMLElement).dataset.act === "cut") void edit(a);
+        else void hang(a);
       };
     });
   }
@@ -406,143 +382,145 @@ export async function startArt(): Promise<void> {
     arts.push(art);
     picked = art.id;
     dirty = true;
-    openArts(false);
     await rebuild();
+    drawSlides();
     msg("걸었습니다. 끌어서 옮기고 아래에서 크기를 바꾸세요");
   }
 
   async function edit(a: Artwork): Promise<void> {
     try {
       if (dirty) await save();                  // 편집하면 서버가 걸린 그림들을 고치므로, 손보던 것을 먼저 저장해 둔다
-      openArts(false);
       await upload.edit(a);
     } catch (e) { msg(String(e), true); }
   }
 
-  async function removeArtwork(a: Artwork): Promise<void> {
-    if (arts.some((x) => x.image === a.file)) { msg("먼저 벽에서 내려 주세요", true); return; }
-    if (!confirm(`"${a.name}" 사진을 지울까요?`)) return;
+  async function removeArtwork(a: Artwork): Promise<boolean> {
+    if (arts.some((x) => x.image === a.file)) { msg("먼저 벽에서 내려 주세요", true); return false; }
+    if (!confirm(`"${a.name}" 사진을 지울까요?`)) return false;
     try {
       await api("POST", "/api/artworks/delete", { file: a.file });
       mine = mine.filter((x) => x.file !== a.file);
-      drawList();
+      drawSlides();
       msg("지웠습니다");
+      return true;
     } catch (e) { msg(String(e), true); }
+    return false;
   }
 
   // ---------- 고른 그림: 크기 · 액자 ----------
   // 높이 막대는 없다: 자리는 끌어서 정하고, 크기는 비율 그대로 벽 안에서만 바뀐다
-  function drawPicked(): void {
-    const box = $("#picked");
-    const a = arts.find((x) => x.id === picked);
-    if (!a) { box.hidden = true; box.innerHTML = ""; return; }
-    const w = wallOf(a);
-    const maxW = maxWidth(a, w);
-    const fx = fxOf(a.fx);
-    const name = mine.find((x) => x.file === a.image)?.name ?? "작품";
-    box.hidden = false;
-    box.innerHTML = `
-      <div class="p-head">
-        <b class="who">${esc(name)}</b>
-        <span class="grow"></span>
-        <button id="down" class="ghost">벽에서 내리기</button>
-        <button id="close-picked" class="ghost" title="설정 닫기">✕</button>
-      </div>
-      <div class="p-tabs">${TABS.map(([id, label]) =>
-        `<button data-tab="${id}" class="${id === tab ? "on" : ""}">${label}</button>`).join("")}</div>
-      <div class="p-body" data-tab="size" ${tab === "size" ? "" : "hidden"}>
-        <label class="grow">크기 <button data-step="-0.05">−</button>
-          <input id="w" type="range" min="${MIN_W}" max="${maxW.toFixed(2)}" step="0.01" value="${a.width}">
-          <button data-step="0.05">＋</button> <b id="w-num"></b></label>
-        <label>액자 <select id="frame">${FRAME_STYLES.map((f) =>
-          `<option value="${f.id}" ${(a.frame ?? "canvas") === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></label>
-      </div>
-      <div class="p-body warm" data-tab="fx" ${tab === "fx" ? "" : "hidden"}>
-        <label>골라 쓰기 <select id="preset"><option value="">직접 맞춤</option>${FX_PRESETS.map((x) =>
-          `<option value="${x.id}" ${x.id === presetOf(fx) ? "selected" : ""}>${x.name}</option>`).join("")}</select></label>
-        ${fxRow("b", "밝기", fx)}${fxRow("c", "대비", fx)}${fxRow("s", "채도", fx)}${fxRow("w", "색온도", fx)}${fxRow("sepia", "세피아", fx)}
-      </div>
-      <div class="p-body warm" data-tab="glow" ${tab === "glow" ? "" : "hidden"}>
-        ${fxRow("glow", "세기", fx)}${fxRow("glowSize", "번짐", fx)}${fxRow("glowTone", "빛 색", fx)}
-        <span class="hint">작품만 환하게 비춰 줍니다 (방 밝기를 낮춰도 이 작품은 그대로).</span>
-      </div>`;
-    box.querySelectorAll<HTMLButtonElement>(".p-tabs button").forEach((b) => {
-      b.onclick = () => {
-        tab = b.dataset.tab as Tab;
-        box.querySelectorAll<HTMLElement>(".p-tabs button").forEach((t) => t.classList.toggle("on", t.dataset.tab === tab));
-        box.querySelectorAll<HTMLElement>(".p-body").forEach((t) => { t.hidden = t.dataset.tab !== tab; });
-      };
-    });
+  const panel = $("#panel");
+  const wIn = $<HTMLInputElement>("#w");
+  const frameIn = $<HTMLSelectElement>("#frame");
+  const presetIn = $<HTMLSelectElement>("#preset");
+  const fxIns = [...panel.querySelectorAll<HTMLInputElement>("[data-fx]")];
+  const cur = (): LayoutArt | undefined => arts.find((x) => x.id === picked);
+  frameIn.innerHTML = FRAME_STYLES.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("");
+  presetIn.innerHTML = `<option value="">직접 맞춤</option>`
+    + FX_PRESETS.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
 
-    // ---- 크기 ----
-    const wIn = box.querySelector<HTMLInputElement>("#w")!;
-    const base = a.width;
-    const g = findArt(a.id);
-    const nums = (): void => {
-      box.querySelector("#w-num")!.textContent = `${a.width.toFixed(2)}×${(a.width * a.aspect).toFixed(2)}m`;
-    };
-    nums();
-    let timer = 0;
-    const later = (): void => { clearTimeout(timer); timer = window.setTimeout(() => void rebuild(), 150); };
-    const sized = (width: number): void => {
-      // 끄는 동안은 3D 그림을 늘렸다 줄였다 보여 주고, 손을 떼면 액자까지 정확히 다시 짓는다
-      a.width = width;
-      fit(a, w);                                // 커지면서 벽 밖으로 나가면 안쪽으로 밀어 넣는다
-      g?.scale.setScalar(a.width / base);
-      placeLive(a);                             // (updateMatrix 까지 한다)
-      nums();
-      dirty = true;
-    };
-    wIn.oninput = () => sized(Number(wIn.value));
-    wIn.onchange = later;
-    box.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((b) => {
-      b.onclick = () => {
-        sized(a.width + Number(b.dataset.step));
-        wIn.value = String(a.width);
-        later();
-      };
-    });
-    box.querySelector<HTMLSelectElement>("#frame")!.onchange = (e) => {
-      a.frame = (e.target as HTMLSelectElement).value as LayoutArt["frame"];
-      dirty = true;
-      void rebuild();
-    };
-
-    // ---- 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
-    const fxIns = [...box.querySelectorAll<HTMLInputElement>("[data-fx]")];
-    const setFx = (patch: Partial<ArtFx>, wall: boolean): void => {
-      const now = { ...fxOf(a.fx), ...patch };
-      a.fx = now;
-      stage.room.setArtFx(a.id, now);
-      fxIns.forEach((el) => {
-        const key = el.dataset.fx as keyof ArtFx;
-        el.value = String(now[key]);
-        el.parentElement!.querySelector("b")!.textContent = fxText(key, now[key]);
-      });
-      box.querySelector<HTMLSelectElement>("#preset")!.value = presetOf(now);
-      dirty = true;
-      if (wall) later();
-    };
-    fxIns.forEach((el) => {
-      el.oninput = () => {
-        const key = el.dataset.fx as keyof ArtFx;
-        setFx({ [key]: Number(el.value) }, key.startsWith("glow"));
-      };
-    });
-    box.querySelector<HTMLSelectElement>("#preset")!.onchange = (e) => {
-      const preset = FX_PRESETS.find((x) => x.id === (e.target as HTMLSelectElement).value);
-      if (preset) setFx(preset.fx, false);
-    };
-
-    box.querySelector<HTMLButtonElement>("#close-picked")!.onclick = () => { picked = null; markPicked(); };
-    box.querySelector<HTMLButtonElement>("#down")!.onclick = () => {
-      arts = arts.filter((x) => x.id !== a.id);
-      picked = null;
-      dirty = true;
-      void rebuild();
-      drawList();
-    };
+  // ---- 탭 ----
+  panel.querySelectorAll<HTMLButtonElement>(".p-tabs button").forEach((b) => {
+    b.onclick = () => { tab = b.dataset.tab as Tab; showTab(); };
+  });
+  function showTab(): void {
+    panel.querySelectorAll<HTMLElement>(".p-tabs button").forEach((t) => t.classList.toggle("on", t.dataset.tab === tab));
+    panel.querySelectorAll<HTMLElement>(".p-body").forEach((t) => { t.hidden = t.dataset.tab !== tab; });
   }
+  showTab();
+
+  /** 고른 그림에 맞춰 설정 창을 맞춘다 (고른 것이 없으면 작품·조명만 쓸 수 있다) */
+  function syncPanel(): void {
+    const a = cur();
+    const name = a ? mine.find((x) => x.file === a.image)?.name ?? "작품" : "";
+    $(".who").textContent = name;
+    $(".p-head").hidden = !a;                   // 고른 것이 없으면 머리줄은 자리만 차지한다
+    $("#down").hidden = !a;
+    panel.querySelectorAll<HTMLElement>(".pick-first").forEach((el) => { el.hidden = !!a; });
+    [wIn, frameIn, presetIn, ...fxIns].forEach((el) => { el.disabled = !a; });
+    if (a) {
+      wIn.min = String(MIN_W);
+      wIn.max = maxWidth(a, wallOf(a)).toFixed(2);
+      wIn.value = String(a.width);
+      frameIn.value = a.frame ?? "canvas";
+      showFx(fxOf(a.fx));
+    }
+    showSize();
+  }
+
+  // ---- 작품 탭: 크기 · 액자 ----
+  const showSize = (): void => {
+    const a = cur();
+    $("#w-num").textContent = a ? `${a.width.toFixed(2)}×${(a.width * a.aspect).toFixed(2)}m` : "";
+  };
+  let timer = 0;
+  const later = (): void => { clearTimeout(timer); timer = window.setTimeout(() => void rebuild(), 150); };
+  const sized = (width: number): void => {
+    // 끄는 동안은 3D 그림을 늘렸다 줄였다 보여 주고, 손을 떼면 액자까지 정확히 다시 짓는다
+    const a = cur();
+    if (!a) return;
+    a.width = width;
+    fit(a, wallOf(a));                          // 커지면서 벽 밖으로 나가면 안쪽으로 밀어 넣는다
+    const g = findArt(a.id);
+    const built = g?.userData.artW as number | undefined;
+    if (g && built) g.scale.setScalar(a.width / built);
+    placeLive(a);                               // (updateMatrix 까지 한다)
+    wIn.value = String(a.width);
+    showSize();
+    dirty = true;
+  };
+  wIn.oninput = () => sized(Number(wIn.value));
+  wIn.onchange = later;
+  panel.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((b) => {
+    b.onclick = () => { sized((cur()?.width ?? 0) + Number(b.dataset.step)); later(); };
+  });
+  frameIn.onchange = () => {
+    const a = cur();
+    if (!a) return;
+    a.frame = frameIn.value;
+    dirty = true;
+    void rebuild();
+  };
+  $("#up-btn").onclick = () => $<HTMLInputElement>("#file").click();
+  $("#down").onclick = () => {
+    const a = cur();
+    if (!a) return;
+    arts = arts.filter((x) => x.id !== a.id);
+    picked = null;
+    dirty = true;
+    void rebuild();
+    drawSlides();
+  };
+
+  // ---- 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
+  function showFx(fx: ArtFx): void {
+    fxIns.forEach((el) => {
+      const key = el.dataset.fx as keyof ArtFx;
+      el.value = String(fx[key]);
+      el.parentElement!.querySelector("b")!.textContent = fxText(key, fx[key]);
+    });
+    presetIn.value = presetOf(fx);
+  }
+  const setFx = (patch: Partial<ArtFx>, wall: boolean): void => {
+    const a = cur();
+    if (!a) return;
+    const now = { ...fxOf(a.fx), ...patch };
+    a.fx = now;
+    stage.room.setArtFx(a.id, now);
+    showFx(now);
+    dirty = true;
+    if (wall) later();
+  };
+  fxIns.forEach((el) => {
+    el.oninput = () => {
+      const key = el.dataset.fx as keyof ArtFx;
+      setFx({ [key]: Number(el.value) }, key.startsWith("glow"));
+    };
+  });
+  presetIn.onchange = () => {
+    const preset = FX_PRESETS.find((x) => x.id === presetIn.value);
+    if (preset) setFx(preset.fx, false);
+  };
 
   const fxText = (key: keyof ArtFx, v: number): string =>
     key === "s" || key === "glowSize" || key === "sepia" ? `${Math.round(v * 100)}%`
@@ -550,21 +528,9 @@ export async function startArt(): Promise<void> {
         : key === "glowTone" ? (v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게")
           : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`;
 
-  const fxRow = (key: keyof ArtFx, label: string, fx: ArtFx): string =>
-    `<label class="grow">${label} <input data-fx="${key}" type="range" min="${FX_LIMIT[key][0]}" max="${FX_LIMIT[key][1]}"
-      step="0.01" value="${fx[key]}"> <b>${fxText(key, fx[key])}</b></label>`;
-
   /** 지금 값과 똑같은 '골라 쓰기' 가 있으면 그 id (없으면 직접 맞춤) */
   const presetOf = (fx: ArtFx): string =>
     FX_PRESETS.find((x) => (Object.keys(x.fx) as (keyof ArtFx)[]).every((k) => Math.abs((x.fx[k] ?? 0) - fx[k]) < 0.005))?.id ?? "";
-
-  // ---------- TV 에 나오는 화면 보기 ----------
-  $("#view-tv").onclick = () => {
-    stage.setLooking(!stage.looking);
-    $("#view-tv").classList.toggle("on", !stage.looking);
-    msg(stage.looking ? "" : "TV 에 나오는 화면입니다. 다시 누르면 둘러보기로 돌아갑니다");
-    void rebuild();
-  };
 
   // ---------- 전시실 1실 · 2실 · 3실 ----------
   function drawHalls(): void {
@@ -600,10 +566,12 @@ export async function startArt(): Promise<void> {
     } catch (e) { msg(String(e), true); }
   }
 
-  // ---------- 조명 밝기 ----------
+  // ---------- 조명 탭: 방 전체 밝기 ----------
+  const showLight = (): void => { $("#light-num").textContent = `${Math.round(light * 100)}%`; };
   lightIn.oninput = () => {
     light = Number(lightIn.value);
     stage.setLight(light);                      // 바로 보여 준다 (저장해야 TV 에도 반영된다)
+    showLight();
     dirty = true;
   };
 
@@ -639,21 +607,8 @@ export async function startArt(): Promise<void> {
   $("#save").onclick = async () => {
     try { await save(); msg("저장했습니다"); } catch (e) { msg(String(e), true); }
   };
-  $("#show").onclick = async () => {
-    try {
-      if (dirty) await save();
-      await api("POST", "/api/world/visit", inGallery() ? { room: "gallery", seconds: 120 }
-        : { kid_id: kidSel.value, hall, seconds: 120 });
-      msg(`TV 가 이 ${inGallery() ? "전시장" : "전시실"}을 보러 갑니다 (2분 뒤 교실로)`);
-    } catch (e) { msg(String(e), true); }
-  };
   kidSel.onchange = () => {
     if (dirty && !confirm("저장하지 않은 것이 있습니다. 옮길까요?")) { kidSel.value = curKid; return; }
-    if (kidSel.value.startsWith("room:") && !inGallery()) {
-      const embed = new URLSearchParams(location.search).has("embed") ? "&embed=1" : "";
-      location.href = `/?mode=editor${embed}#${kidSel.value.slice(5)}`;
-      return;
-    }
     curKid = kidSel.value;
     hall = 1;
     void loadKid();
@@ -664,10 +619,9 @@ export async function startArt(): Promise<void> {
     // 편집한 작품이면 걸려 있던 곳은 서버가 이미 새 모습으로 고쳤다 (모든 실). 이 실을 다시 읽는다
     if (replaced) await loadKid();
     else mine = [entry, ...mine.filter((a) => a.file !== entry.file)];
-    drawList();
-    openArts(true);
+    drawSlides();
     msg(`"${entry.name}" ${replaced ? "편집했습니다" : "올렸습니다"}`);
-  }, msg);
+  }, msg, removeArtwork);
 
   await loadKid();
 }
@@ -694,29 +648,42 @@ const PAGE = `
   button.on { background:#e9557d; border-color:#e9557d; color:#fff }
   button.ghost { color:#c9b7bd }
   button:hover { border-color:#e9557d }
-  header { position:fixed; z-index:3; top:0; left:0; right:0; display:flex; gap:10px; align-items:center;
-           padding:10px 14px; background:linear-gradient(#0e0b16ee,#0e0b1600); flex-wrap:wrap }
+  header { position:fixed; z-index:3; top:0; left:0; right:0; display:flex; flex-direction:column; gap:8px;
+           padding:10px 14px 16px; background:linear-gradient(#0e0b16ee,#0e0b1600) }
+  header .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap }
   header h1 { font-size:16px; margin:0 4px 0 0 }
-  header a { color:#c9b7bd }
-  #msg { margin-left:auto; font-size:14px; color:#e6ded6 }
-  /* 고른 작품 설정: 크기 · 필터 · 하이라이트 세 탭. 바꾸는 대로 벽에서 바로 보이도록 아래쪽에 둔다 */
-  #picked { position:fixed; z-index:3; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px;
-            padding:10px 14px 12px; border-radius:14px; background:#1b1724f2; border:1px solid #3a3346;
-            box-shadow:0 10px 30px rgba(0,0,0,.45) }
-  #picked[hidden] { display:none }
-  #picked label { display:flex; gap:6px; align-items:center; white-space:nowrap }
-  #picked .grow { flex:1 1 200px }
-  #picked input[type=range] { flex:1; min-width:96px; accent-color:#e9557d }
-  #picked .who { color:#f0b9c8 }
-  #picked button[data-step] { padding:2px 10px }
-  #picked .p-head { display:flex; gap:10px; align-items:center }
-  #picked .p-tabs { display:flex; gap:6px; flex-wrap:wrap }
-  #picked .p-tabs button { padding:6px 14px }
-  #picked .p-body { display:flex; gap:16px; align-items:center; flex-wrap:wrap; min-height:34px }
-  #picked .p-body[hidden] { display:none }
-  #picked .p-body.warm input[type=range] { accent-color:#ffd166 }
-  #picked .p-body b { min-width:3.4em }
-  #picked .p-body .hint { color:#9d94a8 }
+  #msg { font-size:14px; color:#e6ded6 }
+  /* 아래 설정 창: 작품 · 필터 · 하이라이트 · 조명. 바꾸는 대로 벽에서 바로 보이도록 낮게 둔다 */
+  #panel { position:fixed; z-index:3; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px;
+           padding:10px 14px 12px; border-radius:14px; background:#1b1724f2; border:1px solid #3a3346;
+           box-shadow:0 10px 30px rgba(0,0,0,.45) }
+  #panel label { display:flex; gap:6px; align-items:center; white-space:nowrap }
+  #panel .grow { flex:1 1 200px }
+  #panel input[type=range] { flex:1; min-width:96px; accent-color:#e9557d }
+  #panel input:disabled, #panel select:disabled { opacity:.4 }
+  #panel .who { color:#f0b9c8 }
+  #panel button[data-step] { padding:2px 10px }
+  #panel .p-head { display:flex; gap:10px; align-items:center; min-height:26px }
+  #panel .p-tabs { display:flex; gap:6px; flex-wrap:wrap }
+  #panel .p-tabs button { padding:6px 16px }
+  #panel .p-body { display:flex; gap:16px; align-items:center; flex-wrap:wrap; min-height:34px }
+  #panel .p-body.col { flex-direction:column; align-items:stretch; gap:8px }
+  #panel .p-body[hidden] { display:none }
+  #panel .p-body.warm input[type=range] { accent-color:#ffd166 }
+  #panel .p-body b { min-width:3.4em }
+  #panel .p-body .hint { color:#9d94a8; margin:0 }
+  /* 작품 슬라이드: 옆으로 넘겨 고른다 (누르면 보고 있는 벽에 걸린다) */
+  #slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; min-height:104px; align-items:stretch }
+  #slides .hint { align-self:center }
+  .slide { position:relative; flex:0 0 auto; width:102px; padding:4px; border:1px solid #3a3346; border-radius:10px;
+           background:#241f2b; cursor:pointer }
+  .slide:hover { border-color:#e9557d }
+  .slide img { width:100%; height:62px; object-fit:contain; border-radius:6px; display:block }
+  .slide .s-name { display:block; margin-top:3px; font-size:11px; color:#c9bfd0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .slide .s-badge { position:absolute; top:3px; left:3px; padding:0 6px; border-radius:8px; background:#e9557d; color:#fff; font-size:10px }
+  .slide .s-edit { position:absolute; top:3px; right:3px; padding:1px 6px; font-size:11px; background:#1b1724dd }
+  .slide-kid { flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 6px; font-size:12px;
+               color:#f0b9c8; border-left:1px solid #3a3346; writing-mode:vertical-rl }
   .modal { display:none; position:fixed; inset:0; z-index:5; background:rgba(10,8,16,.66);
            align-items:center; justify-content:center; padding:16px }
   .modal.open { display:flex }
@@ -746,27 +713,55 @@ ${CROP_CSS}
 </style>
 <div id="view"></div>
 <header>
-  <h1>🖼 전시실</h1>
-  <select id="kid"></select>
-  <span id="halls"></span>
-  <button id="view-tv" title="TV 에 나오는 화면으로 보기">📺</button>
-  <button id="open-arts">🖼 작품</button>
-  <label class="lamp" title="전시실 조명 밝기">💡 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"></label>
-  <button id="save" class="on">저장</button>
-  <button id="show">TV 에서 보기</button>
-  <button id="open-share">🔗 공유</button>
-  <a id="adminLink" href="/?mode=admin">관리자</a>
-  <span id="msg"></span>
+  <div class="bar">
+    <h1>전시실</h1>
+    <select id="kid"></select>
+    <button id="open-share">공유</button>
+    <span class="grow"></span>
+    <span id="msg"></span>
+    <button id="save" class="on">저장</button>
+  </div>
+  <div class="bar" id="hall-row"><span id="halls"></span></div>
 </header>
-<div id="picked" hidden></div>
-<div id="arts" class="modal">
-  <div class="box">
-    <div class="row"><h2>작품</h2><span class="grow"></span><button id="close-arts" class="ghost">닫기</button></div>
-    <div id="list"></div>
-    <label class="row" id="up-who" hidden>누구 작품인가요? <select id="up-kid"></select></label>
-    <input id="file" type="file" accept="image/*" capture="environment" style="display:none">
-    <button class="on" onclick="document.getElementById('file').click()">📷 작품 사진 올리기</button>
-    <p class="hint">사진을 고르면 AI 가 배경을 지워 줍니다. 여백과 배경색은 '편집'에서 언제든 바꿀 수 있어요.</p>
+<input id="file" type="file" accept="image/*" capture="environment" style="display:none">
+<div id="panel">
+  <div class="p-head" hidden><b class="who"></b><span class="grow"></span><button id="down" class="ghost" hidden>벽에서 내리기</button></div>
+  <div class="p-tabs">
+    <button data-tab="art" class="on">작품</button>
+    <button data-tab="fx">필터</button>
+    <button data-tab="glow">하이라이트</button>
+    <button data-tab="light">조명</button>
+  </div>
+  <div class="p-body col" data-tab="art">
+    <div id="slides"></div>
+    <div class="row wrap">
+      <label class="grow">크기 <button data-step="-0.05">−</button>
+        <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
+        <button data-step="0.05">＋</button> <b id="w-num"></b></label>
+      <label>액자 <select id="frame"></select></label>
+      <button id="up-btn" class="on">작품 올리기</button>
+      <label id="up-who" hidden>올릴 아이 <select id="up-kid"></select></label>
+    </div>
+  </div>
+  <div class="p-body warm" data-tab="fx" hidden>
+    <label>골라 쓰기 <select id="preset"></select></label>
+    <label class="grow">밝기 <input data-fx="b" type="range" min="-1" max="1" step="0.01" value="0"> <b></b></label>
+    <label class="grow">대비 <input data-fx="c" type="range" min="-1" max="1" step="0.01" value="0"> <b></b></label>
+    <label class="grow">채도 <input data-fx="s" type="range" min="0" max="2" step="0.01" value="1"> <b></b></label>
+    <label class="grow">색온도 <input data-fx="w" type="range" min="-1" max="1" step="0.01" value="0"> <b></b></label>
+    <label class="grow">세피아 <input data-fx="sepia" type="range" min="0" max="1" step="0.01" value="0"> <b></b></label>
+    <span class="hint pick-first">먼저 걸린 작품을 누르세요.</span>
+  </div>
+  <div class="p-body warm" data-tab="glow" hidden>
+    <label class="grow">세기 <input data-fx="glow" type="range" min="0" max="2" step="0.01" value="0"> <b></b></label>
+    <label class="grow">번짐 <input data-fx="glowSize" type="range" min="0.4" max="2" step="0.01" value="1"> <b></b></label>
+    <label class="grow">빛 색 <input data-fx="glowTone" type="range" min="0" max="1" step="0.01" value="0.35"> <b></b></label>
+    <span class="hint pick-first">먼저 걸린 작품을 누르세요.</span>
+    <span class="hint">작품만 환하게 비춰 줍니다 (방 밝기를 낮춰도 이 작품은 그대로).</span>
+  </div>
+  <div class="p-body warm" data-tab="light" hidden>
+    <label class="grow">방 밝기 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"> <b id="light-num"></b></label>
+    <span class="hint">이 전시실 전체가 밝아지고 어두워집니다. 저장해야 TV 에도 그대로 나옵니다.</span>
   </div>
 </div>
 <div id="share" class="modal">
@@ -774,6 +769,7 @@ ${CROP_CSS}
     <div class="row"><h2>부모님께 보낼 주소</h2><span class="grow"></span><button id="share-close" class="ghost">닫기</button></div>
     <input id="share-url" readonly>
     <p class="hint">이 주소로 들어오면 로그인 없이 전시실을 볼 수 있습니다. 꾸미기는 안 되고, 작품을 누르면 크게 보고 내려받을 수 있어요.</p>
+    <p class="hint">사진을 올리면 AI 가 배경을 지워 줍니다. 여백과 배경색은 작품의 '편집' 에서 언제든 바꿀 수 있어요.</p>
     <div class="row"><span class="hint" id="share-note"></span><span class="grow"></span><button id="share-copy" class="on">주소 복사</button></div>
   </div>
 </div>

@@ -242,7 +242,6 @@
 /* 게임 탭 (admin/games.ts) */
 #admin .game-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 #admin .game-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
-#admin .game-list .g-ic { font-size: 22px; }
 #admin .game-list .g-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* 로그 탭 (admin/logs.ts) */
 #admin .talk-log.logs { max-height: 62vh; overflow: auto; }
@@ -250,16 +249,16 @@
 /* 대시보드 작품 썸네일 */
 #admin .art-thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 #admin .art-thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
-/* 계정 목록 (설정 → 👤 계정) */
+/* 계정 목록 (설정 → 계정) */
 #admin .accounts { display: flex; flex-direction: column; gap: 8px; }
 #admin .account { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px;
   border: 1px solid var(--line); border-radius: 12px; }
 #admin .account .a-text { flex: 1; min-width: 160px; display: flex; flex-direction: column; }
 #admin .account .a-text span { font-size: 12px; color: var(--dim); }
-/* 폰으로 작품 찍어 보내기 QR (설정 → 📷 카메라) */
+/* 폰으로 작품 찍어 보내기 QR (설정 → 카메라) */
 #admin .snapqr { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 #admin .snapqr canvas { background: #fff; border-radius: 10px; padding: 6px; }
-/* 음악 탭 (설정 → 🎵 음악, admin/music.ts): 카드 여러 장 + 위쪽 플레이어 + 계정 모달 */
+/* 음악 탭 (설정 → 음악, admin/music.ts): 카드 여러 장 + 위쪽 플레이어 + 계정 모달 */
 #admin .music-tab { display: flex; flex-direction: column; gap: 16px; }
 #admin .music-tab[hidden] { display: none; }     /* display 를 준 요소는 hidden 만으로 숨겨지지 않는다 */
 #admin .player { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -324,7 +323,6 @@
     background: var(--topbar); border-top: 1px solid var(--line); backdrop-filter: blur(8px);
     padding: 4px 4px max(4px, env(safe-area-inset-bottom)); }
   #admin nav a { flex: 1; flex-direction: column; gap: 1px; padding: 6px 2px; font-size: 11px; border-radius: 10px; }
-  #admin nav a .ic { font-size: 20px; line-height: 1.1; }
   #admin .tab { padding: 12px 10px calc(84px + env(safe-area-inset-bottom)); }
   #admin.full .tab:not([hidden]) { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
   #admin .toast { bottom: calc(78px + env(safe-area-inset-bottom)); }

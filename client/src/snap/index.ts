@@ -87,7 +87,7 @@ export async function startSnap(): Promise<void> {
       sent.prepend(thumb);
       before.hidden = false;
       after.hidden = true;
-      say(done.new ? "보냈어요! 또 찍어도 돼요 🎉" : "이미 보낸 사진이에요 (그대로 두었어요)", "ok");
+      say(done.new ? "보냈어요! 또 찍어도 돼요 " : "이미 보낸 사진이에요 (그대로 두었어요)", "ok");
     } catch (e) {
       say(`보내지 못했어요: ${e}`, "err");
     } finally {
@@ -146,14 +146,14 @@ const PAGE = `
   .hint { font-size: 13px; color: #7a7289; line-height: 1.5; }
   input[type=file] { display: none; }
 </style>
-<h1>🎨 작품 찍어 보내기</h1>
+<h1>작품 찍어 보내기</h1>
 <label for="kid">누구 작품인가요?</label>
 <select id="kid"></select>
 <div id="before">
   <video id="live" autoplay playsinline muted hidden></video>
   <button id="snap" class="big" hidden>● 지금 찍기</button>
-  <button class="big" onclick="document.getElementById('file').click()">📷 사진 찍기</button>
-  <button class="big sub" onclick="document.getElementById('pick').click()">🖼 앨범에서 고르기</button>
+  <button class="big" onclick="document.getElementById('file').click()">사진 찍기</button>
+  <button class="big sub" onclick="document.getElementById('pick').click()">앨범에서 고르기</button>
   <input id="file" type="file" accept="image/*" capture="environment" />
   <input id="pick" type="file" accept="image/*" />
 </div>

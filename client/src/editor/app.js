@@ -714,7 +714,7 @@ function renderWarnings(warns) {
   }
   for (const w of warns) {
     const li = document.createElement('li');
-    li.textContent = '⚠ ' + w.text;
+    li.textContent = '' + w.text;
     li.onclick = () => select(w.kind, w.id);
     ul.append(li);
   }
@@ -833,7 +833,7 @@ function renderItemList(bad) {
     if (x.bad) {
       const w = document.createElement('span');
       w.className = 'bad';
-      w.textContent = '⚠';
+      w.textContent = '!';
       w.title = '경고가 있습니다';
       li.append(w);
     }
@@ -1667,7 +1667,7 @@ let activeRoom = null;
 function showActive() {
   const on = activeRoom === roomId;
   $('setActive').disabled = on;
-  $('setActive').textContent = on ? '📺 TV 에 나오는 중' : '📺 TV 에 보여주기';
+  $('setActive').textContent = on ? 'TV 에 나오는 중' : 'TV 에 보여주기';
 }
 $('setActive').onclick = async () => {
   if (dirty && !(await saveLayout(true))) return;
@@ -1687,21 +1687,21 @@ function showRender(st) {
   const el = $('renderStatus');
   $('renderBg').disabled = !st.available;
   if (!st.available) {
-    el.textContent = '⚠ 블렌더 없음 (TV 는 실시간 화면)';
+    el.textContent = '블렌더 없음 (TV 는 실시간 화면)';
     return;
   }
   const mine = st.rooms && st.rooms[roomId];
   if (st.running) {
     const other = st.running !== roomId ? ` [${catalog.rooms[st.running]?.name ?? st.running}]` : '';
-    el.textContent = `⏳ 배경 렌더 중${other} ${st.elapsed}초`;
+    el.textContent = `배경 렌더 중${other} ${st.elapsed}초`;
   } else if (st.pending.includes(roomId)) {
-    el.textContent = '⏳ 배경 렌더 대기';
+    el.textContent = '배경 렌더 대기';
   } else if (st.last && st.last.room === roomId && !st.last.ok) {
-    el.textContent = '❌ 배경 렌더 실패 (서버 data/world/render/render.log)';
+    el.textContent = '배경 렌더 실패 (서버 data/world/render/render.log)';
   } else if (!mine) {
     el.textContent = '배경 렌더 없음';
   } else {
-    el.textContent = mine.stale ? '● 배경이 옛 배치' : `✅ 배경 ${new Date(mine.rendered_at * 1000).toLocaleTimeString()}`;
+    el.textContent = mine.stale ? '● 배경이 옛 배치' : `배경 ${new Date(mine.rendered_at * 1000).toLocaleTimeString()}`;
   }
 }
 async function pollRender() {

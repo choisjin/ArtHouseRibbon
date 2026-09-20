@@ -56,7 +56,7 @@ function showForm(me: Me, opts: { need?: "admin" | "member"; what?: string }): P
         #login .msg { min-height: 20px; margin: 12px 0 0; font-size: 14px; color: #d8453a; }
       </style>
       <form class="box" autocomplete="on">
-        <h1>🎀 ${setup ? "관리자 계정 만들기" : wrongRole ? "관리자만 들어갈 수 있어요" : "리본 로그인"}</h1>
+        <h1>${setup ? "관리자 계정 만들기" : wrongRole ? "관리자만 들어갈 수 있어요" : "리본 로그인"}</h1>
         <p class="sub">${setup ? "처음 만드는 계정이 관리자가 됩니다."
           : wrongRole ? `지금은 ${me.user!.name} (일반 회원)으로 로그인돼 있습니다. 관리자 계정으로 다시 로그인하세요.`
           : opts.what ? `${opts.what} 화면을 열려면 로그인하세요.` : "아트하우스 리본"}</p>
@@ -78,7 +78,7 @@ function showForm(me: Me, opts: { need?: "admin" | "member"; what?: string }): P
     q<HTMLButtonElement>("[data-act=toggle]")?.addEventListener("click", () => {
       signup = !signup;
       q<HTMLElement>("[data-role=name-row]").hidden = !signup;
-      q<HTMLElement>("h1").textContent = signup ? "🎀 회원가입" : "🎀 리본 로그인";
+      q<HTMLElement>("h1").textContent = signup ? "회원가입" : "리본 로그인";
       q<HTMLElement>("p.sub").textContent = signup
         ? "가입 뒤 관리자가 권한을 주면 관리 화면도 쓸 수 있습니다." : "아트하우스 리본";
       q<HTMLButtonElement>("[data-act=go]").textContent = signup ? "가입하기" : "로그인";
