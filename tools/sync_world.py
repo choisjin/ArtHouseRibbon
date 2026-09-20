@@ -6,7 +6,8 @@
   - export/room_shell*.glb, catalog/*.glb, catalog.json  → client/public/world/
   - room_map.py, game_export.py, phases.py  → tools/blender/ (맥미니가 TV 배경을 렌더할 때 씀)
   - --doll    : 캐릭터들을 고화질로 다시 내보내기 (블렌더 필요)
-                doll.blend → doll.glb (리본이), yoon.blend → ollie.glb (올리), seoyul.blend → seoyul.glb (서율)
+                yoon.blend → ollie.glb (올리), seoyul.blend → seoyul.glb (서율)
+                (리본이 인형 doll.blend 는 2026-09-20 부터 쓰지 않는다)
   - --layouts : layout.json / layout_gallery.json → data/world/ (이미 있으면 덮어쓰기 전에 history 로 보관)
   - --artworks: artworks/*  → data/artworks/ (index.json 은 합친다)
 
@@ -53,7 +54,7 @@ def sync_models(src):
 
 
 #: Character_Creator 의 캐릭터 파일 → client/public/world 의 이름 (client/src/world/doll.ts CHARACTERS 와 같게)
-DOLLS = {"doll.blend": "doll.glb", "yoon.blend": "ollie.glb", "seoyul.blend": "seoyul.glb"}
+DOLLS = {"yoon.blend": "ollie.glb", "seoyul.blend": "seoyul.glb"}
 
 
 def export_doll(src, blender):
@@ -106,7 +107,7 @@ def main():
     ap.add_argument("--src", default=DEFAULT_SRC)
     ap.add_argument("--layouts", action="store_true", help="배치 파일도 가져오기")
     ap.add_argument("--artworks", action="store_true", help="올린 그림도 가져오기")
-    ap.add_argument("--doll", action="store_true", help="캐릭터들(doll.blend, yoon.blend, seoyul.blend)을 고화질로 다시 내보내기")
+    ap.add_argument("--doll", action="store_true", help="캐릭터들(yoon.blend, seoyul.blend)을 고화질로 다시 내보내기")
     ap.add_argument("--blender", default=os.environ.get("BLENDER_EXE", ""), help="블렌더 실행 파일")
     args = ap.parse_args()
     sync_models(args.src)

@@ -19,7 +19,7 @@ import game_export  # noqa: E402
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ROOT = os.path.dirname(os.path.dirname(HERE))
-OUT = argv[0] if argv else os.path.join(ROOT, "client", "public", "world", "doll.glb")
+OUT = argv[0] if argv else os.path.join(ROOT, "client", "public", "world", "seoyul.glb")
 CAP = int(argv[1]) if len(argv) > 1 else 24000
 
 # 작은 부품은 그대로, 큰 부품만 CAP 까지 줄인다

@@ -1,6 +1,6 @@
 import type { CharacterProfile, RibbonConfig } from "../protocol";
 import type { Ribbon3D } from "../tv/ribbon3d";
-import { CHARACTERS, characterOf, DEFAULT_LOOK, type RibbonLook } from "../world/doll";
+import { CHARACTERS, characterOf, DEFAULT_CHARACTER, DEFAULT_LOOK, type RibbonLook } from "../world/doll";
 import { mountPromises } from "./promises";
 import { api, type AdminCtx, esc, mountPreview, snapshot } from "./shared";
 
@@ -27,7 +27,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
   const rc = (): RibbonConfig | undefined => ctx.config()?.ribbon;
   const roleOf = (id: string): "main" | "friend" | "" => {
     const r = rc();
-    return r?.character === id || (!r?.character && id === "ribbon") ? "main" : r?.friend === id ? "friend" : "";
+    return r?.character === id || (!r?.character && id === DEFAULT_CHARACTER) ? "main" : r?.friend === id ? "friend" : "";
   };
   const ROLE = { main: "주인공", friend: "같이 나오는 친구", "": "쉬는 중" };
 

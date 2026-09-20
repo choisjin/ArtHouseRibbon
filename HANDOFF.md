@@ -151,6 +151,13 @@
   음악 '재생할 곳'이 관리자 화면인데 리모컨에서 보고 있으면 경고를 띄운다. **폰 브라우저는 Spotify 스피커가 될 수 없다**
   (Web Playback SDK 가 모바일 미지원) -> 재생할 곳은 TV 화면으로 둔다.
 
+- **리본이 인형은 뺐다** (2026-09-20 사용자 결정: "올리랑 서율이만 캐릭터로 사용"). 서비스 이름 "리본"은 그대로다
+  (settings.json 의 `ribbon` 칸은 캐릭터가 아니라 공통 설정이다). `client/public/world/doll.glb` 삭제,
+  `doll.ts CHARACTERS` 에서 ribbon 빼고 `DEFAULT_CHARACTER = "seoyul"`, 기본 옷 `apron`.
+  서버는 `RibbonConfig.character` 기본값 seoyul, `DEFAULT_PROFILES` 에서 ribbon 뺌, `ConfigStore._drop_ribbon_character()`
+  가 예전 설정을 한 번 옮긴다 (주인공/친구가 ribbon 이면 seoyul/빈 값으로, ribbon 프로필 삭제).
+  **리본이 프로필에 손수 맞춰 둔 목소리·성격은 사라진다** (서율·올리 프로필을 쓴다). `sync_world.py --doll` 도 두 캐릭터만.
+
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**
   (아이가 물을 때만 답, 가끔 한 번만 되묻기), 화제 바꾸지 않기, 퀴즈·학습은 아이가 원할 때만.

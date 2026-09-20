@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 
 class RibbonLook(BaseModel):
     """3D 인형 겉모습. 색은 재질 기본색을 바꾼다. 고를 수 있는 옷은 캐릭터마다 다르다
-    (client/src/world/doll.ts CHARACTERS: 리본이 onepiece|twopiece, 올리·서율 apron|tee)"""
-    outfit: str = "onepiece"
+    (client/src/world/doll.ts CHARACTERS: 올리·서율 모두 apron|tee)"""
+    outfit: str = "apron"
     hair: str = "#f48a9e"
     bow: str = "#de2834"
     dress: str = "#80d6be"       # 원피스 / 주름치마
@@ -51,7 +51,7 @@ class RibbonConfig(BaseModel):
     filler_delay_s: float = 1.5  # 반응이 끝난 뒤 이만큼 조용하면 첫 추임새
     filler_interval_s: float = 4.0  # 그 뒤 추임새 간격
     look: RibbonLook = Field(default_factory=RibbonLook)
-    character: str = "ribbon"    # TV 에 나오는 캐릭터: ribbon (여자) | ollie (남자) | seoyul (여자)
+    character: str = "seoyul"    # TV 에 나오는 캐릭터: seoyul (여자) | ollie (남자). 리본이는 2026-09-20 에 뺐다
     friend: str = ""             # 같이 나오는 친구 캐릭터 (빈 값이면 혼자). 친구는 부르지 않아도 알아서 돌아다닌다
     # 맵에서 돌아다니기
     wander: bool = True          # 끄면 "부르면 오는 자리"에 서 있는다
@@ -73,9 +73,6 @@ class CharacterProfile(BaseModel):
 
 #: 처음 쓸 때의 캐릭터별 기본 프로필 (client/src/world/doll.ts CHARACTERS 와 같은 id)
 DEFAULT_PROFILES: Dict[str, Dict] = {
-    "ribbon": {"name": "리본", "intro": "TV 안에 사는 명랑한 미술 친구",
-               "personality": "밝고 호기심이 많다. 아이 그림에서 색과 모양을 먼저 알아봐 준다.", "voice": "F1",
-               "look": {"outfit": "onepiece"}},
     "ollie": {"name": "올리", "intro": "앞치마를 두른 차분한 남자 친구",
               "personality": "차분하고 다정하다. 천천히 말하고 아이 이야기를 끝까지 들어 준다.", "voice": "M1",
               "look": {"outfit": "apron"}},
@@ -140,15 +137,28 @@ class ConfigStore:
             if rc.game_max_id == 151:
                 rc.game_max_id = 1025
             rc.game_range_v = 2
-        self._seed_profiles(had_profiles=bool(raw.get("characters")))
+        self._drop_ribbon_character()
+        self._seed_profiles(had_profiles=bool(raw.get("characters")), had_file=bool(raw))
         self._sync_main()
         return self.config
 
-    def _seed_profiles(self, had_profiles: bool) -> None:
-        """프로필이 없던 예전 설정이면 지금 주인공 값(이름·목소리·성격·겉모습)을 그 캐릭터 프로필로 옮긴다"""
+    def _drop_ribbon_character(self) -> None:
+        """리본이 캐릭터는 이제 쓰지 않는다 (2026-09-20 사용자 결정: 올리·서율만).
+        예전 설정이 리본이를 주인공/친구로 두고 있으면 서율이로 옮기고 프로필도 지운다.
+        서비스 이름 '리본'은 그대로다 (settings.json 의 ribbon 칸은 캐릭터가 아니라 공통 설정)"""
+        rc = self.config.ribbon
+        if rc.character == "ribbon":
+            rc.character = "seoyul"
+        if rc.friend == "ribbon":
+            rc.friend = ""
+        self.config.characters.pop("ribbon", None)
+
+    def _seed_profiles(self, had_profiles: bool, had_file: bool = True) -> None:
+        """프로필이 없던 예전 설정이면 지금 주인공 값(이름·목소리·성격·겉모습)을 그 캐릭터 프로필로 옮긴다.
+        설정 파일이 아예 없던 새 설치는 옮길 것이 없으므로 기본 프로필(DEFAULT_PROFILES)을 그대로 쓴다"""
         rc = self.config.ribbon
         chars = self.config.characters
-        if not had_profiles and rc.character not in chars:
+        if had_file and not had_profiles and rc.character not in chars:
             base = DEFAULT_PROFILES.get(rc.character, {})
             prof = {p: getattr(rc, r) for p, r in _PROFILE_TO_RIBBON.items()}
             prof["personality"] = prof["personality"] or base.get("personality", "")   # 비어 있었으면 기본 성격

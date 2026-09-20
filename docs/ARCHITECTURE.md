@@ -70,7 +70,7 @@ TV 화면 <--WS JSON: state / ribbon.state / speak / transcript--
 | `src/world/types.ts` | 카탈로그·배치 형식 (Character_Creator 와 같음), 좌표 변환 |
 | `src/world/room.ts` | 방 껍데기 + 가구 glb + 걸린 그림으로 3D 방 짓기 |
 | `src/world/nav.ts` | 걸을 수 있는 바닥 격자, A* 길찾기 |
-| `src/world/doll.ts` | doll.glb 읽기, 옷·색 적용 (TV·관리자·편집기 공용) |
+| `src/world/doll.ts` | 캐릭터 glb(ollie/seoyul) 읽기, 옷·색 적용 (TV·관리자·편집기 공용) |
 | `src/tv/stage.ts` | three.js 렌더러·조명·TV 카메라, 화면 안에 보이는 바닥 판정 |
 | `src/tv/ribbon3d.ts` | 리본이 몸: 걷기/인사 액션, 경로 따라 걷기, 고개·숨쉬기·말할 때 끄덕임 |
 | `src/tv/brain.ts` | 리본이 행동: 돌아다니기·그림 구경, 부르면 멈춰 인사 후 "부르면 오는 자리"로 |

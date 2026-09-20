@@ -7,7 +7,7 @@ TV 화면은 **블렌더로 렌더한 방 사진 위에 three.js 로 리본이�
 
 | 위치 | 내용 | git |
 |---|---|---|
-| `client/public/world/doll.glb` | 리본이 (뼈대 + 원피스/투피스 + Walk/Greet 액션) | 포함 |
+| `client/public/world/seoyul.glb` | 서율 (뼈대 + 앞치마/반팔 + Walk/Greet/Sway 액션) | 포함 |
 | `client/public/world/ollie.glb` | 올리 (같은 뼈대·같은 얼굴 부품, 앞치마/반팔 티) | 포함 |
 | `client/public/world/seoyul.glb` | 서율 (올리의 여자친구, 같은 뼈대·얼굴 부품, 앞치마/반팔 티) | 포함 |
 | `client/public/world/room_shell*.glb` | 방 껍데기 (미술실, 전시장) | 포함 |
@@ -19,7 +19,7 @@ TV 화면은 **블렌더로 렌더한 방 사진 위에 three.js 로 리본이�
 | `data/world/render/<방>_<시간대>.png`, `_env.hdr`, `<방>.json` | 시간대별 TV 배경 렌더, 리본이 조명용 360° HDR, 렌더에 쓴 배치 | 제외 |
 | `tools/blender/room_map.py`, `game_export.py`, `phases.py` | Character_Creator 에서 복사한 방·가구 생성 코드와 시간대 표 (고치지 말고 sync) | 포함 |
 | `tools/blender/render_room.py` | 배치 → TV 배경 PNG + 환경 HDR 렌더 | 포함 |
-| `tools/blender/export_doll.py` | doll.blend → 고화질 doll.glb (메시당 24000면까지) | 포함 |
+| `tools/blender/export_doll.py` | <캐릭터>.blend → 고화질 glb (메시당 24000면까지). 블렌더 파일에 있는 동작(Walk·Greet·Sway)은 그대로 두고 나머지를 채운다 | 포함 |
 | `tools/blender/doll_actions.py` | 리본이 동작(끄덕임·가리키기 등)을 만들어 glb 에 넣음 | 포함 |
 
 배치 파일 형식은 Character_Creator 의 `layout.json` / `layout_gallery.json` 과 같습니다. 서로 복사해서 쓸 수 있습니다 (블렌더 렌더에도 그대로).
@@ -127,7 +127,6 @@ Character_Creator 에서 가구 모양이나 인형을 고쳤으면 그쪽에서
 
 | id | 파일 | 만든 곳 | 옷 (부품 앞머리) | 색 바꾸기 |
 |---|---|---|---|---|
-| `ribbon` | `doll.glb` | Character_Creator `doll.blend` | 원피스 `OP_` / 투피스 `TP_` | 머리·리본·원피스·블라우스 |
 | `ollie` | `ollie.glb` | Character_Creator `yoon.blend` | 앞치마 `AP_` / 반팔 티 `TE_` | 없음 (만들 때 정한 색 그대로) |
 | `seoyul` | `seoyul.glb` | Character_Creator `seoyul.blend` | 앞치마 `AP_` / 반팔 티 `TE_` | 없음 (만들 때 정한 색 그대로) |
 

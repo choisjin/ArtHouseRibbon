@@ -11,10 +11,11 @@ export interface RibbonLook {
   blouse: string;
 }
 
-export const DEFAULT_LOOK: RibbonLook = { outfit: "onepiece", hair: "#f48a9e", bow: "#de2834", dress: "#80d6be", blouse: "#ffe896" };
+export const DEFAULT_LOOK: RibbonLook = { outfit: "apron", hair: "#f48a9e", bow: "#de2834", dress: "#80d6be", blouse: "#ffe896" };
 
 /**
- * 쓸 수 있는 캐릭터. 모두 Character_Creator 에서 같은 비율·같은 뼈대로 만들어서
+ * 쓸 수 있는 캐릭터 (2026-09-20 사용자 결정: 올리·서율만 쓴다. 리본이 인형은 뺐다 - 서비스 이름 '리본'은 그대로).
+ * 모두 Character_Creator 에서 같은 비율·같은 뼈대로 만들어서
  * 얼굴(Eye_L/R, Blush_L/R, Furrow_L/R, Mouth_*)과 동작(Walk/Greet/Nod/…/Peek)이 똑같다.
  * 다른 것은 모델 파일과 옷(부품 이름 앞머리), 색을 바꿀 수 있는 재질뿐이다.
  */
@@ -27,11 +28,6 @@ export interface CharacterSpec {
 }
 
 export const CHARACTERS: Record<string, CharacterSpec> = {
-  ribbon: {
-    id: "ribbon", name: "리본이 (여자)", file: "doll.glb",
-    outfits: [{ id: "onepiece", name: "원피스", prefix: "OP_" }, { id: "twopiece", name: "투피스", prefix: "TP_" }],
-    tint: { Hair_Game: "hair", Bow_Game: "bow", Dress_Game: "dress", Blouse_Game: "blouse" },
-  },
   ollie: {
     id: "ollie", name: "올리 (남자)", file: "ollie.glb",
     outfits: [{ id: "apron", name: "앞치마", prefix: "AP_" }, { id: "tee", name: "반팔 티", prefix: "TE_" }],
@@ -46,7 +42,7 @@ export const CHARACTERS: Record<string, CharacterSpec> = {
   },
 };
 
-export const DEFAULT_CHARACTER = "ribbon";
+export const DEFAULT_CHARACTER = "seoyul";
 export const characterOf = (id: string | undefined): CharacterSpec => CHARACTERS[id ?? ""] ?? CHARACTERS[DEFAULT_CHARACTER];
 
 export interface DollAsset { scene: THREE.Group; animations: THREE.AnimationClip[] }

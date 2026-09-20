@@ -36,11 +36,24 @@ def test_prompt_contains_kid_details():
 
 def test_old_settings_move_into_character_profile(tmp_path):
     p = tmp_path / "settings.json"
-    p.write_text(json.dumps({"ribbon": {"name": "리본", "voice": "F3", "pitch": 4, "character": "ribbon"}}),
+    p.write_text(json.dumps({"ribbon": {"name": "올리", "voice": "M3", "pitch": 4, "character": "ollie"}}),
                  encoding="utf-8")
     store = ConfigStore(p)
-    assert store.config.characters["ribbon"].voice == "F3"
-    assert {"ribbon", "ollie", "seoyul"} <= set(store.config.characters)
+    assert store.config.characters["ollie"].voice == "M3"
+    assert {"ollie", "seoyul"} <= set(store.config.characters)
+
+
+def test_ribbon_doll_is_moved_to_seoyul(tmp_path):
+    """리본이 인형은 이제 쓰지 않는다 (2026-09-20): 주인공이었으면 서율이로, 프로필은 지운다"""
+    p = tmp_path / "settings.json"
+    p.write_text(json.dumps({"ribbon": {"character": "ribbon", "friend": "ribbon", "dialogue_style": 2},
+                             "characters": {"ribbon": {"name": "리본", "voice": "F1"},
+                                            "seoyul": {"name": "서율", "voice": "F2"}}}), encoding="utf-8")
+    store = ConfigStore(p)
+    rc = store.config.ribbon
+    assert rc.character == "seoyul" and rc.friend == ""
+    assert "ribbon" not in store.config.characters
+    assert rc.name == "서율" and rc.voice == "F2"        # 서율이 프로필이 대화·TV 에 쓰인다
 
 
 def test_switching_main_character_uses_its_profile(tmp_path):
@@ -50,4 +63,4 @@ def test_switching_main_character_uses_its_profile(tmp_path):
     assert (rc.name, rc.voice, rc.persona_extra) == ("서율", "F4", "씩씩하다")
     # 다시 읽어도 그대로
     again = ConfigStore(tmp_path / "settings.json")
-    assert again.config.ribbon.voice == "F4" and again.config.characters["ribbon"].voice == "F1"
+    assert again.config.ribbon.voice == "F4" and again.config.characters["ollie"].voice == "M1"
