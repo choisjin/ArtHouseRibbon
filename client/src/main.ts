@@ -12,9 +12,13 @@ import type { ClientRole } from "./protocol";
  *   /?mode=editor    맵 편집기. 가구 배치와 벽에 거는 그림 (Character_Creator 배치 편집기)
  *   /?mode=art       아이 전시실 꾸미기. 작품 사진을 올리고(배경 지우기) 전시실 벽에 건다
  *   /?mode=snap      폰으로 작품 찍어 보내기. 관리자 설정 → 카메라 탭의 QR 로 연다 (서버로 사진만 보낸다)
+ *   /?mode=home      화면 고르기 메뉴. 도메인(ribbon.arthouseribbon.com)으로 들어오면 mode 없이 여기로 온다
  */
 const params = new URLSearchParams(location.search);
-const mode = (params.get("mode") ?? "tv") as ClientRole;
+/** 맥미니 자신에서 연 것인가 (TV·관리자 화면은 여기서 연다). 도메인으로 들어오면 아니다 */
+const local = ["localhost", "127.0.0.1", "::1"].includes(location.hostname) || /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname);
+// mode 가 없으면: 맥미니에서 열었으면 TV, 도메인(폰 등)으로 들어왔으면 무엇을 할지 고르는 메뉴
+const mode = (params.get("mode") ?? (local ? "tv" : "home")) as ClientRole;
 
 async function boot(): Promise<void> {
   if (mode === "mic") {
@@ -30,6 +34,11 @@ async function boot(): Promise<void> {
   if (mode === "art") {
     const { startArt } = await import("./art/index");
     await startArt();
+    return;
+  }
+  if (mode === "home") {
+    const { startHome } = await import("./home/index");
+    startHome();
     return;
   }
   if (mode === "snap") {

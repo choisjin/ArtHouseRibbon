@@ -3,7 +3,16 @@
 폰으로 작품을 찍어 보내려면 **https 가 필요하다.** 브라우저는 http 로 연 페이지에서 카메라·마이크를 막는다
 (localhost 만 예외). 도메인 `arthouseribbon.com` 이 Cloudflare 에 있으므로 **Cloudflare Tunnel** 로 붙인다.
 
-- 주소: **https://ribbon.arthouseribbon.com** (학원 홈페이지는 그대로 두고 서브도메인만 쓴다)
+- 주소 나누기 (메인은 Figma Sites 로 만드는 학원 홈페이지, 리본은 옆에 붙는 사이드 페이지):
+
+  | 주소 | 무엇 | 어떻게 |
+  |---|---|---|
+  | `arthouseribbon.com`, `www` | 학원 홈페이지 (Figma Sites) | Figma 가 알려 주는 DNS 레코드를 Cloudflare 에 넣는다. **Proxy 는 끄고(회색 구름) DNS only** 로 두어야 Figma 가 인증서를 발급한다 |
+  | `ribbon.arthouseribbon.com` | 리본 서버 (TV·관리자·작품 찍기) | 아래 Cloudflare Tunnel |
+
+  서로 건드리지 않는다. 메인 홈페이지에서 리본으로 가는 링크를 달아도 되고(Access 로그인 화면이 먼저 뜬다), 링크 없이 주소만 알고 써도 된다.
+- 리본 주소로 mode 없이 들어오면 **무엇을 할지 고르는 메뉴**가 뜬다 (`client/src/home/index.ts`).
+  맥미니 자신(localhost·랜 IP)에서 열면 예전처럼 바로 TV 화면이다.
 - 공유기 포트를 열지 않는다 (맥미니가 밖으로 연결을 건다).
 - 인증서는 Cloudflare 가 준다. 맥미니에서 인증서를 받거나 갱신할 일이 없다.
 - **Cloudflare Access** 로 "허락한 사람만" 들어오게 막는다. 서버 자체에는 아직 로그인이 없으니 이 문을 꼭 세운다.
