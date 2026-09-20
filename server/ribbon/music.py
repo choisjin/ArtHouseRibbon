@@ -223,8 +223,12 @@ class SpotifyAccount:
             offset += len(items) or 100
         return out
 
-    async def add(self, playlist_id: str, uris: List[str]) -> None:
-        await self.api("POST", f"/playlists/{playlist_id}/items", body={"uris": uris})
+    async def add(self, playlist_id: str, uris: List[str], position: Optional[int] = None) -> None:
+        """position 을 주면 그 자리에 끼워 넣는다 (뺀 노래를 되돌릴 때)"""
+        body: Dict[str, Any] = {"uris": uris}
+        if position is not None:
+            body["position"] = position
+        await self.api("POST", f"/playlists/{playlist_id}/items", body=body)
 
     async def remove(self, playlist_id: str, uris: List[str]) -> None:
         await self.api("DELETE", f"/playlists/{playlist_id}/items", body={"items": [{"uri": u} for u in uris]})

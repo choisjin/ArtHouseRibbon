@@ -225,6 +225,8 @@ class DialogueManager:
         # 음악 부탁: 게임 중이 아니면 먼저 본다 (대화 모델을 거치지 않는다)
         if self.music is not None and not (self.quiz and self.quiz.active):
             lines = await self.music.handle(text, self.ribbon_name)
+            if self.music.take_view_change():        # TV 에 띄운 번호 목록 ("플레이리스트 보여줘")
+                await self.broadcast({"type": "music.list", "view": self.music.list_view()})
             if lines is not None:
                 await self._music_reply(lines, kid, channel)
                 return
@@ -461,6 +463,8 @@ class DialogueManager:
             self.quiz.active = False
             await self.broadcast({"type": "game", "view": None})
             await self._set_ribbon("idle", None)
+        if self.music is not None and self.music.tick():     # 오래 둔 번호 목록 내리기
+            await self.broadcast({"type": "music.list", "view": self.music.list_view()})
         for turn in self.queue.expire(now, self.settings.waiting_timeout_s):
             kid = self._kid_for_channel(turn.channel)
             await self._say(persona.expired_notice(call_name(kid)), kid.id, final=True)

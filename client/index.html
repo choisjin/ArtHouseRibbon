@@ -17,6 +17,21 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      /* "플레이리스트 보여줘" 번호 목록 (src/tv/musiclist.ts). 번호를 크게: 글 못 읽는 아이도 번호를 말할 수 있게 */
+      #music-list { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(62vw, 820px); display: none;
+        flex-direction: column; gap: 1vh; padding: 2.2vh 2vw; background: rgba(14,11,22,.9); border-radius: 26px;
+        border: 1px solid rgba(255,255,255,.14); box-shadow: 0 14px 50px rgba(0,0,0,.5); z-index: 20; }
+      #music-list.on { display: flex; }
+      #music-list .ml-head { font-size: clamp(18px, 2.4vw, 32px); font-weight: 800; color: #1db954; }
+      #music-list .ml-head small { color: #bbb; font-weight: 500; font-size: clamp(12px, 1.4vw, 18px); }
+      #music-list .ml-row { display: flex; align-items: center; gap: 1.2vw; }
+      #music-list .ml-n { flex: none; width: 2.2em; text-align: center; font-size: clamp(22px, 3vw, 44px); color: #ffd54a; }
+      #music-list img, #music-list .ml-art { flex: none; width: 6vh; height: 6vh; border-radius: 10px; background: #333; object-fit: cover; }
+      #music-list .ml-text { min-width: 0; display: flex; flex-direction: column; }
+      #music-list .ml-text b, #music-list .ml-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #music-list .ml-text b { font-size: clamp(16px, 2vw, 28px); }
+      #music-list .ml-text span { font-size: clamp(12px, 1.4vw, 18px); color: #bbb; }
+      #music-list .ml-foot { font-size: clamp(13px, 1.5vw, 20px); color: #bbb; margin-top: .6vh; }
       /* 음악 상태바 (src/tv/musicbar.ts). 떠 있으면 자막을 그 위로 */
       #music-bar { left: 50%; bottom: 2.4vh; transform: translateX(-50%); width: min(72vw, 980px); display: none; align-items: center;
         gap: 1.4vw; padding: 1.2vh 1.4vw; background: rgba(14,11,22,.82); border: 1px solid rgba(255,255,255,.12); border-radius: 20px;

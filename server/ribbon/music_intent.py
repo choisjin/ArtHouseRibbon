@@ -26,8 +26,26 @@ _PLAY = re.compile(r"(틀어(줘|주|봐|줄|$)|틀자|틀래|재생(해|하|시
 
 @dataclass
 class Intent:
-    kind: str            # play | play_list | pause | resume | next | prev | louder | quieter | add | remove | what
+    kind: str            # play | play_list | pause | resume | next | prev | louder | quieter | add | remove | what | show
     query: str = ""
+
+
+#: "3번", "세 번째", "셋", "삼" -> 3 (목록을 보여 줄 때 지울 노래 고르기)
+_NUM_WORDS = {"하나": 1, "한": 1, "일": 1, "첫": 1, "둘": 2, "두": 2, "이": 2, "셋": 3, "세": 3, "삼": 3,
+              "넷": 4, "네": 4, "사": 4, "다섯": 5, "오": 5, "여섯": 6, "육": 6, "일곱": 7, "칠": 7,
+              "여덟": 8, "팔": 8, "아홉": 9, "구": 9, "열": 10, "십": 10}
+
+
+def number(text: str) -> Optional[int]:
+    """말 속의 번호. 숫자가 먼저, 없으면 한글 수사 ("세 번째" -> 3)"""
+    c = _compact(text)
+    m = re.search(r"(\d+)", c)
+    if m:
+        return int(m.group(1))
+    for w in sorted(_NUM_WORDS, key=len, reverse=True):
+        if re.search(w + r"(번|번째|째|개|곡)", c):
+            return _NUM_WORDS[w]
+    return _NUM_WORDS.get(c)
 
 
 def _compact(text: str) -> str:
@@ -44,6 +62,8 @@ def parse(text: str, name: str = "리본") -> Optional[Intent]:
     c = _compact(t)
     if not c or re.search(r"(지마|말아|싫어|안틀|안돼)", c):
         return None
+    if re.search(_LIST + r".*(보여|보자|봐줘|봐|뭐있|뭐가있|알려)|(무슨|어떤)(노래|곡)(들)?(있|나와)", c):
+        return Intent("show")
     if re.search(r"(이|지금|방금|나오는|이거)(노래|곡|음악).*(뭐|무슨|누구|제목)|(노래|곡)제목|^(이거|지금|이게)?무슨(노래|곡)(이야|야|이에요|예요|지)?$", c):
         return Intent("what")
     if re.search(_LIST + r"에(넣|추가|저장|담)|(노래|곡|이거|이것).*(넣어|넣자|추가|저장|담아)", c):
@@ -87,6 +107,9 @@ class MusicControl:
         self.state: Dict[str, Any] = {}          # 재생 화면이 보낸 마지막 상태 (music.state)
         self.state_at = 0.0
         self.last_error = ""
+        self.listing: Optional[Dict[str, Any]] = None   # TV 에 띄운 번호 목록 (보여 줘 -> 번호로 빼기)
+        self._view_changed = False
+        self._undo: Optional[Dict[str, Any]] = None     # 방금 뺀 노래 (되돌려)
 
     # ---------- 재생 화면이 알려 오는 것 ----------
     def set_device(self, role: str, device_id: str) -> None:
@@ -117,16 +140,127 @@ class MusicControl:
             raise MusicError(f"음악을 틀 {where}이 준비되지 않았습니다 (화면을 열고 한 번 눌러 주세요)")
         return dev
 
+    # ---------- TV 에 띄우는 번호 목록 ----------
+    PAGE = 6                                     # 한 번에 보여 주고 읽어 주는 곡 수
+    LIST_TIMEOUT_S = 180.0                       # 이만큼 아무 말이 없으면 목록을 내린다
+
+    def tick(self) -> bool:
+        """1초마다 (dialogue.tick). 목록 화면이 바뀌었으면 True"""
+        if self.listing and time.time() - self.listing.get("at", 0) > self.LIST_TIMEOUT_S:
+            log.info("번호 목록을 오래 두어 내림")
+            self.close_list()
+        return self.take_view_change()
+
+    def list_view(self) -> Optional[Dict[str, Any]]:
+        """TV 가 그릴 번호 목록 (music.list). 안 보여 주는 중이면 None"""
+        lst = self.listing
+        if not lst:
+            return None
+        start = lst["page"] * self.PAGE
+        page = lst["tracks"][start:start + self.PAGE]
+        return {"title": lst["title"], "page": lst["page"] + 1,
+                "pages": max(1, -(-len(lst["tracks"]) // self.PAGE)), "total": len(lst["tracks"]),
+                "items": [{"n": start + i + 1, "title": t["title"], "artists": t["artists"],
+                           "art": t.get("album_art") or ""} for i, t in enumerate(page)]}
+
+    def take_view_change(self) -> bool:
+        """목록 화면이 바뀌었나 (dialogue 가 보고 TV 에 보낸다)"""
+        changed, self._view_changed = self._view_changed, False
+        return changed
+
+    def close_list(self) -> None:
+        if self.listing is not None:
+            self.listing = None
+            self._view_changed = True
+
+    def _page_tracks(self) -> List[Dict[str, Any]]:
+        lst = self.listing
+        return lst["tracks"][lst["page"] * self.PAGE: lst["page"] * self.PAGE + self.PAGE] if lst else []
+
+    async def _do_show(self, it: Intent) -> List[str]:
+        pl = await self._default_list()
+        tracks = await self.account.playlist_tracks(pl["id"])
+        if not tracks:
+            self.close_list()
+            return [f"{pl['title'] or '내 목록'}에 아직 노래가 없어."]
+        self.listing = {"playlist": pl, "title": pl["title"] or "내 목록", "tracks": tracks, "page": 0,
+                        "at": time.time()}
+        self._view_changed = True
+        return [f"{self.listing['title']}에 {len(tracks)}곡 있어.", self._read_page(), "빼고 싶은 노래는 번호를 말해 줘."]
+
+    def _read_page(self) -> str:
+        return " ".join(f"{t['n']}번 {t['title']}," for t in (self.list_view() or {}).get("items", [])).rstrip(",")
+
+    async def _listing_turn(self, text: str) -> Optional[List[str]]:
+        """목록을 보여 주는 중의 말. 목록과 상관없는 말이면 None (보통 처리로 넘긴다)"""
+        lst = self.listing
+        lst["at"] = time.time()
+        c = re.sub(r"[^0-9a-z가-힣]", "", text.lower())
+        if re.search(r"(그만|됐어|닫아|다봤|그만봐|끝)", c):
+            self.close_list()
+            return ["알겠어!"]
+        if re.search(r"(되돌려|되돌리|취소|다시넣|잘못|아까그거)", c) and self._undo:
+            return await self._undo_remove()
+        if re.search(r"(다음|더보여|더줘|더줄|더있|넘겨|뒤에)", c) or c == "더":
+            if (lst["page"] + 1) * self.PAGE >= len(lst["tracks"]):
+                return ["이게 마지막이야."]
+            lst["page"] += 1
+            self._view_changed = True
+            return [self._read_page(), "빼고 싶은 노래는 번호를 말해 줘."]
+        if re.search(r"(이전|앞에|앞으로|전에거)", c) and lst["page"] > 0:
+            lst["page"] -= 1
+            self._view_changed = True
+            return [self._read_page()]
+        n = number(text)
+        if n is None:
+            return None
+        if not 1 <= n <= len(lst["tracks"]):
+            return [f"그 번호는 없어. 1번부터 {len(lst['tracks'])}번까지야."]
+        return await self._remove_number(n)
+
+    async def _remove_number(self, n: int) -> List[str]:
+        lst = self.listing
+        pl, track = lst["playlist"], lst["tracks"][n - 1]
+        await self.account.remove(pl["id"], [track["uri"]])
+        self._undo = {"playlist": pl, "track": track, "position": n - 1}
+        lst["tracks"] = [t for i, t in enumerate(lst["tracks"]) if i != n - 1]
+        if lst["page"] * self.PAGE >= len(lst["tracks"]) and lst["page"] > 0:
+            lst["page"] -= 1
+        self._view_changed = True
+        log.info("목록에서 뺌(번호 %d): %s <- %s", n, pl.get("title"), track["title"])
+        if not lst["tracks"]:
+            self.close_list()
+            return [f"{track['title']}, 뺐어. 이제 목록이 비었어."]
+        return [f"{n}번 {track['title']}, 뺐어.", "더 뺄 노래가 있으면 번호를 말해 줘."]
+
+    async def _undo_remove(self) -> List[str]:
+        u = self._undo
+        self._undo = None
+        await self.account.add(u["playlist"]["id"], [u["track"]["uri"]], position=u["position"])
+        if self.listing and self.listing["playlist"]["id"] == u["playlist"]["id"]:
+            self.listing["tracks"].insert(u["position"], u["track"])
+            self._view_changed = True
+        return [f"{u['track']['title']}, 다시 넣었어."]
+
     # ---------- 말 처리 ----------
     async def handle(self, text: str, name: str = "리본") -> Optional[List[str]]:
         cfg = self.store.config.music
         if not cfg.enabled:
             return None
+        if self.listing is not None and self.account.connected:
+            try:
+                lines = await self._listing_turn(text)
+            except MusicError as e:
+                self.last_error = str(e)
+                log.warning("목록 고치기 실패: %s", e)
+                return ["지금은 목록을 고칠 수가 없어. 선생님께 말해 줘."]
+            if lines is not None:
+                return lines
         intent = parse(text, name)
-        if intent is None:
+        if intent is None or (intent.kind in ("what", "louder", "quieter", "prev") and not self.active()):
+            # 음악 이야기가 아니다 ("무슨 노래 좋아해?"). 목록을 보여 주는 중이었으면 화면을 내리고 보통 대화로
+            self.close_list()
             return None
-        if intent.kind in ("what", "louder", "quieter", "prev") and not self.active():
-            return None                          # 음악이 안 나오면 음악 이야기가 아니다 ("무슨 노래 좋아해?")
         if not self.account.connected:
             return ["음악 계정이 아직 연결되지 않았어. 선생님께 부탁해 줘."]
         log.info("음악 부탁: %s %s", intent.kind, intent.query)

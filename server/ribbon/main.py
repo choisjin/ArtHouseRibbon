@@ -854,6 +854,8 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         await ws.send_text(json.dumps({"type": "mic", "on": _mic_on}))   # 마이크 표시
         if music.state:                              # 음악 상태바
             await ws.send_text(json.dumps(music.state, ensure_ascii=False))
+        if music.listing:                            # 보여 주던 번호 목록 (TV 를 새로 열어도)
+            await ws.send_text(json.dumps({"type": "music.list", "view": music.list_view()}, ensure_ascii=False))
         if dialogue.quiz and dialogue.quiz.active:   # TV 를 새로 열어도 하던 게임 화면이 나오게
             await ws.send_text(json.dumps({"type": "game", "view": dialogue.quiz.view()}, ensure_ascii=False))
     elif t == "tts.done":

@@ -245,6 +245,21 @@ export interface MusicTrack {
   duration_ms: number;
 }
 
+/** "플레이리스트 보여줘": TV 에 띄우는 번호 목록 (서버 music_intent.MusicControl.list_view) */
+export interface MusicListView {
+  title: string;
+  page: number;
+  pages: number;
+  total: number;
+  items: { n: number; title: string; artists: string; art: string }[];
+}
+
+export interface MusicListMsg {
+  type: "music.list";
+  /** null 이면 목록을 내린다 */
+  view: MusicListView | null;
+}
+
 /** 재생 화면(music/player.ts)이 알린 Spotify 재생 상태를 서버가 모두에게 -> TV 아래 상태바 */
 export interface MusicStateMsg {
   type: "music.state";
@@ -255,4 +270,4 @@ export interface MusicStateMsg {
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
   | SpeakStopMsg | CueMsg | ButtonMsg | MicMsg | GameMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg
-  | MusicStateMsg;
+  | MusicStateMsg | MusicListMsg;

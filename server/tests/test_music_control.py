@@ -33,8 +33,8 @@ class FakeSpotify:
     async def playlist_tracks(self, pid):
         return self.list_tracks
 
-    async def add(self, pid, uris):
-        self.calls.append(("add", pid, tuple(uris)))
+    async def add(self, pid, uris, position=None):
+        self.calls.append(("add", pid, tuple(uris), position))
 
     async def remove(self, pid, uris):
         self.calls.append(("remove", pid, tuple(uris)))
@@ -82,7 +82,7 @@ async def test_add_and_remove_current_track(tmp_path):
     mc, sp, _ = control(tmp_path)
     mc.set_state({"playing": True, "track": sp.tracks[0], "position_ms": 0})
     assert await mc.handle("이 노래 목록에 넣어줘") == ["피카츄 송, 목록에 넣었어!"]
-    assert ("add", "p1", ("spotify:track:1",)) in sp.calls
+    assert ("add", "p1", ("spotify:track:1",), None) in sp.calls
     sp.list_tracks = sp.tracks
     assert await mc.handle("이 노래 넣어줘") == ["그 노래는 벌써 목록에 있어."]
     assert await mc.handle("이 노래 목록에서 빼줘") == ["피카츄 송, 목록에서 뺐어."]
@@ -97,6 +97,58 @@ async def test_music_talk_only_while_music_is_on(tmp_path):
     assert await mc.handle("소리 줄여줘") == ["소리 줄였어."]
     assert mc.store.config.music.volume == 45
     assert await mc.handle("이 노래 뭐야") == ["지우의 피카츄 송이야."]
+
+
+def tracks(n):
+    return [{"uri": f"spotify:track:{i}", "title": f"{i}번 노래", "artists": "가수", "album_art": "", "duration_ms": 1000}
+            for i in range(1, n + 1)]
+
+
+async def test_show_playlist_then_remove_by_number(tmp_path):
+    mc, sp, _ = control(tmp_path)
+    sp.list_tracks = tracks(8)
+    lines = await mc.handle("플레이리스트 보여줘")
+    view = mc.list_view()
+    assert view["total"] == 8 and [i["n"] for i in view["items"]] == [1, 2, 3, 4, 5, 6]   # 한 쪽에 6곡
+    assert "1번 1번 노래" in lines[1] and "번호를 말해 줘" in lines[2]
+    assert mc.take_view_change() and not mc.take_view_change()      # TV 에 한 번만 보낸다
+
+    mc.set_state({"playing": True, "track": sp.tracks[0], "position_ms": 0})
+    assert await mc.handle("소리 줄여줘") == ["소리 줄였어."]          # 다른 음악 부탁에도 목록은 그대로
+    assert [i["n"] for i in mc.list_view()["items"]] == [1, 2, 3, 4, 5, 6]
+    mc.set_state({"playing": False, "track": None, "position_ms": 0})
+    assert (await mc.handle("다음"))[0].startswith("7번")            # 다음 쪽
+    assert [i["n"] for i in mc.list_view()["items"]] == [7, 8]
+
+    assert (await mc.handle("3번 빼줘"))[0] == "3번 3번 노래, 뺐어."
+    assert ("remove", "p1", ("spotify:track:3",)) in sp.calls
+    assert mc.list_view()["total"] == 7 and mc.listing["tracks"][2]["title"] == "4번 노래"   # 번호가 당겨진다
+
+    assert (await mc.handle("되돌려"))[0] == "3번 노래, 다시 넣었어."  # 잘못 뺐으면
+    assert ("add", "p1", ("spotify:track:3",), 2) in sp.calls        # 원래 자리로
+    assert mc.list_view()["total"] == 8
+
+    assert await mc.handle("그만") == ["알겠어!"]
+    assert mc.list_view() is None
+
+
+async def test_number_out_of_range_and_other_talk_closes_list(tmp_path):
+    mc, sp, _ = control(tmp_path)
+    sp.list_tracks = tracks(3)
+    await mc.handle("노래 목록 보여줘")
+    assert (await mc.handle("열 번"))[0] == "그 번호는 없어. 1번부터 3번까지야."
+    assert await mc.handle("오늘 유치원에서 그림 그렸어") is None     # 목록과 상관없는 말
+    assert mc.list_view() is None and mc.take_view_change()          # 화면을 내린다
+
+
+async def test_list_comes_down_after_a_while(tmp_path):
+    mc, sp, _ = control(tmp_path)
+    sp.list_tracks = tracks(3)
+    await mc.handle("목록 보여줘")
+    mc.take_view_change()
+    assert not mc.tick()                                  # 아직 보여 준다
+    mc.listing["at"] -= mc.LIST_TIMEOUT_S + 1
+    assert mc.tick() and mc.list_view() is None           # 오래 두면 화면을 내린다
 
 
 async def test_dialogue_answers_music_without_llm(tmp_path):
