@@ -64,7 +64,8 @@ export interface LayoutArt {
   image: string;            // "artworks/<파일>"
   width: number;            // m
   aspect: number;           // 세로/가로
-  frame?: "canvas" | "black" | "wood" | "white";
+  /** 액자 종류 (world/frames.ts 의 FRAME_STYLES id). 블렌더로 굽는 방은 canvas/black/wood/white 만 안다 */
+  frame?: string;
   mount: { host: string | null; id: string };
   u?: number;               // m, 면 가운데 기준 좌우
   v?: number;               // m, 그림 중심 높이 (ledge 면은 없음)
@@ -72,6 +73,8 @@ export interface LayoutArt {
   /** 배경을 지운 작품 뒤에 까는 색(없으면 흰색)과 여백 [왼,위,오,아래] (world/artimage.ts). 작품을 편집하면 서버가 맞춰 준다 */
   bg?: string;
   pad?: number[];
+  /** 이 그림에 단 천장 핀 조명 (world/lamp.ts). 없으면 달지 않은 것 */
+  lamp?: { on?: boolean; power?: number; angle?: number; tone?: number; tilt?: number } | null;
 }
 
 export interface Layout {
@@ -95,6 +98,8 @@ export interface Layout {
 export interface RenderPhase {
   bg: string;               // TV 시점 PNG
   env: string | null;       // 리본이 조명용 360° HDR
+  /** 둘러보기용 360° 파노라마 (전시장 껍데기를 쓰는 방만, Stage.setLooking) */
+  pano?: string | null;
 }
 
 /** 블렌더로 렌더한 TV 배경 (서버 world_render.py) */
@@ -106,6 +111,8 @@ export interface WorldRender extends RenderPhase {
   /** [시작 시각(0~23), 시간대 이름] 목록. 시간 순서이고, 첫 시각 전이면 마지막 시간대(밤) */
   schedule?: [number, string][];
   layout: Layout | null;    // 렌더에 쓴 배치 (가림막·길찾기는 이것으로)
+  /** 파노라마를 찍은 자리 (블렌더 좌표 x, y, z) */
+  pano_pos?: number[] | null;
   rendered_at: number;
   stale: boolean;           // 그 뒤로 배치가 바뀜 (다시 렌더 중이거나 대기)
 }
@@ -116,7 +123,7 @@ export function renderNow(r: WorldRender | null | undefined, at = new Date()): W
   let name = r.schedule[r.schedule.length - 1][1];     // 첫 시각(일출) 전이면 밤
   for (const [h, n] of r.schedule) if (at.getHours() >= h) name = n;
   const p = r.phases[name];
-  return p ? { ...r, bg: p.bg, env: p.env } : r;
+  return p ? { ...r, bg: p.bg, env: p.env, pano: p.pano } : r;
 }
 
 /** state.config.world */

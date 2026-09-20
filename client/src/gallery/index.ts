@@ -1,13 +1,15 @@
 import * as THREE from "three";
 import { Stage, fetchCatalog } from "../tv/stage";
 import { bgOf, composeArt } from "../world/artimage";
+import { LookAround } from "../world/lookaround";
 import { renderNow, type Layout, type WorldRender } from "../world/types";
 
 /**
  * 부모님께 보내는 전시실 (?mode=gallery&k=<열쇠>). **보기 전용**이고 로그인하지 않는다.
  *
  * 전시실 꾸미기(?mode=art)의 🔗 공유에서 복사한 주소로 들어온다. 열쇠가 맞으면 서버(GET /api/share/<열쇠>)가
- * 그 아이의 전시실들(1실·2실…)과 걸린 작품을 준다. TV 와 같은 3D 방을 보여 주고(왼쪽·오른쪽 벽도 정면으로 돌려 본다),
+ * 그 아이의 전시실들(1실·2실…)과 걸린 작품을 준다. 방 가운데에 선 것처럼 보여 주고, **쓸어 넘기면** 왼쪽·오른쪽 벽으로
+ * 고개가 돌아간다 (world/lookaround.ts, 배경은 360° 파노라마 렌더). 두 손가락·휠로 당겨 본다.
  * 작품을 누르면(방 안의 그림이든 아래 작은 그림이든) 올린 그대로의 크기로 크게 보고 내려받을 수 있다.
  * 내려받기는 두 가지: **배경 없는 원본**(올린 파일 그대로) / **배경색을 골라서**(여백까지 합친 그림, world/artimage.ts).
  */
@@ -30,24 +32,16 @@ export async function startGallery(): Promise<void> {
   $("#title").textContent = `🖼 ${data.name}의 전시실`;
 
   const stage = new Stage($("#view"), await fetchCatalog());
-  const loop = (): void => { requestAnimationFrame(loop); stage.render(); };
+  stage.setLooking(true);
+  const looker = new LookAround(stage, stage.renderer.domElement);
+  const loop = (): void => { requestAnimationFrame(loop); looker.tick(); stage.render(); };
   requestAnimationFrame(loop);
   let hall = 0;
-  let facing = "";                         // 정면에서 보고 있는 벽. 비어 있으면 TV 와 같은 화면
 
   async function show(n: number): Promise<void> {
     hall = n;
     const h = data.halls[n];
-    // 벽을 정면에서 볼 때는 렌더 없이 실시간 3D 로 (배경 렌더는 한 방향에서 찍은 한 장뿐이다)
-    await stage.setWorld(h.room, h.layout, facing ? null : renderNow(h.render));
-    const wallsOnly = stage.room.wallMounts().filter((w) => w.host === null);
-    stage.faceWall(wallsOnly.find((w) => w.key === facing) ?? null);
-    const views = $("#views");
-    views.innerHTML = `<button data-view="" class="${facing ? "" : "on"}">전체</button>`
-      + wallsOnly.map((w) => `<button data-view="${esc(w.key)}" class="${w.key === facing ? "on" : ""}">${esc(w.name)}</button>`).join("");
-    views.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-      b.onclick = () => { facing = b.dataset.view ?? ""; void show(hall); };
-    });
+    await stage.setWorld(h.room, h.layout, renderNow(h.render));
     const tabs = $("#halls");
     tabs.innerHTML = data.halls.length > 1
       ? data.halls.map((_, i) => `<button data-hall="${i}" class="${i === n ? "on" : ""}">${i + 1}실</button>`).join("") : "";
@@ -58,7 +52,7 @@ export async function startGallery(): Promise<void> {
     strip.innerHTML = files.map((f) => `<img src="/${esc(f)}" data-file="${esc(f)}" alt="" loading="lazy"
       style="background:${bgOf(data.artworks.find((x) => x.file === f))}">`).join("");
     strip.querySelectorAll<HTMLImageElement>("img").forEach((img) => { img.onclick = () => open(img.dataset.file!); });
-    $("#note").textContent = files.length ? "작품을 누르면 크게 볼 수 있어요" : "아직 걸린 작품이 없어요";
+    $("#note").textContent = files.length ? "옆으로 쓸어 넘겨 둘러보세요 · 작품을 누르면 크게 볼 수 있어요" : "아직 걸린 작품이 없어요";
   }
 
   // ---------- 방 안의 그림 누르기 ----------
@@ -76,8 +70,19 @@ export async function startGallery(): Promise<void> {
     }
     return null;
   };
-  canvas.onclick = (ev) => { const f = artAt(ev); if (f) open(f); };
-  canvas.onpointermove = (ev) => { canvas.style.cursor = artAt(ev) ? "zoom-in" : ""; };
+  canvas.style.touchAction = "none";
+  canvas.onpointerdown = (ev) => looker.begin(ev);
+  canvas.onpointermove = (ev) => {
+    if (looker.dragging) looker.move(ev);
+    else canvas.style.cursor = artAt(ev) ? "zoom-in" : "grab";
+  };
+  canvas.onpointerup = canvas.onpointercancel = (ev) => {
+    const was = looker.dragging;
+    looker.end(ev);
+    if (ev.type !== "pointerup" || !was || looker.dragging || looker.moved >= 6) return;
+    const f = artAt(ev);                     // 끌지 않고 눌렀다 뗐다: 작품이면 크게 본다
+    if (f) open(f);
+  };
 
   // ---------- 크게 보기 · 내려받기 ----------
   const box = $("#big");
@@ -145,7 +150,7 @@ const PAGE = `
   header { position:fixed; z-index:3; top:0; left:0; right:0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
            padding:10px 14px; background:linear-gradient(#0e0b16ee,#0e0b1600) }
   header h1 { font-size:17px; margin:0 6px 0 0 }
-  #halls, #views { display:flex; gap:4px }
+  #halls { display:flex; gap:4px }
   #note { margin-left:auto; font-size:13px; color:#c9bfd0 }
   #strip { position:fixed; z-index:3; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 14px; overflow-x:auto;
            background:linear-gradient(#0e0b1600,#0e0b16ee) }
@@ -164,7 +169,6 @@ const PAGE = `
 <header>
   <h1 id="title">전시실</h1>
   <span id="halls"></span>
-  <span id="views"></span>
   <span id="note"></span>
 </header>
 <div id="strip"></div>

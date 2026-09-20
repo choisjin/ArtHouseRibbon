@@ -6,6 +6,7 @@ TV 가 시계를 보고 그중 하나를 고른다. 창이 없는 전시장은 �
 결과는 data/world/render/ 에
   <방>_<시간대>.png       TV 배경
   <방>_<시간대>_env.hdr   리본이 조명용 360° 환경
+  <방>_<시간대>_pano.jpg  전시실 둘러보기용 360° 파노라마 (전시장 껍데기를 쓰는 방만)
   <방>.json               렌더에 쓴 배치(TV 가 가림막·길찾기에 같은 배치를 쓴다) + 시각 + 시간대 목록
 렌더 스크립트는 tools/blender/render_room.py.
 """
@@ -33,6 +34,16 @@ import phases  # noqa: E402  (블렌더 없이도 읽히는 시간대 표. room_
 
 DAYLIGHT_ROOMS = {"classroom"}          # 창이 있어 시간대별로 렌더하는 방 (room_map.ROOMS 의 daylight 와 같게)
                                         # 방 모양 이름(shell)으로 본다: 아이 전시실·kidbase 는 gallery 껍데기
+
+
+#: 방 모양(shell)별 렌더 방식 판. 올리면 그 껍데기를 쓰는 방은 켜질 때 다시 렌더한다
+#: gallery 2: 천장 레일 조명을 빼고(작품마다 핀 조명을 단다), 둘러보기 파노라마를 같이 굽는다
+#: gallery 3: 파노라마에만 앞벽을 세운다 (열린 앞면으로 바깥이 보이지 않게)
+SHELL_VERSION = {"gallery": 3}
+PANO_SHELLS = {"gallery"}
+HIDE_PARTS = {"gallery": "CeilingTrack,CeilingSpot"}
+PANO_EYE_M = 1.9                        # 파노라마를 찍는 눈높이 (m). 벽(4.6m)이 위아래로 고루 보이게 사람 눈보다 조금 높다
+PANO_BACK = 0.18                        # 방 가운데에서 열린 앞쪽으로 물러서는 정도 (방 깊이의 비율): 정면 벽이 한눈에 들어오게
 
 
 def room_phases(room: str) -> List[str]:
@@ -97,9 +108,11 @@ class WorldRenderer:
             if not png.exists():
                 continue
             hdr = self.dir / f"{room}_{name}_env.hdr"
+            pano = self.dir / f"{room}_{name}_pano.jpg"
             got[name] = {
                 "bg": f"/world-render/{png.name}?v={v}",
                 "env": f"/world-render/{hdr.name}?v={v}" if hdr.exists() else None,
+                "pano": f"/world-render/{pano.name}?v={v}" if pano.exists() and meta.get("pano_pos") else None,
             }
         if not got:
             return None
@@ -108,13 +121,26 @@ class WorldRenderer:
         return {
             "bg": cur["bg"],
             "env": cur["env"],
+            "pano": cur["pano"],
+            "pano_pos": meta.get("pano_pos"),          # 파노라마를 찍은 자리 (블렌더 좌표 x, y, z)
             "phases": got,
             # TV 가 제 시계로 고르도록 [시작 시각, 이름] 목록도 같이 준다
             "schedule": [[h, n] for h, n in phases.schedule() if n in got],
             "layout": meta.get("layout"),
             "rendered_at": v,
-            "stale": meta.get("layout") != self.world.layout(room),
+            "stale": (meta.get("layout") != self.world.layout(room)
+                      or int(meta.get("version", 1)) != SHELL_VERSION.get(self.world.shell_room(room), 1)
+                      or meta.get("pano_pos") != self.pano_pos(self.world.shell_room(room))),
         }
+
+    def pano_pos(self, shell: str) -> Optional[List[float]]:
+        """둘러보기 파노라마를 찍을 자리: 방 가운데에서 조금 물러선 곳 (블렌더 좌표). 파노라마를 굽지 않는 방이면 None"""
+        info = (self.world.catalog.get("rooms") or {}).get(shell)
+        if shell not in PANO_SHELLS or not info or "front_y" not in info or "back_y" not in info:
+            return None
+        front, back = float(info["front_y"]), float(info["back_y"])
+        return [0.0, round((front + back) / 2 - PANO_BACK * abs(back - front), 4),
+                round(PANO_EYE_M * float(info.get("unit_per_m", 1.0)), 4)]
 
     def status(self) -> Dict[str, Any]:
         rooms: Dict[str, Any] = {}
@@ -186,7 +212,10 @@ class WorldRenderer:
         cmd = [self.blender, "-b", "--factory-startup", "-P", str(SCRIPT), "--",
                room, str(lay_file), str(self.world.art_dir.parent), str(work), *want]
         env = dict(os.environ, PYTHONUNBUFFERED="1", RENDER_PCT=str(self.pct), RENDER_SAMPLES=str(self.samples),
-                   RENDER_SHELL_ROOM=shell)
+                   RENDER_SHELL_ROOM=shell, RENDER_HIDE=HIDE_PARTS.get(shell, ""))
+        pano_pos = self.pano_pos(shell)
+        if pano_pos:
+            env["RENDER_PANO"] = ",".join(str(v) for v in pano_pos)
         log.info("배경 렌더 시작: %s (%s%%, %s samples, 시간대 %s)", room, self.pct, self.samples, ", ".join(want))
         self.dir.mkdir(parents=True, exist_ok=True)
 
@@ -207,11 +236,13 @@ class WorldRenderer:
             return False
         for p in done:                       # 시간대별 배경 + 환경 HDR 을 한꺼번에 바꿔 넣는다
             os.replace(work / f"{room}_{p}.png", self.dir / f"{room}_{p}.png")
-            hdr = work / f"{room}_{p}_env.hdr"
-            if hdr.exists():
-                os.replace(hdr, self.dir / f"{room}_{p}_env.hdr")
+            for tail in ("_env.hdr", "_pano.jpg"):
+                extra = work / f"{room}_{p}{tail}"
+                if extra.exists():
+                    os.replace(extra, self.dir / f"{room}_{p}{tail}")
         _write_json(self.dir / f"{room}.json",
-                    {"room": room, "layout": layout, "rendered_at": int(time.time()), "phases": done})
+                    {"room": room, "layout": layout, "rendered_at": int(time.time()), "phases": done,
+                     "version": SHELL_VERSION.get(shell, 1), "pano_pos": pano_pos})
         shutil.rmtree(work, ignore_errors=True)
         log.info("배경 렌더 완료: %s (%d초)", room, time.time() - self.started)
         return True

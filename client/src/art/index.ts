@@ -3,6 +3,9 @@ import { Stage, fetchCatalog } from "../tv/stage";
 import type { WallMount } from "../world/room";
 import { renderNow, type Catalog, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 import { bgOf, lookSize, padOf } from "../world/artimage";
+import { FRAME_STYLES } from "../world/frames";
+import { LAMP_DEFAULT, LAMP_LIMIT, lampOf, type ArtLamp } from "../world/lamp";
+import { LookAround } from "../world/lookaround";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
 /**
@@ -13,7 +16,9 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 작품 목록과 사진 올리기는 모달(🖼 작품)로
  *   - 고른 그림은 아래 막대에서 크기·액자를 바꾸고 내린다. 비율은 그대로이고, 벽을 넘는 크기로는 못 키운다
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
- *   - 보는 곳: TV 화면(배경 렌더 그대로) 말고도 왼쪽·오른쪽·뒤쪽 벽을 정면에서 볼 수 있다 (그때는 실시간 3D 로 그린다)
+ *   - **쓸어 넘겨 둘러본다** (world/lookaround.ts): 방 가운데에 서서 고개를 돌리듯 왼쪽·오른쪽 벽을 본다. 배경은 같은
+ *     자리에서 구운 360° 파노라마라 어느 벽이든 렌더 품질 그대로다. 📺 단추로 TV 에 나오는 화면도 볼 수 있다
+ *   - 액자는 world/frames.ts 의 종류에서 고르고, 그림마다 천장 핀 조명을 단다 (world/lamp.ts: 켜기·조도·퍼짐·각도·빛 색)
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
  *   - 🔗 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
  * 저장하면 그 아이 전시실(kid-<아이 id>)의 arts 만 바뀐다. 배경은 모든 아이가 같은 렌더(kidbase)를 쓰므로
@@ -24,8 +29,6 @@ interface Kid { id: string; name: string }
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
 const WALL_FILL = 0.96;                   // 벽을 꽉 채우지는 않게
-const FRAMES: LayoutArt["frame"][] = ["canvas", "white", "wood", "black"];
-const FRAME_NAME: Record<string, string> = { canvas: "테두리 없음", white: "흰 액자", wood: "나무 액자", black: "검은 액자" };
 
 async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -79,10 +82,12 @@ export async function startArt(): Promise<void> {
   let mounts: WallMount[] = [];
   let picked: string | null = null;
   let dirty = false;
-  let facing = "";                                 // 정면에서 보고 있는 벽 (WallMount.key). 비어 있으면 TV 화면
   const lightIn = $<HTMLInputElement>("#light");
 
-  const loop = (): void => { requestAnimationFrame(loop); marker?.update(); stage.render(); };
+  if (new URLSearchParams(location.search).has("debug")) (window as unknown as { stage?: Stage }).stage = stage;
+  stage.setLooking(true);                          // 방 가운데에 서서 둘러본다 (쓸어 넘겨 왼쪽·오른쪽 벽으로)
+  const looker = new LookAround(stage, stage.renderer.domElement);
+  const loop = (): void => { requestAnimationFrame(loop); looker.tick(); marker?.update(); stage.render(); };
   requestAnimationFrame(loop);
 
   async function loadKid(): Promise<void> {
@@ -115,25 +120,11 @@ export async function startArt(): Promise<void> {
   async function rebuild(): Promise<void> {
     const lay = layout ? { ...layout, arts, light } : { items: [], doll_spot: { x: 0, y: 0 }, arts, light };
     // 배경 렌더가 있으면 TV 는 렌더에 쓴 배치로 짓는다 (stage.setWorld). 손보는 중인 그림을 거기에도 넣어 준다
-    // 벽을 정면에서 볼 때는 렌더 없이 실시간 3D 로 (배경 렌더는 TV 카메라에서 찍은 한 장뿐이다)
-    const now = facing ? null : renderNow(render);
+    const now = renderNow(render);
     await stage.setWorld(room, lay, now ? { ...now, layout: now.layout ? { ...now.layout, arts, light } : lay } : now);
     mounts = stage.room.wallMounts();
-    stage.faceWall(mounts.find((w) => w.key === facing) ?? null);
     buildWallPlanes();
-    drawViews();
     markPicked();
-  }
-
-  /** 보는 곳 고르기: TV 화면 + 방의 벽들 (가구에 달린 면은 뺀다) */
-  function drawViews(): void {
-    const box = $("#views");
-    const wallsOnly = mounts.filter((w) => w.host === null);
-    box.innerHTML = `<button data-view="" class="${facing ? "" : "on"}">TV 화면</button>`
-      + wallsOnly.map((w) => `<button data-view="${esc(w.key)}" class="${w.key === facing ? "on" : ""}">${esc(w.name)}</button>`).join("");
-    box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-      b.onclick = () => { facing = b.dataset.view ?? ""; void rebuild(); };
-    });
   }
 
   /** 끌어 놓을 자리: 벽마다 보이지 않는 판을 하나씩 (여기에 대고 좌표를 잡는다) */
@@ -168,13 +159,14 @@ export async function startArt(): Promise<void> {
     const U = stage.room.U;
     g.position.copy(w.o).addScaledVector(w.right, (a.u ?? 0) * U).addScaledVector(w.up, (a.v ?? 1.5) * U);
     g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(w.right, w.up, w.normal));
+    g.updateMatrix();                           // 그림 무리는 행렬을 직접 들고 있다 (room.ts buildArt)
   }
 
   function markPicked(): void {
     if (marker) { stage.scene.remove(marker); marker = null; }
     const g = picked ? findArt(picked) : undefined;
     if (g) {
-      marker = new THREE.BoxHelper(g, 0xe9557d);
+      marker = new THREE.BoxHelper(g.getObjectByName("art-core") ?? g, 0xe9557d);   // 핀 조명은 빼고 그림만 두른다
       (marker.material as THREE.LineBasicMaterial).depthTest = false;
       marker.renderOrder = 10;
       stage.scene.add(marker);
@@ -235,9 +227,13 @@ export async function startArt(): Promise<void> {
   canvas.onpointerdown = (ev) => {
     aim(ev);
     const a = artAt();
-    picked = a?.id ?? null;
+    if (!a) {                                   // 빈 곳을 잡았다: 둘러보기 (거의 안 움직이고 놓으면 고른 것을 푼다)
+      if (stage.looking) looker.begin(ev);
+      else { picked = null; markPicked(); }
+      return;
+    }
+    picked = a.id;
     markPicked();
-    if (!a) return;
     dragging = a;
     // 잡은 곳과 그림 가운데의 차이를 기억한다 (잡자마자 가운데로 튀지 않게)
     const spot = spotAt();
@@ -246,7 +242,7 @@ export async function startArt(): Promise<void> {
     canvas.setPointerCapture(ev.pointerId);
   };
   canvas.onpointermove = (ev) => {
-    if (!dragging) return;
+    if (!dragging) { looker.move(ev); return; }
     aim(ev);
     const spot = spotAt();
     if (!spot) return;
@@ -259,8 +255,13 @@ export async function startArt(): Promise<void> {
     if (dragging.width !== was) findArt(dragging.id)?.scale.multiplyScalar(dragging.width / was);
     placeLive(dragging);
   };
-  const drop = (): void => {
-    if (!dragging) return;
+  const drop = (ev: PointerEvent): void => {
+    if (!dragging) {
+      const was = looker.dragging;
+      looker.end(ev);
+      if (was && !looker.dragging && looker.moved < 6 && picked) { picked = null; markPicked(); }
+      return;
+    }
     dragging = null;
     drawPicked();
     void rebuild();
@@ -308,13 +309,21 @@ export async function startArt(): Promise<void> {
     });
   }
 
+  /** 지금 보고 있는 벽 (둘러보는 중이면 카메라가 향한 벽, TV 화면이면 정면 벽) */
+  function facingWall(): WallMount | undefined {
+    const room = mounts.filter((x) => x.host === null);
+    if (!stage.looking) return room.find((x) => x.id === "back") ?? room[0] ?? mounts[0];
+    const ahead = stage.camera.getWorldDirection(new THREE.Vector3());
+    return [...room].sort((p, q) => p.normal.dot(ahead) - q.normal.dot(ahead))[0] ?? mounts[0];
+  }
+
   async function hang(a: Artwork): Promise<void> {
-    const w = mounts.find((x) => x.key === facing) ?? mounts.find((x) => x.id === "back") ?? mounts[0];   // 보고 있는 벽에
+    const w = facingWall();
     if (!w) { msg("걸 수 있는 벽이 없습니다", true); return; }
     const art: LayoutArt = {
       id: `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
       image: a.file, width: w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: "white",
-      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a),
+      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a), lamp: { ...LAMP_DEFAULT },
     };
     fit(art, w);
     arts.push(art);
@@ -359,9 +368,10 @@ export async function startArt(): Promise<void> {
       <label class="grow">크기 <button data-step="-0.05">−</button>
         <input id="w" type="range" min="${MIN_W}" max="${maxW.toFixed(2)}" step="0.01" value="${a.width}">
         <button data-step="0.05">＋</button> <b id="w-num"></b></label>
-      <label>액자 <select id="frame">${FRAMES.map((f) =>
-        `<option value="${f}" ${a.frame === f ? "selected" : ""}>${FRAME_NAME[f!]}</option>`).join("")}</select></label>
-      <button id="down" class="ghost">벽에서 내리기</button>`;
+      <label>액자 <select id="frame">${FRAME_STYLES.map((f) =>
+        `<option value="${f.id}" ${(a.frame ?? "canvas") === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></label>
+      <button id="down" class="ghost">벽에서 내리기</button>
+      ${w?.host === null ? lampHtml(lampOf(a.lamp)) : ""}`;
     const wIn = box.querySelector<HTMLInputElement>("#w")!;
     const base = a.width;
     const g = findArt(a.id);
@@ -376,7 +386,7 @@ export async function startArt(): Promise<void> {
       a.width = width;
       fit(a, w);                                // 커지면서 벽 밖으로 나가면 안쪽으로 밀어 넣는다
       g?.scale.setScalar(a.width / base);
-      placeLive(a);
+      placeLive(a);                             // (updateMatrix 까지 한다)
       nums();
       dirty = true;
     };
@@ -394,6 +404,20 @@ export async function startArt(): Promise<void> {
       dirty = true;
       void rebuild();
     };
+    // 핀 조명: 켜기 · 조도 · 퍼짐 · 각도 · 빛 색
+    const lampOn = box.querySelector<HTMLInputElement>("#lamp-on");
+    if (lampOn) {
+      const cur = (): ArtLamp => lampOf(a.lamp) ?? { ...LAMP_DEFAULT, on: false };
+      lampOn.onchange = () => { a.lamp = { ...cur(), on: lampOn.checked }; dirty = true; void rebuild(); };
+      box.querySelectorAll<HTMLInputElement>("[data-lamp]").forEach((el) => {
+        el.oninput = () => {
+          a.lamp = { ...cur(), [el.dataset.lamp!]: Number(el.value) };
+          el.parentElement!.querySelector("b")!.textContent = lampText(el.dataset.lamp!, Number(el.value));
+          dirty = true;
+          later();
+        };
+      });
+    }
     box.querySelector<HTMLButtonElement>("#down")!.onclick = () => {
       arts = arts.filter((x) => x.id !== a.id);
       picked = null;
@@ -402,6 +426,28 @@ export async function startArt(): Promise<void> {
       drawList();
     };
   }
+
+  const lampText = (key: string, v: number): string =>
+    key === "power" ? `${Math.round(v * 100)}%` : key === "tone" ? (v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게") : `${Math.round(v)}°`;
+
+  function lampHtml(lamp: ArtLamp | null): string {
+    const l = lamp ?? { ...LAMP_DEFAULT, on: false };
+    const row = (key: keyof typeof LAMP_LIMIT, label: string, step: number): string =>
+      `<label class="grow">${label} <input data-lamp="${key}" type="range" min="${LAMP_LIMIT[key][0]}" max="${LAMP_LIMIT[key][1]}"
+        step="${step}" value="${l[key]}" ${l.on ? "" : "disabled"}> <b>${lampText(key, l[key])}</b></label>`;
+    return `<div class="lamp-row">
+      <label><input id="lamp-on" type="checkbox" ${l.on ? "checked" : ""}> 💡 핀 조명</label>
+      ${row("power", "조도", 0.05)}${row("angle", "퍼짐", 1)}${row("tilt", "각도", 1)}${row("tone", "빛 색", 0.05)}
+    </div>`;
+  }
+
+  // ---------- TV 에 나오는 화면 보기 ----------
+  $("#view-tv").onclick = () => {
+    stage.setLooking(!stage.looking);
+    $("#view-tv").classList.toggle("on", !stage.looking);
+    msg(stage.looking ? "" : "TV 에 나오는 화면입니다. 다시 누르면 둘러보기로 돌아갑니다");
+    void rebuild();
+  };
 
   // ---------- 전시실 1실 · 2실 · 3실 ----------
   function drawHalls(): void {
@@ -559,8 +605,13 @@ const PAGE = `
   .card img { width:72px; height:72px; object-fit:contain; background:#fff; border-radius:6px }
   .card-body { display:flex; flex-direction:column; gap:4px; min-width:0 }
   .card-body small { color:#8b8279 }
-  #halls, #views { display:flex; gap:4px }
-  #halls button, #views button { padding:6px 10px }
+  #halls { display:flex; gap:4px }
+  #halls button { padding:6px 10px }
+  #picked .lamp-row { flex:1 1 100%; display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+                      border-top:1px solid #3a3346; padding-top:8px }
+  #picked .lamp-row .grow { flex:1 1 150px }
+  #picked .lamp-row input[type=range] { min-width:70px; accent-color:#ffd166 }
+  #picked .lamp-row b { min-width:3.2em }
   .lamp { display:flex; gap:6px; align-items:center }
   .lamp input { width:110px; accent-color:#ffd166 }
   #share-url { width:100%; box-sizing:border-box; padding:8px; border:1px solid #cdc6bd; border-radius:8px; background:#fff; color:#241f2b }
@@ -571,7 +622,7 @@ ${CROP_CSS}
   <h1>🖼 전시실</h1>
   <select id="kid"></select>
   <span id="halls"></span>
-  <span id="views"></span>
+  <button id="view-tv" title="TV 에 나오는 화면으로 보기">📺</button>
   <button id="open-arts">🖼 작품</button>
   <label class="lamp" title="전시실 조명 밝기">💡 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"></label>
   <button id="save" class="on">저장</button>

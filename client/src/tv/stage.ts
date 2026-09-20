@@ -1,13 +1,39 @@
 import * as THREE from "three";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { NavGrid, type P2 } from "../world/nav";
-import { RoomModel, type WallMount } from "../world/room";
+import { RoomModel } from "../world/room";
 import { FLOOR_LAYER, rad, toThree, WORLD_BASE, type Catalog, type Layout, type RoomInfo, type WorldRender } from "../world/types";
 
 export async function fetchCatalog(): Promise<Catalog> {
   const res = await fetch(`${WORLD_BASE}catalog.json`);
   if (!res.ok) throw new Error(`맵 카탈로그가 없습니다 (${res.status}). tools/sync_world.py 를 실행하세요`);
   return res.json();
+}
+
+const LOOK_YAW = rad(90);        // 왼쪽 벽 ~ 오른쪽 벽 (그 너머는 열린 앞면이라 볼 것이 없다)
+const LOOK_PITCH = rad(32);
+const LOOK_EYE_M = 1.9, LOOK_BACK = 0.18;   // 서버 world_render.PANO_EYE_M · PANO_BACK 과 같다 (파노라마가 없을 때 서는 자리)
+
+/** 파노라마를 입힌 공: 카메라를 따라다니며 맨 뒤에 그린다. 방향 계산은 three 의 등장방형 환경과 같다 (+X 가 그림 가운데) */
+function makePanoBall(): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: null }, level: { value: 1 } },
+    vertexShader: `varying vec3 vDir;
+      void main() { vDir = (modelMatrix * vec4(position, 0.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform sampler2D map; uniform float level; varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        vec2 uv = vec2(atan(d.z, d.x) * 0.15915494 + 0.5, asin(clamp(d.y, -1.0, 1.0)) * 0.31830989 + 0.5);
+        gl_FragColor = vec4(texture2D(map, uv).rgb * level, 1.0);
+        #include <colorspace_fragment>
+      }`,
+    side: THREE.BackSide, depthTest: false, depthWrite: false, toneMapped: false,
+  });
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(50, 48, 32), mat);
+  ball.renderOrder = -100;
+  ball.frustumCulled = false;
+  ball.visible = false;
+  return ball;
 }
 
 /** 가림막: 색은 안 칠하고 깊이만 남겨서 리본이가 가구 뒤로 가면 가려지게 */
@@ -43,7 +69,16 @@ export class Stage {
   private envKey = "";
   private renderEnv: THREE.Texture | null = null;
   private view = { x: 0, y: 0, w: 1, h: 1 };
-  private wallView: WallMount | null = null;
+  /** 둘러보기 중인가 (setLooking) */
+  looking = false;
+  yaw = 0;
+  pitch = 0;
+  lookFov = 68;
+  private panoKey = "";
+  private panoTex: THREE.Texture | null = null;
+  private panoPos: number[] | null = null;
+  private panoBall: THREE.Mesh;
+  private panoOn = false;
 
   constructor(parent: HTMLElement, catalog: Catalog) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -72,6 +107,8 @@ export class Stage {
     this.scene.add(this.shadowFloor);
     this.room = new RoomModel(catalog);
     this.scene.add(this.room.group);
+    this.panoBall = makePanoBall();
+    this.scene.add(this.panoBall);
     window.addEventListener("resize", () => this.resize());
     this.resize();
   }
@@ -80,7 +117,7 @@ export class Stage {
   resize(): void {
     const W = window.innerWidth, H = window.innerHeight;
     let w = W, h = H;
-    if (this.mode === "render") {
+    if (this.mode === "render" && !this.looking) {
       h = Math.round(W * 9 / 16);
       if (h > H) { h = H; w = Math.round(H * 16 / 9); }
     }
@@ -91,40 +128,45 @@ export class Stage {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    if (this.wallView) this.applyWallView();
+    if (this.looking) this.applyLook();
   }
 
   /**
-   * 벽 하나를 정면에서 본다 (전시실 꾸미기·부모님 전시실의 '왼쪽 벽 / 오른쪽 벽'). null 이면 TV 카메라로 돌아간다.
-   * 배경 렌더는 TV 카메라에서 찍은 한 장뿐이라, 돌려 볼 때는 부르는 쪽이 렌더 없이(setWorld 의 render=null) 실시간으로 그린다
+   * 둘러보기 (전시실 꾸미기 · 부모님 전시실): 방 가운데 눈높이에 서서 고개를 돌려 본다. TV 는 쓰지 않는다.
+   * 배경은 같은 자리에서 블렌더로 구운 360° 파노라마(render.pano)라서 어느 벽을 봐도 렌더 품질 그대로이고,
+   * 걸린 그림·핀 조명만 그 위에 실시간으로 그린다. 파노라마가 아직 없으면 방을 실시간 3D 로 그린다.
    */
-  faceWall(w: WallMount | null): void {
-    this.wallView = w;
-    if (w) this.applyWallView();
+  setLooking(on: boolean): void {
+    this.looking = on;
+    this.resize();
+    if (on && this.camera.aspect < 1) this.lookFov = Math.max(this.lookFov, 84);   // 세로로 든 폰: 벽이 좁게 잘리지 않게 넓게
+    if (on) this.applyLook();
     else if (this.room.room) this.fitCamera(this.room.room);
   }
 
-  /** 벽이 화면에 꽉 차게 카메라를 벽 앞에 세운다. 방이 좁아 뒤로 못 물러나면 화각을 넓힌다 */
-  private applyWallView(): void {
-    const w = this.wallView;
+  /** 고개 돌리기 (라디안). yaw 0 이 정면 벽, +가 왼쪽 */
+  look(yaw: number, pitch: number, fovDeg = this.lookFov): void {
+    this.yaw = Math.min(LOOK_YAW, Math.max(-LOOK_YAW, yaw));
+    this.pitch = Math.min(LOOK_PITCH, Math.max(-LOOK_PITCH, pitch));
+    this.lookFov = Math.min(88, Math.max(24, fovDeg));
+    this.applyLook();
+  }
+
+  /** 지금 가로 화각 (라디안): 손가락을 끈 만큼 고개를 돌릴 때 쓴다 */
+  get lookSpan(): number {
+    return 2 * Math.atan(Math.tan(rad(this.lookFov) / 2) * this.camera.aspect);
+  }
+
+  private applyLook(): void {
     const room = this.room.room;
-    if (!w || !room) return;
-    const MARGIN = 1.24;                        // 위아래에 메뉴가 덮이므로 벽 둘레를 넉넉히 남긴다
-    const aspect = this.camera.aspect;
-    let vfov = rad(46);
-    const need = (f: number) => Math.max(w.height / 2 / Math.tan(f / 2), w.width / 2 / (Math.tan(f / 2) * aspect)) * MARGIN;
-    const reach = Math.abs(w.normal.x) * room.width + Math.abs(w.normal.z) * room.depth - 0.4;   // 맞은편 벽 바로 앞까지
-    let d = need(vfov);
-    if (reach > 1 && d > reach) {
-      d = reach;
-      vfov = Math.min(rad(100), 2 * Math.atan(Math.max(w.height / 2, w.width / 2 / aspect) * MARGIN / d));
-    }
-    const center = w.o.clone().addScaledVector(w.up, w.height / 2);
-    this.camera.fov = THREE.MathUtils.radToDeg(vfov);
-    this.camera.position.copy(center).addScaledVector(w.normal, d);
-    this.camera.up.set(0, 1, 0);
-    this.camera.lookAt(center);
+    if (!this.looking || !room) return;
+    const at = this.panoPos ?? [0, (room.front_y + room.back_y) / 2 - LOOK_BACK * Math.abs(room.back_y - room.front_y),
+                                LOOK_EYE_M * room.unit_per_m];
+    this.camera.position.copy(toThree(at[0], at[1], at[2]));
+    this.camera.rotation.set(this.pitch, this.yaw, 0, "YXZ");
+    this.camera.fov = this.lookFov;
     this.camera.updateProjectionMatrix();
+    this.panoBall.position.copy(this.camera.position);
   }
 
   /** 방의 tv_camera 로 카메라를 맞춘다 (블렌더 TVCam 과 같은 위치·화각) */
@@ -136,7 +178,7 @@ export class Stage {
     this.camera.updateProjectionMatrix();
     this.sun.shadow.camera.updateProjectionMatrix();
     this.shadowFloor.scale.set(room.width, room.depth, 1);
-    if (this.wallView) this.applyWallView();
+    if (this.looking) this.applyLook();
   }
 
   /** 그림자 빛을 리본이 머리 위(조금 앞)에 둔다. 방 천장 조명처럼 거의 바로 아래로 떨어짐 */
@@ -151,18 +193,24 @@ export class Stage {
    * 방 모양(가림막·길찾기)이 바뀌었으면 changed, 다른 방이 됐으면 roomChanged
    */
   async setWorld(roomId: string, layout: Layout | null, render: WorldRender | null | undefined): Promise<{ changed: boolean; roomChanged: boolean }> {
-    const useRender = !!render?.bg;
+    // 둘러보기는 파노라마가 있어야 렌더 배경을 쓴다 (TV 배경 한 장은 TV 카메라에서만 맞는다)
+    const pano = this.looking ? render?.pano ?? null : null;
+    const useRender = !!render?.bg && (!this.looking || !!pano);
     const lay = useRender ? render!.layout ?? layout : layout;
     const liveArts = useRender && !!render!.arts_live;
     const roomChanged = !!this.room.roomId && roomId !== this.room.roomId;
     const [bg, env] = useRender
-      ? await Promise.all([this.loadBackground(render!.bg), this.loadEnvironment(render!.env)])
+      ? await Promise.all([pano ? this.loadPano(pano) : this.loadBackground(render!.bg), this.loadEnvironment(render!.env)])
       : [null, null];
+    this.panoPos = pano ? render!.pano_pos ?? null : null;
+    this.panoOn = !!pano;
     const changed = await this.room.setLayout(roomId, lay);
     const modeChanged = (useRender ? "render" : "live") !== this.mode || liveArts !== this.liveArts;
     this.liveArts = liveArts;
-    if (useRender) {
+    if (useRender && !pano) {
       if (bg !== this.renderBg) { this.renderBg?.dispose(); this.renderBg = bg; }
+    }
+    if (useRender) {
       if (env !== this.renderEnv) { this.renderEnv?.dispose(); this.renderEnv = env; }
     }
     if (changed || modeChanged || useRender) {
@@ -185,6 +233,8 @@ export class Stage {
     const v = Math.min(1.6, Math.max(0.2, level));
     this.scene.backgroundIntensity = v;
     this.renderer.toneMappingExposure = v;
+    (this.panoBall.material as THREE.ShaderMaterial).uniforms.level.value = v;
+    this.room.setExposure(v);
   }
 
   private async loadBackground(url: string): Promise<THREE.Texture> {
@@ -192,6 +242,21 @@ export class Stage {
     const tex = await new THREE.TextureLoader().loadAsync(url);
     tex.colorSpace = THREE.SRGBColorSpace;
     this.bgKey = url;
+    return tex;
+  }
+
+  /** 둘러보기 파노라마 (가로로 이어지는 360° 그림) */
+  private async loadPano(url: string): Promise<THREE.Texture> {
+    if (url === this.panoKey && this.panoTex) return this.panoTex;
+    const tex = await new THREE.TextureLoader().loadAsync(url);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.generateMipmaps = false;               // 이음매(왼쪽 벽 한가운데)에 줄이 생기지 않게
+    tex.minFilter = THREE.LinearFilter;
+    this.panoTex?.dispose();
+    this.panoTex = tex;
+    this.panoKey = url;
+    (this.panoBall.material as THREE.ShaderMaterial).uniforms.map.value = tex;
     return tex;
   }
 
@@ -218,7 +283,8 @@ export class Stage {
     const r = this.renderer;
     r.toneMapping = render ? THREE.AgXToneMapping : THREE.NeutralToneMapping;   // 블렌더 AgX 와 맞춤
     r.toneMappingExposure = 1;
-    this.scene.background = render && this.renderBg ? this.renderBg : new THREE.Color(0x0e0b16);
+    this.scene.background = render && this.renderBg && !this.panoOn ? this.renderBg : new THREE.Color(0x0e0b16);
+    this.panoBall.visible = render && this.panoOn;
     this.scene.environment = render ? this.renderEnv : null;
     this.hemi.intensity = render ? 0.25 : 2.4;
     this.sun.intensity = render ? 0.6 : 1.6;

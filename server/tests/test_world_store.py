@@ -138,12 +138,29 @@ def test_renderer_info_and_stale(store, tmp_path):
     assert store.tv_view()["render"] is None
     lay = store.layout("classroom")
     r.dir.mkdir(parents=True)
-    (r.dir / "classroom.png").write_bytes(b"png")
+    (r.dir / "classroom_day.png").write_bytes(b"png")           # 시간대별로 한 장씩 (여기서는 낮 한 장만 있다)
     (r.dir / "classroom.json").write_text(json.dumps({"layout": lay, "rendered_at": 5}), encoding="utf-8")
     info = store.tv_view()["render"]
-    assert info["bg"] == "/world-render/classroom.png?v=5" and info["env"] is None and not info["stale"]
+    assert info["bg"] == "/world-render/classroom_day.png?v=5" and info["env"] is None and not info["stale"]
+    assert info["pano"] is None                                  # 둘러보기 파노라마는 전시장 껍데기만
     store.save_layout("classroom", {"items": [], "arts": []})
     assert r.info("classroom")["stale"]
+
+    # 전시장: 렌더 방식 판(SHELL_VERSION)이 옛것이면 다시 굽는다. 파노라마는 찍은 자리가 적혀 있어야 쓴다
+    from ribbon.world_render import SHELL_VERSION
+    store._catalog["rooms"]["gallery"].update(front_y=-8.0, back_y=8.0, unit_per_m=2.0)
+    pos = r.pano_pos("gallery")
+    assert pos == [0.0, pytest.approx(-0.18 * 16), pytest.approx(1.9 * 2.0)] and r.pano_pos("classroom") is None
+    gal = store.layout("gallery")
+    (r.dir / "gallery_day.png").write_bytes(b"png")
+    (r.dir / "gallery_day_pano.jpg").write_bytes(b"jpg")
+    (r.dir / "gallery.json").write_text(json.dumps({"layout": gal, "rendered_at": 7}), encoding="utf-8")
+    old = r.info("gallery")
+    assert old["stale"] and old["pano"] is None                  # 판도 자리도 없는 옛 렌더
+    (r.dir / "gallery.json").write_text(json.dumps({"layout": gal, "rendered_at": 7, "pano_pos": pos,
+                                                    "version": SHELL_VERSION["gallery"]}), encoding="utf-8")
+    new = r.info("gallery")
+    assert not new["stale"] and new["pano"] == "/world-render/gallery_day_pano.jpg?v=7" and new["pano_pos"] == pos
     if r.blender is None:   # 블렌더가 없으면 요청을 받지 않는다
         assert asyncio.run(_request(r)) is False
 

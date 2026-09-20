@@ -5,6 +5,8 @@ import {
   type Catalog, type Layout, type LayoutArt, type LayoutItem, type MountSpec, type RoomInfo, type TypeInfo,
 } from "./types";
 import { bgOf, composeArt, padOf } from "./artimage";
+import { buildFrame, frameReach, frameStyle } from "./frames";
+import { buildLamp, lampColor, lampOf } from "./lamp";
 
 /**
  * TV 가 그리는 방: 방 껍데기(벽·바닥·천장) + 배치된 가구 + 걸린 그림.
@@ -12,10 +14,10 @@ import { bgOf, composeArt, padOf } from "./artimage";
  */
 
 type V3 = [number, number, number];
-const FRAMES: Record<string, [number, number, number | null]> = {
-  canvas: [0, 0, null], black: [20, 38, 0x1d1d1f], wood: [40, 42, 0xa8744a], white: [30, 38, 0xf6f5f1],
-};
-const ART_DEPTH_MM = 30;
+/** 전시장 천장의 레일 조명 (방 뼈대 glb 에 들어 있다). 작품마다 핀 조명을 따로 달면서 뺐다 (world/lamp.ts) */
+const SHELL_HIDE = /^Ceiling(Track|Spot)/;
+/** 핀 조명을 받은 그림이 스스로 밝아지는 정도 (조도 1 일 때) */
+const LAMP_GLOW = 0.55;
 
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
@@ -58,17 +60,13 @@ function texture(a: LayoutArt): THREE.Texture {
   const key = `${a.image}|${bgOf(a)}|${padOf(a).join(",")}`;
   let t = texCache.get(key);
   if (!t) {
-    const blank = document.createElement("canvas");
-    blank.width = blank.height = 2;
-    const ctx = blank.getContext("2d")!;
-    ctx.fillStyle = bgOf(a);
-    ctx.fillRect(0, 0, 2, 2);
-    const tex = new THREE.CanvasTexture(blank);
+    // 그림이 읽힐 때까지는 비워 둔다 (TextureLoader 와 같다). 작은 임시 그림을 먼저 올렸다가 바꾸면
+    // 밉맵이 임시 크기로 잡혀서, 비스듬히 본 그림이 검게 나온다
+    const tex = new THREE.Texture();
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 8;
     const img = new Image();
     img.onload = () => {
-      tex.dispose();                            // 크기가 바뀌므로 GPU 쪽을 새로 만든다
       tex.image = composeArt(img, img.naturalWidth, img.naturalHeight, a, ART_TEX_SIDE);
       tex.needsUpdate = true;
     };
@@ -127,6 +125,16 @@ export class RoomModel {
 
   get U(): number { return this.room?.unit_per_m ?? 2.2222; }
 
+  private exposure = 1;
+  /** 방 밝기(노출)가 바뀌었다: 핀 조명을 받은 그림은 방이 어두워져도 같은 밝기로 빛나게 맞춘다 (Stage.setLight) */
+  setExposure(v: number): void {
+    this.exposure = Math.max(0.05, v);
+    this.group.traverse((o) => {
+      const mat = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (mat && !Array.isArray(mat) && mat.userData?.glow) mat.emissiveIntensity = mat.userData.glow / this.exposure;
+    });
+  }
+
   /** 방/배치가 바뀌었으면 다시 짓는다. 바뀌었으면 true */
   async setLayout(roomId: string, layout: Layout | null): Promise<boolean> {
     // 아이 전시실처럼 남의 방 모양을 빌려 쓰는 방은 layout.shell 이 진짜 방을 가리킨다
@@ -143,6 +151,9 @@ export class RoomModel {
     if (room.id !== this.roomId) {
       const shell = (await loadModel(room.shell)).clone(true);
       if (v !== this.version) return false;
+      const gone: THREE.Object3D[] = [];
+      shell.traverse((o) => { if (SHELL_HIDE.test(o.name)) gone.push(o); });
+      for (const o of gone) o.removeFromParent();
       if (this.shell) this.group.remove(this.shell);
       this.shell = shell;
       this.group.add(shell);
@@ -220,7 +231,7 @@ export class RoomModel {
   private artCenter(a: LayoutArt, m: Mount): V3 {
     const U = this.U;
     const w = a.width * U, h = w * a.aspect;
-    const fw = ((FRAMES[a.frame ?? "canvas"] ?? FRAMES.canvas)[0] / 1000) * U;
+    const fw = (frameReach(frameStyle(a.frame)) / 1000) * U;
     const u = (a.u ?? 0) * U;
     const v = m.spec.ledge ? h / 2 + fw : (a.v ?? 1.5) * U;
     return add(m.o, add(mul(m.right, u), mul(m.up, v)));
@@ -232,26 +243,30 @@ export class RoomModel {
     const g = new THREE.Group();
     g.userData.art = a.id;
     const w = a.width * U, h = w * a.aspect;
-    const D = MM(ART_DEPTH_MM);
-    const [fwmm, fdmm, fcol] = FRAMES[a.frame ?? "canvas"] ?? FRAMES.canvas;
-    const fw = MM(fwmm), fd = MM(fdmm);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, D),
-      new THREE.MeshStandardMaterial({ color: fcol === null ? 0xf4f1ea : 0x3c3a38, roughness: 0.8 }));
-    body.position.z = D / 2;
-    g.add(body);
-    if (fcol !== null) {
-      const fm = new THREE.MeshStandardMaterial({ color: fcol, roughness: 0.45 });
-      for (const [cx, cy, sx, sy] of [[0, h / 2 + fw / 2, w + 2 * fw, fw], [0, -h / 2 - fw / 2, w + 2 * fw, fw],
-        [-w / 2 - fw / 2, 0, fw, h], [w / 2 + fw / 2, 0, fw, h]]) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, fd), fm);
-        bar.position.set(cx, cy, fd / 2);
-        g.add(bar);
-      }
+    // 그림과 액자는 'art-core' 에 모은다 (전시실 꾸미기가 고른 그림의 테두리를 여기에 맞춘다. 핀 조명은 빼고)
+    const core = new THREE.Group();
+    core.name = "art-core";
+    const frame = buildFrame(w, h, frameStyle(a.frame), MM);
+    core.add(...frame.meshes);
+    g.add(frame.shade);
+    const lamp = m.host === null && !m.spec.ledge ? lampOf(a.lamp) : null;   // 핀 조명은 방의 벽에 건 그림만
+    const mat = new THREE.MeshStandardMaterial({ map: texture(a), roughness: 0.6 });
+    if (lamp?.on && lamp.power > 0) {
+      // 빛을 받은 만큼 그림이 스스로 밝아진다 (방 밝기를 낮춰도 그림은 살아 있게, setExposure 가 맞춘다)
+      mat.emissive = lampColor(lamp.tone);
+      mat.emissiveMap = mat.map;
+      mat.userData.glow = LAMP_GLOW * lamp.power;
+      mat.emissiveIntensity = mat.userData.glow / this.exposure;
     }
-    const img = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ map: texture(a), roughness: 0.6 }));
-    img.position.z = D + MM(1);
-    g.add(img);
+    const img = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    img.position.z = frame.pictureZ + MM(1);
+    core.add(img);
+    g.add(core);
+    if (lamp) {
+      const drop = m.spec.height - (c[0] - m.o[0]) * m.up[0] - (c[1] - m.o[1]) * m.up[1] - (c[2] - m.o[2]) * m.up[2];
+      const fixture = buildLamp(lamp, drop, MM);
+      if (fixture) g.add(fixture);
+    }
     g.matrixAutoUpdate = false;
     g.matrix.copy(basis(m, c));
     return g;
