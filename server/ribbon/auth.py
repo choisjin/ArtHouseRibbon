@@ -37,8 +37,8 @@ MEMBER_POST = ("/api/artworks",)          # 폰으로 작품 보내기
 def permitted(path: str, method: str, role: Optional[str]) -> bool:
     """이 요청을 해도 되나. role 이 None 이면 로그인하지 않은 사람.
     화면 파일(/api/ 가 아닌 것)과 로그인 API 는 누구나 — 화면이 스스로 로그인 창을 띄운다"""
-    if not path.startswith("/api/") or path.startswith("/api/auth/"):
-        return True
+    if not path.startswith("/api/") or path.startswith("/api/auth/") or path == "/api/call":
+        return True     # /api/call 은 호출 토큰으로 확인한다 (폰 매크로 앱이 부른다, main.api_call)
     if role is None:
         return False
     if role == "admin":

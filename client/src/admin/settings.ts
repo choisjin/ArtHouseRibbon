@@ -54,6 +54,13 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
         <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
         <div data-role="role-note"></div>
         <div id="mic" class="agent"></div>
+        <hr />
+        <h3>🔘 주소로 리본이 부르기</h3>
+        <p class="hint">폰에 DJI 수신기를 꽂으면 송신기 버튼이 <b>폰 볼륨만 올립니다</b> (웹페이지는 USB 장치를 잡을 수 없습니다).
+          폰의 매크로 앱(MacroDroid·Tasker)에서 <b>볼륨 올림 키</b>를 눌렀을 때 아래 주소를 열게 하면 호출 버튼과 똑같이 동작합니다.
+          블루투스 리모컨이나 TV 화면의 "🎤 리본아!" 단추를 써도 됩니다.</p>
+        <div class="row"><code class="grow" data-role="call-url"></code><button data-act="copy-call">복사</button></div>
+        <hr />
         <p class="hint">무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 관리자 페이지를 열어 두세요. 한 번 켜 두면 이 브라우저가 기억해서
           다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 듣지 못합니다.</b> 다른 탭으로 옮겨도 계속 받습니다.</p>
       </section>
@@ -213,12 +220,29 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     });
   });
 
+  // ---- 주소로 호출하기 (마이크 탭): 폰 매크로 앱이 DJI 버튼을 잡아 부를 때 ----
+  const callUrlEl = el.querySelector("[data-role=call-url]") as HTMLElement;
+  let callUrl = "";
+  ctx.onState((st) => {
+    const token = st.config?.ribbon?.call_token;
+    if (!token) return;
+    const base = (netBase || location.origin).replace(/\/$/, "");
+    callUrl = `${base}/api/call?token=${encodeURIComponent(token)}`;
+    callUrlEl.textContent = callUrl;
+  });
+  (el.querySelector("[data-act=copy-call]") as HTMLButtonElement).onclick = () => {
+    navigator.clipboard?.writeText(callUrl)
+      .then(() => ctx.msg("복사했습니다"), () => ctx.msg("복사하지 못했습니다. 직접 골라 복사하세요", true));
+  };
+
   // ---- 폰으로 작품 찍어 보내기: 주소 QR (카메라 탭) ----
+  let netBase = "";
   void (async () => {
     const box = el.querySelector("[data-role=snap-url]") as HTMLElement;
     const warn = el.querySelector("[data-role=snap-warn]") as HTMLElement;
     const net = await api<{ urls: string[]; public: string }>("GET", "/api/net").catch(() => null);
     const base = net?.public || net?.urls[0] || location.origin;
+    netBase = base;
     const url = `${base.replace(/\/$/, "")}/?mode=snap`;
     box.innerHTML = `<b>${esc(url)}</b>`;
     warn.innerHTML = url.startsWith("https:")

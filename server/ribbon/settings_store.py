@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -38,6 +39,9 @@ class RibbonConfig(BaseModel):
     memory_enabled: bool = True  # 아이가 지적·금지한 것을 약속으로 기억해 다음 대화에 지킨다 (memory.py)
     memory_max_per_kid: int = 20 # 아이 한 명당 약속 수 (넘치면 오래된 것부터 뺀다)
     button_window_s: float = 6.0 # 호출 버튼을 누른 뒤 이 시간 안에 먼저 말한 아이가 부른 아이
+    # 주소로 호출하기 (폰 매크로 앱이 DJI 버튼=볼륨키를 잡아 부를 때): /api/call?token=...
+    # 처음 켤 때 저절로 만들어진다. 관리자 설정 → 마이크 탭에 주소가 나온다
+    call_token: str = ""
     pokedex_enabled: bool = True # 아이 말에 포켓몬이 나오면 도감을 참고해 답한다 (knowledge/pokedex.py)
     game_max_id: int = 1025      # 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 (1025 = 전부, 151 = 1세대)
     game_range_v: int = 2        # 2 = 기본 범위를 전체로 바꾼 뒤 (2026-09-20). 예전 기본값 151 을 한 번 옮길 때 쓴다
@@ -141,9 +145,13 @@ class ConfigStore:
             if rc.game_max_id == 151:
                 rc.game_max_id = 1025
             rc.game_range_v = 2
+        if not self.config.ribbon.call_token:
+            self.config.ribbon.call_token = secrets.token_urlsafe(12)   # 주소로 호출하기 열쇠
         self._drop_ribbon_character()
         self._seed_profiles(had_profiles=bool(raw.get("characters")), had_file=bool(raw))
         self._sync_main()
+        if not raw.get("ribbon", {}).get("call_token"):
+            self.save()                                                 # 새로 만든 열쇠를 적어 둔다
         return self.config
 
     def _drop_ribbon_character(self) -> None:

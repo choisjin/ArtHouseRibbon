@@ -52,6 +52,8 @@ export interface RibbonConfig {
   memory_max_per_kid?: number;
   /** 호출 버튼을 누른 뒤 이 시간(초) 안에 먼저 말한 아이가 부른 아이 */
   button_window_s?: number;
+  /** 주소로 호출하기 열쇠 (/api/call?token=..., 폰 매크로 앱이 DJI 버튼을 잡아 부를 때) */
+  call_token?: string;
   /** 아이 말에 포켓몬이 나오면 도감(data/pokedex.json)을 참고해 답한다 */
   pokedex_enabled?: boolean;
   /** 포켓몬 맞추기에 나오는 포켓몬: 도감 1번 ~ 이 번호 */

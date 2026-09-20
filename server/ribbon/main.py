@@ -288,6 +288,23 @@ async def api_auth_user_delete(uid: str, request: Request):
     return JSONResponse({"ok": True})
 
 
+@app.api_route("/api/call", methods=["GET", "POST"])
+async def api_call(token: str = ""):
+    """주소로 리본이 부르기 (호출 버튼과 같다). 폰 매크로 앱(MacroDroid·Tasker)이 DJI 버튼=볼륨키를 잡아
+    이 주소를 부르면 된다. 로그인 대신 설정의 호출 토큰으로 확인한다"""
+    global _last_tv_call
+    want = store.config.ribbon.call_token
+    if not want or token != want:
+        raise HTTPException(403, "호출 토큰이 맞지 않습니다")
+    now = asyncio.get_running_loop().time()
+    if now - _last_tv_call < 1.5:
+        return JSONResponse({"ok": True, "skipped": "연달아 누름"})
+    _last_tv_call = now
+    log.info("주소로 호출 (/api/call)")
+    _spawn(_on_button())
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/net")
 async def api_net(request: Request):
     """이 서버에 같은 와이파이에서 접속할 주소 (관리자 화면이 QR 로 보여 준다 -> 폰으로 작품 찍어 보내기)"""
