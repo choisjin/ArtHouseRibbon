@@ -81,6 +81,13 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       <label class="inline"><input type="checkbox" name="enabled" /> 리본이에게 말로 음악 부탁하기</label>
       <p class="hint">"피카츄 노래 틀어줘", "내 목록 틀어줘", "플레이리스트 보여줘", "노래 꺼줘", "다음 노래", "소리 줄여줘",
         "이 노래 넣어줘 / 빼줘", "이 노래 뭐야", "반복해줘", "섞어줘"</p>
+      <label class="inline">나라 (카탈로그) <select name="market">
+        <option value="KR">한국 (KR)</option>
+        <option value="US">미국 (US)</option>
+        <option value="JP">일본 (JP)</option>
+      </select></label>
+      <p class="hint">한국 발매판을 먼저 찾습니다. 노래 제목이 영어로만 나오면 한국(KR)인지 확인하세요
+        (같은 곡이라도 나라마다 제목이 다릅니다: "상어가족" ↔ "Baby Shark").</p>
       <hr />
       <div class="row"><b>Spotify 계정</b><span class="grow"></span><span data-role="account" class="pill">확인 중…</span></div>
       <div class="actions">
@@ -156,6 +163,7 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       volume.value = String(cfg.volume);
       output.value = cfg.output;
       q<HTMLInputElement>("[name=enabled]").checked = cfg.enabled;
+      q<HTMLSelectElement>("[name=market]").value = cfg.market ?? "KR";
     }
     const where = cfg?.output === "admin" ? "이 컴퓨터" : "TV 화면";
     const ready = !!cfg?.enabled && !!status?.devices.includes(cfg.output);
@@ -315,6 +323,9 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   q<HTMLButtonElement>("[data-act=open-settings]").onclick = () => { void refresh(); dlg.showModal(); };
   q<HTMLButtonElement>("[data-act=close]").onclick = () => dlg.close();
   dlg.addEventListener("close", () => render());
+  q<HTMLSelectElement>("[name=market]").onchange = (ev) => {
+    void save({ market: (ev.target as HTMLSelectElement).value }, "나라를 바꿨습니다. 다시 검색해 보세요");
+  };
   q<HTMLInputElement>("[name=enabled]").onchange = (ev) => {
     const on = (ev.target as HTMLInputElement).checked;
     void save({ enabled: on }, on ? "음악 켬" : "음악 끔");

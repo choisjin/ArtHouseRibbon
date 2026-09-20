@@ -107,6 +107,8 @@ export interface MusicConfig {
   playlist_title: string;
   /** 0 ~ 100 */
   volume: number;
+  /** 어느 나라 카탈로그로 찾을지 (KR 이어야 한국 발매판 제목이 나온다) */
+  market?: string;
 }
 
 export interface AppConfig {

@@ -94,6 +94,7 @@ pokedex = Pokedex(settings.pokedex_path(), settings.pokedex_path().parent / "pok
 schedule = sched.ScheduleStore(settings.schedule_path())
 spotify = SpotifyAccount(settings.music_auth_path())
 music = MusicControl(spotify, store)
+spotify.market = store.config.music.market   # 어느 나라 카탈로그로 찾을지 (제목 언어)
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
 # 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다
 store.seed_llm(settings.llm_provider, settings.llm_base_url, settings.llm_model)
@@ -554,6 +555,7 @@ async def api_config_music(data: dict = Body(...)):
         cfg = store.update_music(data)
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
+    spotify.market = cfg.market
     log.info("음악 설정: 켜기=%s 재생할 곳=%s 목록=%s 음량=%s", cfg.enabled, cfg.output,
              cfg.playlist_title or cfg.playlist_id or "(첫 목록)", cfg.volume)
     await dialogue.notify_config_changed()

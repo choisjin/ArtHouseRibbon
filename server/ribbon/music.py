@@ -53,6 +53,9 @@ def track_info(t: Dict) -> Dict[str, Any]:
 class SpotifyAccount:
     def __init__(self, auth_path: Path):
         self.auth_path = auth_path
+        #: 어느 나라 카탈로그로 볼지 (ISO 3166-1 alpha-2). 한국 발매판이어야 제목이 한국어로 온다
+        #: ("상어가족" vs 세계판 "Baby Shark"). 관리자 설정에서 바꾼다 (settings_store.MusicConfig.market)
+        self.market = "KR"
         self.data: Dict[str, Any] = {}
         self._state = ""                     # 로그인 요청과 돌아온 주소를 짝짓는 값
         self._redirect = ""
@@ -183,7 +186,7 @@ class SpotifyAccount:
     # ---------- 검색 · 목록 ----------
     async def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         r = await self.api("GET", "/search", {"q": query, "type": "track", "limit": min(limit, 10),
-                                               "market": "from_token"})
+                                              "market": self.market})
         return [track_info(t) for t in (r.get("tracks") or {}).get("items") or [] if t]
 
     async def playlists(self) -> List[Dict[str, Any]]:
@@ -212,7 +215,8 @@ class SpotifyAccount:
         out: List[Dict[str, Any]] = []
         offset = 0
         while offset < max_items:
-            r = await self.api("GET", f"/playlists/{playlist_id}/items", {"limit": 100, "offset": offset})
+            r = await self.api("GET", f"/playlists/{playlist_id}/items",
+                               {"limit": 100, "offset": offset, "market": self.market})
             items = r.get("items") or []
             for it in items:
                 t = it.get("item") or it.get("track")     # 2026-03 부터 item

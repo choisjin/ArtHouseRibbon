@@ -103,6 +103,7 @@ class MusicConfig(BaseModel):
     playlist_id: str = ""        # "내 목록 틀어줘" · 넣기 · 빼기 목록 (비우면 내가 만든 첫 목록)
     playlist_title: str = ""     # 화면 표시용
     volume: int = 60             # 0 ~ 100. 리본이 목소리보다 작게
+    market: str = "KR"           # 어느 나라 카탈로그로 찾을지. KR 이어야 한국 발매판 제목("상어가족")이 온다
 
 
 class AppConfig(BaseModel):
@@ -211,6 +212,10 @@ class ConfigStore:
         if merged["output"] not in ("tv", "admin"):
             raise ValueError(f"재생할 곳이 잘못됐습니다: {merged['output']}")
         merged["volume"] = max(0, min(100, int(merged["volume"])))
+        market = str(merged["market"]).strip().upper()
+        if len(market) != 2 or not market.isalpha():
+            raise ValueError(f"나라 코드가 잘못됐습니다 (KR 처럼 두 글자): {merged['market']}")
+        merged["market"] = market
         self.config.music = MusicConfig(**merged)
         self.save()
         return self.config.music
