@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0e0b16" />
     <title>리본</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- 폰에서 "홈 화면에 추가" 로 열면 주소창 없이 뜬다 (아이폰은 이 두 줄로) -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <style>
       html, body { margin: 0; padding: 0; background: #0e0b16; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; }
       #app { position: fixed; inset: 0; }
@@ -17,6 +21,11 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      /* 화면 가득 보기 단추 (전체화면이 아닐 때만, src/tv/immersive.ts) */
+      #fullscreen-btn { right: 2vw; bottom: 2vh; z-index: 40; font: inherit; font-size: 14px; color: #eee;
+        background: rgba(14,11,22,.7); border: 1px solid rgba(255,255,255,.25); border-radius: 999px;
+        padding: 8px 14px; cursor: pointer; }
+      #fullscreen-btn[hidden] { display: none; }
       /* "플레이리스트 보여줘" 번호 목록 (src/tv/musiclist.ts). 번호를 크게: 글 못 읽는 아이도 번호를 말할 수 있게 */
       #music-list { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(62vw, 820px); display: none;
         flex-direction: column; gap: 1vh; padding: 2.2vh 2vw; background: rgba(14,11,22,.9); border-radius: 26px;

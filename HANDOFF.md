@@ -166,6 +166,12 @@
   리본이가 말하는 동안 음량 줄이기는 서버가 `/me/player/volume` 로 한다 (`MusicControl.duck`, `dialogue._set_ribbon`).
   "소리 키워/줄여" 도 Connect 기기 음량을 바꾼다. 앱이 꺼지면 기기 목록에서 사라지니 앱을 켜 두어야 한다.
 
+- **TV 화면을 화면 가득** (2026-09-20): `client/src/tv/immersive.ts`. 첫 터치·클릭에서 전체화면(Fullscreen API)과
+  화면 꺼짐 막기(Wake Lock)를 건다. 전체화면이 아니면 오른쪽 아래에 "⛶ 화면 가득" 단추. 폰에서 **홈 화면에 추가**로 열면
+  (`client/public/manifest.webmanifest`, display fullscreen, start_url `/?mode=tv`) 처음부터 주소창 없이 뜬다.
+  아이콘은 `python tools/make_icons.py` 가 만든다 (라이브러리 없이 PNG 를 직접 쓴다, 보라 배경 + 흰 리본).
+  아이폰 사파리는 전체화면 API 가 없어서 "홈 화면에 추가" 로만 된다.
+
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**
   (아이가 물을 때만 답, 가끔 한 번만 되묻기), 화제 바꾸지 않기, 퀴즈·학습은 아이가 원할 때만.
