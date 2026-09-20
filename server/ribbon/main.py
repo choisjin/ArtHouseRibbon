@@ -1073,6 +1073,7 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
 
 
 _mic_on = False
+_last_tv_call = 0.0      # TV 화면 호출을 연달아 누르는 것 막기
 
 
 def _update_mic() -> None:
@@ -1116,6 +1117,16 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
             await ws.send_text(json.dumps({"type": "game", "view": dialogue.quiz.view()}, ensure_ascii=False))
     elif t == "tts.done":
         dialogue.mark_spoken(msg.get("utterance_id", ""))
+    elif t == "tv.call":
+        # TV 화면(폰 등)의 "리본아" 단추·엔터키. 호출 버튼을 누른 것과 같게 다룬다.
+        # 폰에 DJI 수신기를 꽂으면 버튼이 그냥 폰 볼륨만 올린다 (웹페이지가 USB 장치를 잡을 수 없다)
+        global _last_tv_call
+        now = asyncio.get_running_loop().time()
+        if now - _last_tv_call < 1.5:
+            return                                   # 연달아 누른 것은 한 번으로
+        _last_tv_call = now
+        log.info("TV 화면에서 호출")
+        _spawn(_on_button())
     elif t == "debug.wake":
         ch = int(msg.get("channel", 0))
         processors[ch].start_listening()

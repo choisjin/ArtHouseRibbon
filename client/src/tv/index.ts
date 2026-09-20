@@ -8,6 +8,7 @@ import { Hud } from "./hud";
 import { MusicBar } from "./musicbar";
 import { MusicList } from "./musiclist";
 import { startImmersive } from "./immersive";
+import { mountCallButton } from "./callbutton";
 import { MusicPlayer } from "../music/player";
 import { Ribbon3D } from "./ribbon3d";
 import { fetchCatalog, Stage } from "./stage";
@@ -57,6 +58,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   const musicBar = new MusicBar();
   const musicList = new MusicList();
   startImmersive();                  // 주소창 없이 화면 가득 + 화면 꺼짐 막기
+  mountCallButton(socket);           // 화면에서 리본이 부르기 (폰에서는 DJI 버튼을 쓸 수 없다)
   new MusicPlayer(socket, "tv", "리본 TV");   // 관리자 설정의 '재생할 곳'이 TV 면 이 화면이 Spotify 스피커
   const micBadge = document.getElementById("mic-badge")!;
   let placed = false;

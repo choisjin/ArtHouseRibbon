@@ -21,6 +21,14 @@
       #caption { left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: 80vw; font-size: clamp(18px, 3vw, 34px); text-align: center; background: rgba(0,0,0,.6); border-radius: 12px; padding: 12px 20px; display: none; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
+      /* 리본이 부르기 단추 (src/tv/callbutton.ts). 폰으로 TV 를 띄우면 DJI 버튼 대신 이걸 누른다 */
+      #call-btn { left: 50%; bottom: 3vh; transform: translateX(-50%); z-index: 35; display: flex; align-items: center; gap: 1.2vw;
+        font: inherit; font-size: clamp(18px, 2.6vw, 34px); font-weight: 800; color: #fff; cursor: pointer;
+        background: linear-gradient(#ff7ab3, #e03177); border: none; border-radius: 999px; padding: 1.6vh 3.2vw;
+        box-shadow: 0 8px 24px rgba(224,49,119,.45); }
+      #call-btn .c-ic { font-size: 1.3em; }
+      #call-btn:active, #call-btn.pressed { transform: translateX(-50%) scale(.94); filter: brightness(1.15); }
+      body.music-on #call-btn { bottom: calc(3vh + 9vh); }   /* 음악 상태바 위로 */
       /* 화면 가득 보기 단추 (전체화면이 아닐 때만, src/tv/immersive.ts) */
       #fullscreen-btn { right: 2vw; bottom: 2vh; z-index: 40; font: inherit; font-size: 14px; color: #eee;
         background: rgba(14,11,22,.7); border: 1px solid rgba(255,255,255,.25); border-radius: 999px;
