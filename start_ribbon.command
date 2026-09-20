@@ -136,4 +136,5 @@ if [ "$OPEN" != "none" ]; then
 fi
 
 source .venv/bin/activate
-exec python -m uvicorn ribbon.main:app --host 0.0.0.0 --port "$PORT"
+# --proxy-headers: Cloudflare Tunnel 처럼 앞단을 거쳐 올 때 원래 주소(https)를 알아본다 (docs/REMOTE.md)
+exec python -m uvicorn ribbon.main:app --host 0.0.0.0 --port "$PORT" --proxy-headers --forwarded-allow-ips '*'

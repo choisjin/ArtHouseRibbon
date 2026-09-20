@@ -11,6 +11,7 @@ import type { ClientRole } from "./protocol";
  *   /?mode=mic       (예전 마이크 화면) → 관리자 설정 탭으로 넘어간다
  *   /?mode=editor    맵 편집기. 가구 배치와 벽에 거는 그림 (Character_Creator 배치 편집기)
  *   /?mode=art       아이 전시실 꾸미기. 작품 사진을 올리고(배경 지우기) 전시실 벽에 건다
+ *   /?mode=snap      폰으로 작품 찍어 보내기. 관리자 설정 → 카메라 탭의 QR 로 연다 (서버로 사진만 보낸다)
  */
 const params = new URLSearchParams(location.search);
 const mode = (params.get("mode") ?? "tv") as ClientRole;
@@ -29,6 +30,11 @@ async function boot(): Promise<void> {
   if (mode === "art") {
     const { startArt } = await import("./art/index");
     await startArt();
+    return;
+  }
+  if (mode === "snap") {
+    const { startSnap } = await import("./snap/index");
+    await startSnap();
     return;
   }
   const socket = new RibbonSocket(mode === "debug" ? "tv" : mode);

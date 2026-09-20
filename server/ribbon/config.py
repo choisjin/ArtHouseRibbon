@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     host: str = "0.0.0.0"
     port: int = 8765
+    #: 밖에서 들어오는 주소 (Cloudflare Tunnel 등 앞단이 있을 때). 예: https://ribbon.example.com
+    #: Spotify 로그인 redirect 와 폰으로 여는 QR 주소에 쓴다. 비우면 이 컴퓨터의 랜 주소를 쓴다
+    public_url: str = ""
 
     stt_provider: str = "mock"          # mock | faster_whisper | mlx_whisper
     # 대화 모델은 관리자 '설정' 탭에서 고른다 (data/settings.json). 여기 값은 처음 한 번 그 칸을 채우는 데만 쓴다

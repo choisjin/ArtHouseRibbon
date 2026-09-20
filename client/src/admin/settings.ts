@@ -59,6 +59,17 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
         <div id="cam" class="agent"></div>
         <p class="hint">TV 위에 단 웹캠으로 아이들 얼굴 위치를 찾아 리본이가 그쪽을 바라봅니다. 영상은 저장하거나 보내지 않습니다.
           마이크처럼 한 번 켜 두면 이 브라우저가 기억해서 다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 아이들을 보지 못합니다.</b></p>
+        <hr />
+        <h3>📱 폰으로 작품 찍어 보내기</h3>
+        <p class="hint">폰 카메라로 QR 을 찍으면 작품 찍는 화면이 열립니다. 찍어서 보내면 그 아이 작품으로 저장됩니다
+          (전시실 벽에 거는 것은 <a href="/?mode=art" target="_blank">전시실 꾸미기</a>에서).</p>
+        <div class="snapqr">
+          <canvas data-role="qr" width="180" height="180"></canvas>
+          <div>
+            <p class="hint" data-role="snap-url"></p>
+            <p class="hint" data-role="snap-warn"></p>
+          </div>
+        </div>
       </section>
       <section class="card" data-subpanel="output" hidden>
         <h2>🔈 TV 소리 출력</h2>
@@ -181,6 +192,24 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     fillLlm(c);
     if (first) void loadModels();
   });
+
+  // ---- 폰으로 작품 찍어 보내기: 주소 QR (카메라 탭) ----
+  void (async () => {
+    const box = el.querySelector("[data-role=snap-url]") as HTMLElement;
+    const warn = el.querySelector("[data-role=snap-warn]") as HTMLElement;
+    const net = await api<{ urls: string[]; public: string }>("GET", "/api/net").catch(() => null);
+    const base = net?.public || net?.urls[0] || location.origin;
+    const url = `${base.replace(/\/$/, "")}/?mode=snap`;
+    box.innerHTML = `<b>${esc(url)}</b>`;
+    warn.innerHTML = url.startsWith("https:")
+      ? `폰에서 이 주소로 들어가면 화면 안에서 바로 찍을 수도 있습니다.`
+      : `<span class="warn-text">http 주소라 폰 브라우저가 카메라를 막습니다.</span> 폰의 기본 카메라 앱으로 찍어 보내는 방식으로 동작합니다.
+         도메인(https)을 붙이려면 <code>docs/REMOTE.md</code> 를 보세요.`;
+    try {
+      const QR = (await import("qrcode")).default;
+      await QR.toCanvas(el.querySelector("[data-role=qr]") as HTMLCanvasElement, url, { width: 180, margin: 1 });
+    } catch (e) { warn.innerHTML += `<br>QR 을 만들지 못했습니다: ${esc(String(e))}`; }
+  })();
 
   // ---- 음악 (Spotify): 플레이어·목록·검색·계정 모달은 admin/music.ts 가 전부 그린다 ----
   const music = mountMusic(el.querySelector('[data-subpanel=music]') as HTMLElement, ctx);

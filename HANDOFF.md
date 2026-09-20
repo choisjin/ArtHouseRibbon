@@ -121,6 +121,16 @@
   순서 옮기기는 `PUT /playlists/{id}/items` (range_start·insert_before). 같은 곡이 목록에 두 번 있으면 빼기는 둘 다 지운다 (API 한계).
   **아직 실제 계정으로 확인 못 함** (앱·Premium 계정 필요). 맥미니에서 앱 만들고 로그인한 뒤 TV 에서 재생·조작 확인할 것.
 
+- **폰으로 작품 찍어 보내기** (2026-09-20): `/?mode=snap` (`client/src/snap/index.ts`). 아이 고르기 -> 사진 찍기 -> 보내기
+  -> `POST /api/artworks` (긴 변 2000px JPEG 로 줄여서). 벽에 거는 것은 `?mode=art` 그대로.
+  관리자 설정 → 📷 카메라 탭 아래에 **QR 과 주소** (`GET /api/net` 이 랜 주소와 `RIBBON_PUBLIC_URL` 을 알려 준다, `qrcode` 패키지).
+  **http 로는 폰 브라우저가 카메라를 막는다** -> 기본 카메라 앱을 여는 `<input capture>` 방식이 주 경로, https 면 화면 안 미리보기도 켠다.
+- **밖에서 접속 · https** (`docs/REMOTE.md`, 사용자 결정 2026-09-20: 밖에서도 접속, DNS 는 Cloudflare):
+  맥미니에 **Cloudflare Tunnel**(`cloudflared`) -> `ribbon.<학원도메인>` -> `localhost:8765`, 포트 개방 없음, 인증서는 Cloudflare.
+  **Cloudflare Access(이메일 허용 목록)로 반드시 막을 것** — 서버에는 아직 로그인이 없다.
+  `server/.env` 에 `RIBBON_PUBLIC_URL=https://ribbon.<도메인>` 을 넣으면 QR 주소와 **Spotify Redirect URI** 가 그 주소가 된다
+  (Spotify 앱 설정에도 같은 주소를 넣어야 한다). `start_ribbon.command` 는 `--proxy-headers` 로 띄운다.
+
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**
   (아이가 물을 때만 답, 가끔 한 번만 되묻기), 화제 바꾸지 않기, 퀴즈·학습은 아이가 원할 때만.

@@ -2,7 +2,7 @@
 
 export type RibbonState = "idle" | "listening" | "thinking" | "speaking";
 export type TurnState = "waiting" | "active" | "done" | "cancelled" | "expired";
-export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin" | "editor" | "art" | "mic";
+export type ClientRole = "tv" | "entrance" | "camera" | "debug" | "admin" | "editor" | "art" | "snap" | "mic";
 
 /** 매주 반복되는 정규 수업 (0=월 ... 4=금) */
 export interface ClassSlot { day: number; start: string; end: string }

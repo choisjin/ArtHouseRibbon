@@ -163,6 +163,30 @@ async def api_state():
     return JSONResponse(dialogue.snapshot().model_dump())
 
 
+@app.get("/api/net")
+async def api_net(request: Request):
+    """이 서버에 같은 와이파이에서 접속할 주소 (관리자 화면이 QR 로 보여 준다 -> 폰으로 작품 찍어 보내기)"""
+    import socket
+    port = request.url.port or 8765
+    ips = set()
+    try:                       # 밖으로 나가는 경로의 내 주소 (와이파이 랜카드)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    urls = [f"http://{ip}:{port}/" for ip in sorted(ips) if not ip.startswith("127.")]
+    if settings.public_url:
+        urls.insert(0, settings.public_url.rstrip("/") + "/")   # 도메인이 있으면 그 주소를 먼저 (https = 폰 카메라도 열린다)
+    return JSONResponse({"urls": urls, "port": port, "public": settings.public_url.rstrip("/")})
+
+
 @app.get("/api/kids")
 async def api_kids():
     return JSONResponse([k.model_dump() for k in kids.all()])
@@ -357,8 +381,18 @@ def _music_fail(e: Exception) -> HTTPException:
     return HTTPException(400 if isinstance(e, MusicError) else 502, str(e) if isinstance(e, MusicError) else f"{type(e).__name__}: {e}")
 
 
+def _public_base(request: Request) -> str:
+    """밖에서 들어오는 주소. .env 의 RIBBON_PUBLIC_URL (Cloudflare Tunnel 도메인 등), 없으면 요청에 담긴 주소"""
+    if settings.public_url:
+        return settings.public_url.rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
 def _redirect_uri(request: Request) -> str:
-    """Spotify 는 localhost 를 받지 않는다: 127.0.0.1 로 (앱 설정의 Redirect URI 에 이 주소를 똑같이 넣는다)"""
+    """Spotify 앱 설정의 Redirect URI 에 이 주소를 똑같이 넣는다.
+    도메인(https)이 있으면 그 주소, 없으면 127.0.0.1 (Spotify 는 localhost 를 받지 않는다)"""
+    if settings.public_url:
+        return f"{_public_base(request)}/api/music/callback"
     return f"http://127.0.0.1:{request.url.port or 8765}/api/music/callback"
 
 
