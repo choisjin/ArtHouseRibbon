@@ -1,10 +1,8 @@
 import type { KidInfo, TurnInfo } from "../protocol";
 
-/** DOM 기반 HUD: 대기 순서 칩과 자막. */
+/** DOM 기반 HUD: 대기 순서 칩. 자막은 2026-09-21 에 없앴다 (관리자 대시보드에만 대화가 남는다) */
 export class Hud {
   private hud = document.getElementById("hud")!;
-  private caption = document.getElementById("caption")!;
-  private captionTimer = 0;
 
   setQueue(queue: TurnInfo[], kids: KidInfo[]): void {
     const name = (id: string) => kids.find((k) => k.id === id)?.name ?? "친구";
@@ -17,10 +15,4 @@ export class Hud {
     }
   }
 
-  showCaption(text: string, ms = 6000): void {
-    this.caption.textContent = text;
-    this.caption.style.display = "block";
-    clearTimeout(this.captionTimer);
-    this.captionTimer = window.setTimeout(() => { this.caption.style.display = "none"; }, ms);
-  }
 }

@@ -65,7 +65,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   let walkSpeed = 1;
 
   speaker.onLevel = (v) => ribbon.setMouthLevel(v);
-  speaker.onStart = (m) => { hud.showCaption(m.text, 2000 + m.text.length * 250); };
+  // 자막은 TV 에 띄우지 않는다 (2026-09-21 요청). 대화 내용은 관리자 대시보드에만 남는다
 
   // 걷는 속도는 인형 키에 비례 (키 2.4 → 초당 약 0.9 단위 ≈ 0.4m)
   const applySpeed = () => { ribbon.speed = Math.max(0.6, ribbon.height * 0.38) * walkSpeed; };
@@ -168,11 +168,6 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
       case "music.state": musicBar.render(msg); break;   // 음악 상태바
       case "music.list": musicList.render(msg.view); break;   // "플레이리스트 보여줘" 번호 목록
       case "mic": micBadge.classList.toggle("on", msg.on); break;   // 말할 수 있을 때 오른쪽 위 마이크
-      case "transcript": {
-        const name = kids.find((k) => k.id === msg.kid_id)?.name ?? "친구";
-        hud.showCaption(`${name}: ${msg.text}`, 8000);   // 잘 들었는지 보이게. 리본이가 말하면 그 자막으로 바뀐다
-        break;
-      }
       case "face.positions": faces = msg.faces; facesAt = performance.now(); break;   // 카메라(관리자 페이지)가 초당 10번
       case "kid.enter": brain.celebrate(); break;   // 반가워하기. state 스냅샷이 뒤따라온다
       case "kid.leave": brain.farewell(); break;    // 아쉬운 표정
