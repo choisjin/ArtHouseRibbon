@@ -198,12 +198,11 @@ class DialogueManager:
         await self._broadcast_state()
 
     async def cancel_listening(self) -> None:
-        """듣는 중에 버튼을 한 번 더 눌렀다 (2026-09-21): 이번 입력을 취소한다"""
+        """듣는 중에 버튼을 한 번 더 눌렀다 (2026-09-21): **말없이** 이번 입력만 취소한다"""
         self._paused = None
         self.queue.clear()
         await self.broadcast({"type": "speak.stop"})
-        log.info("호출 버튼을 한 번 더 눌러 입력 취소")
-        await self._say(persona.input_cancelled(), None, final=True)
+        log.info("호출 버튼을 한 번 더 눌러 입력 취소 (말하지 않음)")
         await self._set_ribbon("idle", None)
         await self._broadcast_state()
 
@@ -256,7 +255,10 @@ class DialogueManager:
             if persona.wants_resume(text):
                 await self._resume_paused(kid, channel)
                 return
-            self._paused = None
+            if len(self._compact(text)) < persona.NEW_STORY_MIN:
+                log.info("멈춘 채로 기다림 (짧은 말이라 새 이야기로 보지 않음): %r", text)
+                return                                 # "음..." 같은 짧은 말은 흘린다
+            self._paused = None                        # 길게 말했다 = 새 이야기
 
         # 포켓몬 맞추기 게임: 게임 중에는 누가 말하든 답으로 본다 (대화 모델을 거치지 않는다)
         if self.quiz and self.quiz.active:

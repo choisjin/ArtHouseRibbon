@@ -7,6 +7,8 @@ import { keepAwake } from "../util/wakelock";
 import type { RibbonSocket } from "../ws";
 import { mountCharacters } from "./characters";
 import { mountDashboard } from "./dashboard";
+import { mountGames } from "./games";
+import { mountLogs } from "./logs";
 import { mountKids } from "./kids";
 import { mountMap } from "./map";
 import { applyTheme, mountSettings } from "./settings";
@@ -18,13 +20,17 @@ import type { AdminCtx } from "./shared";
  *   #kids        아이 추가·수정 (인적사항, 정규 수업 시간)
  *   #characters  TV 에 나올 캐릭터, 캐릭터별 프로필(#characters/<id> 설정 페이지)
  *   #map         맵 편집기 (방 목록에서 아이들 전시실도 고른다)
- *   #settings    작은 탭: 마이크(이 컴퓨터에서 받기) · 카메라(웹캠 얼굴 찾기) · TV 소리 출력 · 대화 모델(LLM) · 화면 스타일
+ *   #games       게임 (카테고리 -> 놀이 목록). 지금은 포켓몬 맞추기 (admin/games.ts)
+ *   #logs        날짜별 대화 로그 (admin/logs.ts, 서버 chatlog.py 가 data/logs/ 에 남긴다)
+ *   #settings    작은 탭: 마이크 · 카메라 · TV 소리 출력 · 대화 모델(LLM) · 음악 · 계정 · 화면 스타일
  * 이 페이지는 **리모컨**이다: 폰에서 열어도 학원 컴퓨터(맥미니)에서 도는 리본이를 조작한다.
  * 맥미니에서 연 화면(localhost)만 "학원 컴퓨터"로 보고 마이크·카메라·음악 재생을 함께 맡는다 (설정 탭에서 바꿀 수 있다).
  * 저장은 REST API 로, 화면 반영은 서버가 보내는 state 브로드캐스트로 이뤄진다.
  */
 const TABS = [
   { id: "dashboard", name: "대시보드", icon: "📋" },
+  { id: "games", name: "게임", icon: "🎮" },
+  { id: "logs", name: "로그", icon: "📜" },
   { id: "kids", name: "아이들", icon: "🧒" },
   { id: "characters", name: "캐릭터", icon: "🎀" },
   { id: "map", name: "맵", icon: "🗺" },
@@ -104,6 +110,8 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   let mapTab: ReturnType<typeof mountMap> | null = null;
   let dashboard: ReturnType<typeof mountDashboard> | null = null;
   let settingsTab: ReturnType<typeof mountSettings> | null = null;
+  let logsTab: ReturnType<typeof mountLogs> | null = null;
+  let gamesTab: ReturnType<typeof mountGames> | null = null;
   function mount(id: TabId): void {
     if (mounted.has(id)) return;
     mounted.add(id);
@@ -113,6 +121,8 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     if (id === "characters") characters = mountCharacters(el, ctx);
     if (id === "map") mapTab = mountMap(el);
     if (id === "settings") settingsTab = mountSettings(el, ctx);
+    if (id === "logs") logsTab = mountLogs(el, ctx);
+    if (id === "games") gamesTab = mountGames(el, ctx);
   }
 
   function route(): void {
@@ -125,6 +135,8 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     if (active === "dashboard") dashboard?.show(sub);
     if (active === "characters") characters?.show(sub);
     if (active === "settings") settingsTab?.show(sub);
+    if (active === "logs") logsTab?.show();
+    if (active === "games") gamesTab?.show();
     if (active === "kids" && sub) kidsTab?.select(sub);
     if (active === "map") mapTab?.activate();
   }

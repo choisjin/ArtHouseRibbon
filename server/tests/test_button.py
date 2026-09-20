@@ -150,7 +150,9 @@ async def test_button_while_talking_then_new_words_start_over():
     await dm.on_wake(0)
     dm._pending_done = [("u1", asyncio.Event(), 5, "남은 말이야.")]
     await dm.pause_for_button()
-    await dm.on_utterance(0, "공룡 얘기 해줘")                       # 새로 말하면 그 말로 새 이야기
+    await dm.on_utterance(0, "음...")                               # 짧고 뜻 없는 말은 흘린다 (그대로 멈춘 채)
+    assert dm._paused is not None
+    await dm.on_utterance(0, "공룡 얘기 해줘")                       # 길게 말하면 그 말로 새 이야기
     assert dm._paused is None
     assert "남은 말이야." not in speaks(sent)[-2:]
     assert llm.heard and "공룡" in llm.heard[-1]
@@ -163,6 +165,7 @@ async def test_button_while_listening_cancels_input():
     dm, sent, _ = make()
     await dm.on_wake(0)
     assert dm.queue.active() is not None
+    before = len(speaks(sent))
     await dm.cancel_listening()
     assert dm.queue.active() is None and dm.ribbon_state == "idle"
-    assert "취소" in speaks(sent)[-1]
+    assert len(speaks(sent)) == before                 # 말없이 취소한다 (2026-09-21 요청)

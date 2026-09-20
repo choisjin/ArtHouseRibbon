@@ -239,6 +239,17 @@
 #admin .role-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--label);
   background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
 #admin .role-note button { margin-left: auto; }
+/* 게임 탭 (admin/games.ts) */
+#admin .game-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+#admin .game-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+#admin .game-list .g-ic { font-size: 22px; }
+#admin .game-list .g-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* 로그 탭 (admin/logs.ts) */
+#admin .talk-log.logs { max-height: 62vh; overflow: auto; }
+#admin .talk-log.logs .at { color: var(--dim); font-size: 11px; margin-right: 6px; }
+/* 대시보드 작품 썸네일 */
+#admin .art-thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+#admin .art-thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
 /* 계정 목록 (설정 → 👤 계정) */
 #admin .accounts { display: flex; flex-direction: column; gap: 8px; }
 #admin .account { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px;

@@ -29,17 +29,8 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
           <div class="status"><span class="dot"></span><b id="ctl-state">-</b><span id="ctl-target" class="hint"></span></div>
           <div class="ctl-buttons">
             <button id="ctl-stop" title="Esc">⏹ 중단 <kbd>Esc</kbd></button>
-            <button id="ctl-stop-all" class="danger" title="Shift+Esc">⏏ 모두 멈춤 <kbd>⇧Esc</kbd></button>
-            <button id="ctl-ignore" title="M">🔕 호출 무시 <kbd>M</kbd></button>
+            <button id="ctl-ignore" title="M">🔔 호출 허용 <kbd>M</kbd></button>
           </div>
-          <div class="row game-row"><span class="hint">포켓몬 맞추기</span>
-            <button data-game="describe">🗣 설명 듣고</button>
-            <button data-game="image">🖼 그림 보고</button>
-            <button data-game="peek">🧩 조금 보고</button>
-            <button data-game="stop">끝내기</button>
-          </div>
-          <ol id="ctl-queue" class="queue"></ol>
-          <p class="hint">호출: 아이 줄의 📣 버튼<span class="keys">, 또는 <kbd>1</kbd>~<kbd>4</kbd> (그 마이크를 쓰는 아이)</span>. 중단하면 기다리던 다음 아이 차례로 넘어갑니다.</p>
         </section>
         <section class="card">
           <h2>TV 에 보여줄 방</h2>
@@ -55,9 +46,15 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
             <select id="now-add"><option value="">+ 수업 외 아이 추가</option></select>
           </div>
         </section>
-        <section class="card talk">
-          <h2>대화</h2>
-          <ul id="talk" class="talk-log"></ul>
+        <section class="card">
+          <h2>🎨 작품</h2>
+          <div class="actions">
+            <button id="art-shoot" class="primary">📷 작품 촬영</button>
+            <button id="art-show">🖼 작품 전시</button>
+          </div>
+          <p class="hint">촬영하면 고른 아이의 작품으로 서버에 저장됩니다. 전시는 그 아이 전시실을 열어 벽에 겁니다.</p>
+          <input id="art-file" type="file" accept="image/*" capture="environment" hidden />
+          <div id="art-sent" class="art-thumbs"></div>
         </section>
       </div>
     </div>
@@ -123,7 +120,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   const toggleIgnore = () => {
     const on = !(last?.ignore_calls ?? false);
     send({ type: "admin.ignore", on });
-    ctx.msg(on ? "호출 무시 켬: 아이들이 불러도 대답하지 않습니다" : "호출 무시 끔");
+    ctx.msg(on ? "호출 거부: 아이들이 불러도 대답하지 않습니다" : "호출 허용");
   };
   const wake = (k: KidInfo) => {
     if (k.mic_channel == null) { ctx.msg(`${k.name}에게 마이크를 먼저 정해 주세요`, true); return; }
@@ -131,12 +128,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     ctx.msg(`${k.name} 호출`);
   };
   $("#ctl-stop").onclick = () => stop(false);
-  $("#ctl-stop-all").onclick = () => stop(true);
   $("#ctl-ignore").onclick = toggleIgnore;
-  el.querySelectorAll<HTMLButtonElement>("[data-game]").forEach((b) => {
-    b.onclick = () => ctx.socket.sendJson(b.dataset.game === "stop"
-      ? { type: "admin.game", action: "stop" } : { type: "admin.game", action: "start", mode: b.dataset.game });
-  });
 
   window.addEventListener("keydown", (e) => {
     if (!isActive() || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -160,11 +152,7 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     $("#ctl-target").textContent = s.target_kid ? ` · ${name(s.target_kid)}` : "";
     const ign = $("#ctl-ignore");
     ign.classList.toggle("on", !!s.ignore_calls);
-    ign.innerHTML = s.ignore_calls ? "🔕 호출 무시 중 <kbd>M</kbd>" : "🔔 호출 받는 중 <kbd>M</kbd>";
-    $("#ctl-queue").innerHTML = s.queue.length
-      ? s.queue.map((t) => `<li class="${t.state}">${t.position === 0 ? "▶" : `${t.position}.`} ${esc(name(t.kid_id))}
-          <span class="hint">${t.position === 0 ? "지금 차례" : "기다리는 중"}${t.text ? ` · "${esc(t.text.slice(0, 30))}"` : ""}</span></li>`).join("")
-      : `<li class="hint">기다리는 아이 없음</li>`;
+    ign.innerHTML = s.ignore_calls ? "🔕 호출 거부 <kbd>M</kbd>" : "🔔 호출 허용 <kbd>M</kbd>";
   }
 
   // ---- 지금 수업 ----
@@ -229,33 +217,70 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     if (v) { extra.add(v); renderNow(); }
   };
 
-  // ---- 대화 기록 ----
-  const talk = $("#talk");
-  function addTalk(who: string, text: string, cls: string): void {
-    const li = document.createElement("li");
-    li.className = cls;
-    li.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 5)}</span><b>${esc(who)}</b> ${esc(text)}`;
-    talk.prepend(li);
-    while (talk.children.length > 40) talk.lastElementChild!.remove();
+  // ---- 작품 촬영 · 전시 (2026-09-21) ----
+  // 대화 기록은 '로그' 탭으로 옮겼다 (admin/logs.ts, 서버가 날짜별 파일로 남긴다)
+  const file = $("#art-file") as HTMLInputElement;
+  const sentBox = $("#art-sent");
+
+  /** 아이 고르기 (없으면 null). 수업 중인 아이를 먼저 보여 준다 */
+  function pickKid(title: string): KidInfo | null {
+    const kids = ctx.kids();
+    if (!kids.length) { ctx.msg("아이를 먼저 추가하세요", true); return null; }
+    const lines = kids.map((k, i) => `${i + 1}. ${kidLabel(k)}`).join("\n");
+    const answer = prompt(`${title}\n\n${lines}\n\n번호나 이름을 넣어 주세요`, "1");
+    if (!answer) return null;
+    const n = Number(answer.trim());
+    const kid = Number.isFinite(n) && n >= 1 && n <= kids.length
+      ? kids[n - 1]
+      : kids.find((k) => k.name === answer.trim() || k.nickname === answer.trim());
+    if (!kid) { ctx.msg("그런 아이가 없습니다", true); return null; }
+    return kid;
   }
+
+  $("#art-shoot").onclick = () => file.click();
+  file.onchange = async () => {
+    const f = file.files?.[0];
+    file.value = "";
+    if (!f) return;
+    const kid = pickKid("누구 작품인가요?");
+    if (!kid) return;
+    ctx.msg("사진을 보내는 중…");
+    try {
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("사진을 열지 못했습니다")); img.src = url; });
+      const scale = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * scale);
+      c.height = Math.round(img.naturalHeight * scale);
+      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const data = c.toDataURL("image/jpeg", 0.88);
+      await api("POST", "/api/artworks", {
+        data, width: c.width, height: c.height, kid_id: kid.id,
+        name: `${kid.name} ${new Date().toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+      });
+      const thumb = document.createElement("img");
+      thumb.src = data;
+      thumb.title = kid.name;
+      sentBox.prepend(thumb);
+      while (sentBox.children.length > 8) sentBox.lastElementChild!.remove();
+      ctx.msg(`${kid.name} 작품을 저장했습니다`);
+    } catch (e) { ctx.msg(`보내지 못했습니다: ${e}`, true); }
+  };
+
+  $("#art-show").onclick = () => {
+    const kid = pickKid("누구 전시실을 열까요?");
+    if (!kid) return;
+    window.open(`/?mode=art&kid=${encodeURIComponent(kid.id)}`, "_blank");
+    ctx.msg(`${kid.name} 전시실을 열었습니다`);
+  };
+
   ctx.socket.on((m: ServerMsg) => {
     if (m.type === "ribbon.state" && last) {
       // 상태(듣는 중·말하는 중)는 전체 state 보다 자주 온다
       last = { ...last, ribbon: m.state, target_kid: m.target_kid };
       renderControl(last);
-      return;
-    }
-    if (m.type === "transcript") {
-      const k = ctx.kids().find((x) => x.id === m.kid_id);
-      addTalk(k ? kidLabel(k) : `마이크 ${m.channel + 1}`, m.text, "kid");
-    } else if (m.type === "speak") {
-      addTalk(ctx.config()?.ribbon?.name ?? "리본", m.text, "ribbon");
-    } else if (m.type === "button") {
-      addTalk("🔘 호출 버튼", `먼저 말하는 아이를 기다림 (마이크 ${m.channels.map((c) => c + 1).join(", ")})`, "ribbon");
-    } else if (m.type === "memory.changed") {
-      const k = ctx.kids().find((x) => x.id === m.kid_id);
-      for (const t of m.added) addTalk("📝 약속", `${t}${k ? ` (${kidLabel(k)})` : ""}`, "ribbon");
-      for (const t of m.removed) addTalk("📝 약속 취소", t, "ribbon");
     }
   });
 

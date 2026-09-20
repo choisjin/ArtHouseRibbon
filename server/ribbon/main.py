@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth as auth_mod
 from .audio import recorder
+from .chatlog import ChatLog
 from .audio.bargein import BargeIn
 from .audio.button import ButtonCall, DjiButton
 from .audio.stream import ChannelProcessor
@@ -94,6 +95,14 @@ memory = MemoryStore(settings.memory_path(), store.config.ribbon.memory_max_per_
 pokedex = Pokedex(settings.pokedex_path(), settings.pokedex_path().parent / "pokemon_looks_cache.json")
 schedule = sched.ScheduleStore(settings.schedule_path())
 auth = auth_mod.AuthStore(settings.users_path(), settings.sessions_path())
+chat_log = ChatLog(settings.logs_path())
+
+
+async def broadcast_and_log(message: dict) -> None:
+    """오가는 말을 화면들에 보내면서 대화 로그에도 남긴다 (관리자 '로그' 탭, data/logs/날짜.jsonl)"""
+    chat_log.note(message, lambda kid_id: (kids.get(kid_id).name if kid_id and kids.get(kid_id) else ""),
+                  store.config.ribbon.name)
+    await hub.broadcast(message)
 spotify = SpotifyAccount(settings.music_auth_path())
 music = MusicControl(spotify, store)
 spotify.market = store.config.music.market   # 어느 나라 카탈로그로 찾을지 (제목 언어)
@@ -106,7 +115,7 @@ stt = make_stt(settings)
 tts = make_tts(settings)
 configure_tts(tts, store.config.ribbon.voice, store.config.ribbon.speed, store.config.ribbon.steps,
               store.config.ribbon.pitch)
-dialogue = DialogueManager(settings, kids, llm, tts, hub.broadcast, store, world, memory, pokedex, music)
+dialogue = DialogueManager(settings, kids, llm, tts, broadcast_and_log, store, world, memory, pokedex, music)
 music.on_config = dialogue.notify_config_changed   # 말로 음량을 바꾸면 재생 화면에 알린다
 renderer = WorldRenderer(world, settings.blender_exe, settings.render_pct, settings.render_samples,
                          on_change=dialogue.notify_config_changed)
@@ -303,6 +312,18 @@ async def api_call(token: str = ""):
     log.info("주소로 호출 (/api/call)")
     _spawn(_on_button())
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/logs/days")
+async def api_log_days():
+    """기록이 있는 날짜들 (최근 것부터)"""
+    return JSONResponse({"days": chat_log.days()})
+
+
+@app.get("/api/logs")
+async def api_logs(date: str = "", limit: int = 1000):
+    """그날의 대화 기록 (관리자 '로그' 탭)"""
+    return JSONResponse({"date": date or dt.date.today().isoformat(), "rows": chat_log.read(date or None, limit)})
 
 
 @app.get("/api/net")

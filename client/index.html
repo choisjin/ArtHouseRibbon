@@ -20,8 +20,9 @@
       .chip.active { border-color: #ffd54a; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
-      /* 리본이 부르기 (src/tv/callbutton.ts): 전등 스위치 모양, 화면 오른쪽 아래 구석 (2026-09-21 요청) */
-      #call-btn { right: 2vw; bottom: 2.5vh; z-index: 35; display: flex; flex-direction: column; align-items: center; gap: .6vh;
+      /* 리본이 부르기 (src/tv/callbutton.ts): 화면에는 보이지 않게 숨겨 두고(2026-09-21 요청),
+         오른쪽 아래 구석을 누르면 부를 수 있게 남겨 둔다. 키보드·블루투스 리모컨도 그대로 */
+      #call-btn { opacity: 0; right: 2vw; bottom: 2.5vh; z-index: 35; display: flex; flex-direction: column; align-items: center; gap: .6vh;
         background: none; border: none; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
       #call-btn .sw-plate { width: clamp(34px, 3.1vw, 62px); aspect-ratio: 3 / 5; border-radius: 12%/7%;
         background: linear-gradient(150deg, #fdfbf7, #e8e2d8 60%, #d8d1c6);

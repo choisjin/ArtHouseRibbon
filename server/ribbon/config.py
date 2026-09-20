@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     settings_file: str = "../data/settings.json"
     schedule_file: str = "../data/schedule.json"   # 시간표의 하루짜리 변경 (schedule.py)
     memory_file: str = "../data/memory.json"       # 리본이가 기억하는 약속 (memory.py)
+    logs_dir: str = "../data/logs"                  # 대화 로그 (chatlog.py, git 제외)
     users_file: str = "../data/users.json"          # 로그인 계정 (auth.py, git 제외)
     sessions_file: str = "../data/sessions.json"    # 로그인 세션 (auth.py, git 제외)
     music_auth_file: str = "../data/spotify_auth.json"  # Spotify 앱 정보·토큰 (music.py, git 제외)
@@ -86,6 +87,9 @@ class Settings(BaseSettings):
 
     def settings_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.settings_file).resolve()
+
+    def logs_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.logs_dir).resolve()
 
     def users_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.users_file).resolve()
