@@ -1,25 +1,30 @@
+import { bgOf, composeArt, DEFAULT_BG, lookSize, MAX_PAD, padOf, type Pad } from "../world/artimage";
+
 /**
- * 작품 사진 다듬기 (전시실 꾸미기의 '사진 올리기'와 '배경 지우기').
+ * 작품 편집 창 (전시실 꾸미기의 '사진 올리기'와 작품 목록의 '편집').
  *
- * 가장자리 색으로 지우던 방식은 책상 무늬·그림자·흰 종이에 약했다 (2026-09-21 "품질이 너무 안좋아"). 그래서
- *   - **AI 가 작품을 골라낸다**: 서버(ribbon/cutout.py, BiRefNet)가 마스크를 주고, 여기서 원본 크기로 잘라 낸다.
- *   - **네모로 펴기**: 종이에 그린 그림은 네 귀퉁이를 맞추면 비스듬히 찍힌 것도 반듯한 네모로 편다.
- *     귀퉁이는 AI 마스크에서 먼저 짐작해 놓고, 손으로 끌어 고친다.
- *   - **모양대로**: 만들기 작품처럼 네모가 아닌 것은 마스크 모양 그대로 투명하게 오려 낸다.
- * 서버에 모델이 없으면(onnxruntime·pillow 없음) 예전처럼 색으로 지운다 ('지우는 정도' 막대가 나온다).
+ *   - **배경 지우기**: 서버(ribbon/cutout.py, BiRefNet)가 작품만 골라낸 마스크를 주고, 여기서 원본 크기로 오려 낸다.
+ *     가장자리 색으로 지우던 예전 방식은 품질이 나빴다. 서버에서 모델을 못 쓰면 그 방식으로 떨어진다 ('지우는 정도' 막대).
+ *   - **여백**: 위·아래·왼쪽·오른쪽을 따로 (긴 변의 %). '네 쪽 같이'를 켜 두면 하나만 움직여도 같이 바뀐다.
+ *   - **배경색**: 오려 낸 작품 뒤에 까는 색. 정하지 않으면 흰색 (world/artimage.ts).
+ * 올라가는 파일은 **배경 없는 원본**(투명 PNG)이고, 여백과 배경색은 값으로만 저장한다 — 그래서 나중에 다시 편집해도
+ * AI 를 또 돌리지 않고, 부모님은 배경 없는 원본도 내려받을 수 있다. 이미 올린 작품의 여백·배경색만 바꾸면
+ * 파일은 그대로 두고 값만 고친다 (PUT /api/artworks/meta, 걸려 있는 곳도 서버가 같이 맞춘다).
  */
 
-export interface Artwork { file: string; name: string; width: number; height: number; kid_id?: string | null }
+export interface Artwork {
+  file: string; name: string; width: number; height: number; kid_id?: string | null;
+  bg?: string; pad?: number[];
+}
 export interface Cropper { edit(a: Artwork): Promise<void> }
-
-type Mode = "quad" | "shape" | "none";
-type P = { x: number; y: number };
 
 const MAX_SIDE = 2000;          // 올리기 전에 이 크기로 줄인다 (부모님이 크게 볼 수 있을 만큼은 남긴다)
 const AI_SIDE = 1024;           // AI 에 보내는 크기 (모델 입력이 1024 라 더 커도 소용없다)
+const SWATCHES = ["#ffffff", "#faf5ea", "#eeeeee", "#222222", "#fbdce4", "#dcecf9", "#fff1c2", "#dff2df"];
+const SIDES = ["왼쪽", "위", "오른쪽", "아래"];
 
-async function post<T>(url: string, body: unknown): Promise<{ status: number; data: T }> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+async function send<T>(method: string, url: string, body: unknown): Promise<{ status: number; data: T }> {
+  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({})) as T;
   return { status: res.status, data };
 }
@@ -30,40 +35,48 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
   const file = $<HTMLInputElement>("#file");
   const dlg = $<HTMLDivElement>("#crop");
   const canvas = $<HTMLCanvasElement>("#cv");
-  const wrap = $<HTMLDivElement>("#cv-wrap");
   const status = $("#crop-status");
+  const cutIn = $<HTMLInputElement>("#cut");
   const tolRow = $("#tol-row");
   const tol = $<HTMLInputElement>("#tol");
-  const handles = [...wrap.querySelectorAll<HTMLElement>(".corner")];
+  const linkIn = $<HTMLInputElement>("#pad-link");
+  const padIns = [...dlg.querySelectorAll<HTMLInputElement>("[data-pad]")];
+  const bgIn = $<HTMLInputElement>("#bg");
 
   let src: ImageData | null = null;        // 줄인 원본
   let srcCanvas: HTMLCanvasElement | null = null;
   let alpha: Uint8ClampedArray | null = null;   // 작품이면 255 (원본 크기)
-  let quad: P[] = [];                      // 네 귀퉁이 (원본 픽셀, 왼위·오위·오아래·왼아래)
-  let mode: Mode = "quad";
-  let picked = false;                      // 방식을 손으로 골랐나 (고르기 전에는 AI 결과를 보고 알아서 정한다)
+  let cutCanvas: HTMLCanvasElement | null = null;   // 오려 낸 결과 (alpha 가 바뀔 때만 다시 만든다)
   let useColor = false;                    // AI 를 못 써서 색으로 지우는 중
-  let ready = false;                       // 마스크가 왔나
-  let replacing: Artwork | null = null;
+  let pad: Pad = [0, 0, 0, 0];
+  let bg = DEFAULT_BG;
+  let editing: Artwork | null = null;      // 이미 올린 작품을 편집하는 중이면 그 작품
   let session = 0;                         // 창을 닫았다 다시 열면 늦게 온 AI 답은 버린다
 
-  const open = (img: HTMLImageElement, name: string, replaced: Artwork | null): void => {
+  $("#swatches").innerHTML = SWATCHES.map((c) => `<button data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
+
+  const open = (img: HTMLImageElement, name: string, old: Artwork | null): void => {
     srcCanvas = shrink(img, MAX_SIDE);
     src = srcCanvas.getContext("2d")!.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
     alpha = null;
-    ready = false;
+    cutCanvas = null;
     useColor = false;
-    picked = false;
-    mode = "quad";
-    replacing = replaced;
-    const { width: w, height: h } = src;
-    quad = [{ x: w * 0.06, y: h * 0.06 }, { x: w * 0.94, y: h * 0.06 }, { x: w * 0.94, y: h * 0.94 }, { x: w * 0.06, y: h * 0.94 }];
-    $("#crop-name").textContent = name;
-    $("#crop-ok").textContent = replaced ? "바꾸기" : "올리기";
+    editing = old;
+    pad = [...padOf(old)] as Pad;
+    bg = bgOf(old);
+    bgIn.value = bg;
+    padIns.forEach((el, i) => { el.value = String(Math.round(pad[i] * 100)); });
+    linkIn.checked = pad.every((v) => v === pad[0]);
     tolRow.hidden = true;
+    // 이미 배경이 지워진 작품(투명한 곳이 있다)은 다시 지우지 않는다. 새 사진이나 통짜 사진은 지운다
+    cutIn.checked = !hasHoles(src);
+    $("#crop-name").textContent = name;
+    $("#crop-ok").textContent = old ? "저장" : "올리기";
     dlg.classList.add("open");
+    session++;
+    status.textContent = cutIn.checked ? "" : "배경이 이미 지워진 작품입니다. 여백과 배경색을 바꿀 수 있어요.";
     draw();
-    void askAi(++session);
+    if (cutIn.checked) void askAi(session);
   };
 
   file.onchange = async () => {
@@ -76,18 +89,16 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
   /** 서버에 마스크를 부탁한다. 모델을 받는 중이면 기다렸다 다시 묻고, 못 쓰면 색으로 지운다 */
   async function askAi(my: number): Promise<void> {
     if (!srcCanvas || !src) return;
-    status.textContent = "AI 가 작품을 찾는 중…";
-    const small = shrinkCanvas(srcCanvas, AI_SIDE);
-    const data = small.toDataURL("image/jpeg", 0.9);
+    status.textContent = "AI 가 배경을 지우는 중…";
+    const data = shrinkCanvas(srcCanvas, AI_SIDE).toDataURL("image/jpeg", 0.9);
     for (let tries = 0; tries < 200; tries++) {
-      let r: { status: number; data: { mask?: string; state?: string; progress?: number; detail?: string } };
-      try { r = await post("/api/cutout", { data }); } catch { r = { status: 0, data: {} }; }
+      let r: { status: number; data: { mask?: string; progress?: number } };
+      try { r = await send("POST", "/api/cutout", { data }); } catch { r = { status: 0, data: {} }; }
       if (my !== session || !src) return;
       if (r.status === 200 && r.data.mask) {
         const m = await maskToAlpha(r.data.mask, src.width, src.height);
         if (my !== session || !src) return;
-        alpha = keepBig(m, src.width, src.height);
-        fromMask();
+        setAlpha(keepBig(m, src.width, src.height), "배경을 지웠습니다. 여백과 배경색을 맞춰 보세요.");
         return;
       }
       if (r.status === 202) {
@@ -101,112 +112,100 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     // AI 를 못 쓴다: 예전 방식 (가장자리 색과 비슷한 곳을 지운다)
     useColor = true;
     tolRow.hidden = false;
-    alpha = colorMask(src, Number(tol.value));
-    fromMask("AI 를 쓸 수 없어 색으로 지웁니다. '지우는 정도'를 맞춰 보세요.");
+    setAlpha(colorMask(src, Number(tol.value)), "AI 를 쓸 수 없어 색으로 지웁니다. '지우는 정도'를 맞춰 보세요.");
   }
 
-  /** 마스크가 생겼다: 귀퉁이를 짐작하고, 아직 고르지 않았으면 네모인지 보고 방식을 정한다 */
-  function fromMask(note = ""): void {
-    if (!src || !alpha) return;
-    const found = cornersOf(alpha, src.width, src.height);
-    if (found) {
-      quad = found.quad;
-      if (!picked) mode = found.fill > 0.86 ? "quad" : "shape";
-    }
-    ready = true;
-    hint(note);
+  function setAlpha(a: Uint8ClampedArray, note: string): void {
+    if (!src) return;
+    alpha = a;
+    cutCanvas = cutOut(src, a);
+    status.textContent = note;
     draw();
   }
 
-  function hint(note = ""): void {
-    if (!ready) return;                       // 아직 AI 를 기다리는 중이면 그 안내를 둔다
-    status.textContent = note || (mode === "quad" ? "네 귀퉁이가 맞는지 보고, 어긋났으면 점을 끌어 맞추세요."
-      : mode === "shape" ? "작품 모양대로 오렸습니다. 종이에 그린 그림이면 '네모로 펴기'가 더 깔끔해요."
-      : "사진을 그대로 올립니다.");
-  }
+  /** 지금 올라갈 그림 (배경을 지웠으면 오려 낸 것, 아니면 원본) */
+  const picture = (): HTMLCanvasElement | null => (cutIn.checked && cutCanvas ? cutCanvas : srcCanvas);
 
-  // ---------- 미리 보기 ----------
+  // ---------- 미리 보기: 배경색 위에 여백을 두고 ----------
   function draw(): void {
-    if (!src || !srcCanvas) return;
-    dlg.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
-    const shown = mode === "shape" && alpha ? cutOut(src, alpha) : srcCanvas;
-    const maxW = (wrap.parentElement?.clientWidth || 480) - 2, maxH = window.innerHeight * 0.5;   // 창 안쪽 너비에 맞춘다 (점 자리가 어긋나지 않게)
-    const s = Math.min(1, maxW / shown.width, maxH / shown.height);
-    canvas.width = Math.max(1, Math.round(shown.width * s));
-    canvas.height = Math.max(1, Math.round(shown.height * s));
-    const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(shown, 0, 0, canvas.width, canvas.height);
-    const onQuad = mode === "quad";
-    handles.forEach((h) => { h.hidden = !onQuad; });
-    if (onQuad) {
-      // 네모 밖은 어둡게, 테두리는 분홍으로
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, canvas.width, canvas.height);
-      quad.forEach((p, i) => (i ? ctx.lineTo(p.x * s, p.y * s) : ctx.moveTo(p.x * s, p.y * s)));
-      ctx.closePath();
-      ctx.fillStyle = "rgba(20,16,28,.55)";
-      ctx.fill("evenodd");
-      ctx.beginPath();
-      quad.forEach((p, i) => (i ? ctx.lineTo(p.x * s, p.y * s) : ctx.moveTo(p.x * s, p.y * s)));
-      ctx.closePath();
-      ctx.strokeStyle = "#e9557d";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.restore();
-      quad.forEach((p, i) => {
-        handles[i].style.left = `${p.x * s}px`;
-        handles[i].style.top = `${p.y * s}px`;
-      });
-    }
-    const out = mode === "quad" ? quadSize(quad) : { w: shown.width, h: shown.height };
-    $("#crop-size").textContent = `${Math.round(out.w)}×${Math.round(out.h)}`;
+    const pic = picture();
+    if (!pic) return;
+    const look = { bg, pad };
+    const full = lookSize(pic.width, pic.height, look);
+    const room = (canvas.parentElement!.parentElement?.clientWidth || 480) - 2;
+    const s = Math.min(1, room / full.w, window.innerHeight * 0.42 / full.h);
+    const shown = composeArt(pic, pic.width, pic.height, look, Math.max(full.w, full.h) * s);
+    canvas.width = shown.width;
+    canvas.height = shown.height;
+    canvas.getContext("2d")!.drawImage(shown, 0, 0);
+    $("#crop-size").textContent = `${Math.round(full.w)}×${Math.round(full.h)}`;
+    dlg.querySelectorAll<HTMLElement>("[data-color]").forEach((b) => b.classList.toggle("on", b.dataset.color === bg));
+    padIns.forEach((el, i) => { el.parentElement!.querySelector("b")!.textContent = `${Math.round(pad[i] * 100)}%`; });
   }
 
-  handles.forEach((h, i) => {
-    h.onpointerdown = (ev) => {
-      ev.preventDefault();
-      h.setPointerCapture(ev.pointerId);
-      h.onpointermove = (e) => {
-        if (!src) return;
-        const r = canvas.getBoundingClientRect();
-        quad[i] = {
-          x: clamp((e.clientX - r.left) / r.width, 0, 1) * src.width,
-          y: clamp((e.clientY - r.top) / r.height, 0, 1) * src.height,
-        };
-        draw();
-      };
-      h.onpointerup = h.onpointercancel = () => { h.onpointermove = null; };
+  padIns.forEach((el, i) => {
+    el.oninput = () => {
+      const v = Math.min(MAX_PAD, Number(el.value) / 100);
+      if (linkIn.checked) { pad = [v, v, v, v]; padIns.forEach((o) => { o.value = el.value; }); } else pad[i] = v;
+      draw();
     };
   });
-  dlg.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) => {
-    b.onclick = () => { mode = b.dataset.mode as Mode; picked = true; hint(); draw(); };
-  });
-  tol.oninput = () => {
-    if (!useColor || !src) return;
-    alpha = colorMask(src, Number(tol.value));
+  linkIn.onchange = () => {
+    if (!linkIn.checked) return;
+    pad = [pad[0], pad[0], pad[0], pad[0]];
+    padIns.forEach((o) => { o.value = String(Math.round(pad[0] * 100)); });
     draw();
   };
+  bgIn.oninput = () => { bg = bgIn.value; draw(); };
+  $("#swatches").onclick = (ev) => {
+    const c = (ev.target as HTMLElement).dataset.color;
+    if (!c) return;
+    bg = c;
+    bgIn.value = c;
+    draw();
+  };
+  cutIn.onchange = () => {
+    tolRow.hidden = !(cutIn.checked && useColor);
+    if (cutIn.checked && !alpha) void askAi(session);
+    else draw();
+  };
+  tol.oninput = () => { if (useColor && src) setAlpha(colorMask(src, Number(tol.value)), status.textContent ?? ""); };
   window.addEventListener("resize", () => { if (dlg.classList.contains("open")) draw(); });
 
-  const close = (): void => { dlg.classList.remove("open"); src = null; srcCanvas = null; alpha = null; replacing = null; session++; };
+  const close = (): void => {
+    dlg.classList.remove("open");
+    src = null; srcCanvas = null; alpha = null; cutCanvas = null; editing = null;
+    session++;
+  };
   $("#crop-cancel").onclick = close;
   $("#crop-ok").onclick = async () => {
-    if (!src || !srcCanvas) return;
-    const out = mode === "quad" ? warp(src, quad) : mode === "shape" && alpha ? cutOut(src, alpha) : srcCanvas;
-    const name = ($("#crop-name").textContent || "작품").replace(/\.[^.]+$/, "");
-    // 투명한 곳이 있는 것만 PNG (네모난 사진은 JPEG 가 훨씬 가볍다)
-    const data = mode === "shape" ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.92);
-    const replaced = replacing;
+    const pic = picture();
+    if (!pic) return;
+    const old = editing;
     const ok = $<HTMLButtonElement>("#crop-ok");
     ok.disabled = true;
     try {
-      const r = await post<{ artwork?: Artwork; detail?: string }>("/api/artworks",
-        { name, data, width: out.width, height: out.height, kid_id: kidId() });
+      if (old && pic === srcCanvas) {
+        // 그림은 그대로, 여백·배경색만: 파일을 다시 올리지 않는다
+        const r = await send<{ artwork?: Artwork; detail?: string }>("PUT", "/api/artworks/meta", { file: old.file, bg, pad });
+        if (r.status !== 200 || !r.data.artwork) throw new Error(r.data.detail || `저장하지 못했습니다 (${r.status})`);
+        close();
+        await done(r.data.artwork, old);
+        return;
+      }
+      const name = ($("#crop-name").textContent || "작품").replace(/\.[^.]+$/, "");
+      // 투명한 곳이 있으면 PNG (통짜 사진은 JPEG 가 훨씬 가볍다)
+      const data = pic === cutCanvas ? pic.toDataURL("image/png") : pic.toDataURL("image/jpeg", 0.92);
+      const r = await send<{ artwork?: Artwork; detail?: string }>("POST", "/api/artworks",
+        { name, data, width: pic.width, height: pic.height, kid_id: kidId(), bg, pad });
       if (r.status !== 200 || !r.data.artwork) throw new Error(r.data.detail || `올리지 못했습니다 (${r.status})`);
+      if (old && old.file !== r.data.artwork.file) {
+        // 새로 오려 낸 그림으로 갈아 끼운다: 걸려 있던 곳도 서버가 모두 바꾸고 옛 파일을 지운다
+        const sw = await send<{ detail?: string }>("POST", "/api/artworks/replace", { old: old.file, new: r.data.artwork.file });
+        if (sw.status !== 200) throw new Error(sw.data.detail || `바꾸지 못했습니다 (${sw.status})`);
+      }
       close();
-      await done(r.data.artwork, replaced ?? undefined);
+      await done(r.data.artwork, old ?? undefined);
     } catch (e) { msg(String(e), true); } finally { ok.disabled = false; }
   };
 
@@ -249,10 +248,21 @@ function shrinkCanvas(src: HTMLCanvasElement, max: number): HTMLCanvasElement {
   c.width = Math.max(1, Math.round(src.width * s));
   c.height = Math.max(1, Math.round(src.height * s));
   const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#fff";                     // 이미 투명한 사진을 다시 다듬을 때 (JPEG 는 투명이 검게 된다)
+  ctx.fillStyle = "#fff";                     // 이미 투명한 사진을 다시 지울 때 (JPEG 는 투명이 검게 된다)
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.drawImage(src, 0, 0, c.width, c.height);
   return c;
+}
+
+/** 투명한 곳이 있는 그림인가 (이미 배경을 지운 작품) */
+function hasHoles(d: ImageData): boolean {
+  const px = d.data;
+  let n = 0, seen = 0;
+  for (let i = 3; i < px.length; i += 4 * 7) {   // 7 픽셀마다 하나씩만 본다
+    seen++;
+    if (px[i] < 200) n++;
+  }
+  return n > seen * 0.01;
 }
 
 /** 서버가 준 흑백 마스크(작게 온다)를 원본 크기의 알파 값으로 */
@@ -299,86 +309,7 @@ function keepBig(alpha: Uint8ClampedArray, w: number, h: number): Uint8ClampedAr
   return out;
 }
 
-/** 마스크에서 네 귀퉁이를 짐작한다 (대각선 방향으로 가장 끝에 있는 점). fill 은 그 네모를 작품이 얼마나 채우는가 */
-function cornersOf(alpha: Uint8ClampedArray, w: number, h: number): { quad: P[]; fill: number } | null {
-  let tl = -1, tr = -1, br = -1, bl = -1, area = 0;
-  let sMin = Infinity, sMax = -Infinity, dMin = Infinity, dMax = -Infinity;
-  for (let i = 0; i < alpha.length; i++) {
-    if (alpha[i] < 128) continue;
-    area++;
-    const x = i % w, y = (i - x) / w;
-    const s = x + y, d = x - y;
-    if (s < sMin) { sMin = s; tl = i; }
-    if (s > sMax) { sMax = s; br = i; }
-    if (d > dMax) { dMax = d; tr = i; }
-    if (d < dMin) { dMin = d; bl = i; }
-  }
-  if (area < w * h * 0.01) return null;
-  const pt = (i: number): P => ({ x: i % w, y: Math.floor(i / w) });
-  const quad = [pt(tl), pt(tr), pt(br), pt(bl)];
-  // 가장자리에 책상 색이 묻어나지 않게 가운데 쪽으로 아주 조금 당긴다
-  const cx = quad.reduce((a, p) => a + p.x, 0) / 4, cy = quad.reduce((a, p) => a + p.y, 0) / 4;
-  const inset = quad.map((p) => ({ x: p.x + (cx - p.x) * 0.006, y: p.y + (cy - p.y) * 0.006 }));
-  let twice = 0;                                // 신발끈 공식
-  quad.forEach((p, i) => { const q = quad[(i + 1) % 4]; twice += p.x * q.y - q.x * p.y; });
-  const quadArea = Math.abs(twice) / 2;
-  return { quad: inset, fill: quadArea ? area / quadArea : 0 };
-}
-
-const dist = (a: P, b: P) => Math.hypot(a.x - b.x, a.y - b.y);
-function quadSize(q: P[]): { w: number; h: number } {
-  return { w: Math.max(dist(q[0], q[1]), dist(q[3], q[2])), h: Math.max(dist(q[0], q[3]), dist(q[1], q[2])) };
-}
-
-/** 네 귀퉁이 안쪽을 반듯한 네모로 편다 (원근 변환 + 두 방향 보간) */
-function warp(src: ImageData, quad: P[]): HTMLCanvasElement {
-  const size = quadSize(quad);
-  const W = Math.max(8, Math.round(size.w)), H = Math.max(8, Math.round(size.h));
-  const m = homography([{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }], quad);
-  const out = new ImageData(W, H);
-  const s = src.data, d = out.data, sw = src.width, sh = src.height;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const px = x + 0.5, py = y + 0.5;
-      const k = m[6] * px + m[7] * py + 1;
-      const u = clamp((m[0] * px + m[1] * py + m[2]) / k - 0.5, 0, sw - 1.001);
-      const v = clamp((m[3] * px + m[4] * py + m[5]) / k - 0.5, 0, sh - 1.001);
-      const x0 = u | 0, y0 = v | 0, fx = u - x0, fy = v - y0;
-      const a = (y0 * sw + x0) * 4, b = a + 4, c = a + sw * 4, e = c + 4;
-      const o = (y * W + x) * 4;
-      for (let ch = 0; ch < 3; ch++) {
-        d[o + ch] = (s[a + ch] * (1 - fx) + s[b + ch] * fx) * (1 - fy) + (s[c + ch] * (1 - fx) + s[e + ch] * fx) * fy;
-      }
-      d[o + 3] = 255;
-    }
-  }
-  return toCanvas(out);
-}
-
-/** from 네 점을 to 네 점으로 보내는 원근 변환 (8 미지수 연립방정식) */
-function homography(from: P[], to: P[]): number[] {
-  const A: number[][] = [];
-  for (let i = 0; i < 4; i++) {
-    const { x, y } = from[i], { x: u, y: v } = to[i];
-    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
-    A.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
-  }
-  for (let c = 0; c < 8; c++) {                 // 가우스 소거
-    let best = c;
-    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[best][c])) best = r;
-    [A[c], A[best]] = [A[best], A[c]];
-    const p = A[c][c] || 1e-12;
-    for (let k = c; k < 9; k++) A[c][k] /= p;
-    for (let r = 0; r < 8; r++) {
-      if (r === c) continue;
-      const f = A[r][c];
-      if (f) for (let k = c; k < 9; k++) A[r][k] -= f * A[c][k];
-    }
-  }
-  return A.map((row) => row[8]);
-}
-
-/** 마스크대로 투명하게 만들고 남은 곳에 딱 맞게 자른다 */
+/** 마스크대로 투명하게 만들고 남은 곳에 딱 맞게 자른다 (여백은 나중에 따로 둔다) */
 function cutOut(src: ImageData, alpha: Uint8ClampedArray): HTMLCanvasElement {
   const { width: w, height: h } = src;
   const out = new Uint8ClampedArray(src.data);
@@ -444,23 +375,20 @@ function colorMask(src: ImageData, tol: number): Uint8ClampedArray {
   return out;
 }
 
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
-
-/** 전시실 꾸미기 화면에 넣는 다듬기 창 (art/index.ts 의 PAGE 에 들어간다) */
+/** 전시실 꾸미기 화면에 넣는 편집 창 (art/index.ts 의 PAGE 에 들어간다) */
 export const CROP_HTML = `
 <div id="crop" class="modal">
   <div class="box">
     <b id="crop-name"></b>
-    <div class="row wrap">
-      <button data-mode="quad">▭ 네모로 펴기</button>
-      <button data-mode="shape">✂ 모양대로 오리기</button>
-      <button data-mode="none">원본 그대로</button>
-    </div>
-    <div id="cv-wrap"><canvas id="cv"></canvas>
-      <i class="corner" hidden></i><i class="corner" hidden></i><i class="corner" hidden></i><i class="corner" hidden></i>
-    </div>
+    <div id="cv-wrap"><canvas id="cv"></canvas></div>
     <p class="hint" id="crop-status"></p>
+    <label class="row"><input id="cut" type="checkbox" checked> 배경 지우기 (AI)</label>
     <label class="row" id="tol-row" hidden>지우는 정도 <input id="tol" type="range" min="2" max="60" value="16" style="flex:1"></label>
+    <div class="pads">
+      <div class="row"><b>여백</b><span class="grow"></span><label class="row"><input id="pad-link" type="checkbox" checked> 네 쪽 같이</label></div>
+      ${SIDES.map((n, i) => `<label class="row">${n} <input data-pad="${i}" type="range" min="0" max="${MAX_PAD * 100}" step="1" value="0" style="flex:1"> <b>0%</b></label>`).join("")}
+    </div>
+    <div class="row wrap"><b>배경색</b> <input id="bg" type="color" value="${DEFAULT_BG}"> <span id="swatches" class="row"></span></div>
     <div class="row"><span class="hint" id="crop-size"></span>
       <span class="grow"></span>
       <button id="crop-cancel" class="ghost">취소</button>
@@ -470,9 +398,13 @@ export const CROP_HTML = `
 
 export const CROP_CSS = `
   #crop { z-index:6 }
-  #crop .box { width:min(640px,94vw) }
-  #cv-wrap { position:relative; align-self:center; line-height:0; touch-action:none }
-  #cv { max-width:100%; background:conic-gradient(#eee 25%, #fff 0 50%, #eee 0 75%, #fff 0) 0 0/16px 16px }
-  #cv-wrap .corner { position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%;
-                     background:#e9557dcc; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,.4); cursor:grab; touch-action:none }
-  #cv-wrap .corner[hidden] { display:none }`;
+  #crop .box { width:min(600px,94vw) }
+  #cv-wrap { align-self:center; line-height:0 }
+  #cv { max-width:100%; box-shadow:0 1px 8px rgba(0,0,0,.25) }
+  #crop .pads { display:grid; grid-template-columns:1fr 1fr; gap:4px 16px }
+  #crop .pads > .row:first-child { grid-column:1 / -1 }
+  #crop .pads label b { min-width:2.6em; text-align:right }
+  #bg { width:44px; height:32px; padding:0; border:1px solid #cdc6bd; border-radius:6px; background:#fff }
+  #swatches button { width:28px; height:28px; padding:0; border-radius:50%; border:2px solid #cdc6bd }
+  #swatches button.on { border-color:#e9557d; box-shadow:0 0 0 2px #e9557d55 }
+  @media (max-width:520px) { #crop .pads { grid-template-columns:1fr } }`;

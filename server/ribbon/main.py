@@ -1016,6 +1016,30 @@ async def api_artwork_upload(data: dict = Body(...)):
     return JSONResponse({"ok": True, "artwork": entry, "new": new})
 
 
+@app.put("/api/artworks/meta")
+async def api_artwork_meta(data: dict = Body(...)):
+    """작품의 배경색·여백(·이름) 바꾸기 {"file", "bg", "pad": [왼,위,오,아래]}. 걸려 있는 곳도 같이 바뀐다"""
+    try:
+        entry, rooms = world.update_artwork(str(data.get("file", "")), data)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    if world.active in rooms:
+        await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "artwork": entry, "rooms": rooms})
+
+
+@app.post("/api/artworks/replace")
+async def api_artwork_replace(data: dict = Body(...)):
+    """편집해서 새로 올린 그림으로 갈아 끼우기 {"old", "new"}: 걸린 곳을 모두 새 그림으로 바꾸고 옛 파일을 지운다"""
+    try:
+        rooms = world.replace_artwork(str(data.get("old", "")), str(data.get("new", "")))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    if world.active in rooms:
+        await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "rooms": rooms})
+
+
 @app.post("/api/artworks/delete")
 async def api_artwork_delete(data: dict = Body(...)):
     try:

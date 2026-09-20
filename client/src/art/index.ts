@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Stage, fetchCatalog } from "../tv/stage";
 import type { WallMount } from "../world/room";
 import { renderNow, type Catalog, type Layout, type LayoutArt, type WorldRender } from "../world/types";
+import { bgOf, lookSize, padOf } from "../world/artimage";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
 /**
@@ -11,7 +12,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  * 띄워 그 위에서 그림을 끌어 옮긴다. 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다.
  *   - 작품 목록과 사진 올리기는 모달(🖼 작품)로
  *   - 고른 그림은 아래 막대에서 크기·액자를 바꾸고 내린다. 비율은 그대로이고, 벽을 넘는 크기로는 못 키운다
- *   - 사진 다듬기(네모로 펴기 · AI 로 오리기)는 crop.ts. 이미 올린 사진도 다시 다듬을 수 있다
+ *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
+ *   - 보는 곳: TV 화면(배경 렌더 그대로) 말고도 왼쪽·오른쪽·뒤쪽 벽을 정면에서 볼 수 있다 (그때는 실시간 3D 로 그린다)
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
  *   - 🔗 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
  * 저장하면 그 아이 전시실(kid-<아이 id>)의 arts 만 바뀐다. 배경은 모든 아이가 같은 렌더(kidbase)를 쓰므로
@@ -77,6 +79,7 @@ export async function startArt(): Promise<void> {
   let mounts: WallMount[] = [];
   let picked: string | null = null;
   let dirty = false;
+  let facing = "";                                 // 정면에서 보고 있는 벽 (WallMount.key). 비어 있으면 TV 화면
   const lightIn = $<HTMLInputElement>("#light");
 
   const loop = (): void => { requestAnimationFrame(loop); marker?.update(); stage.render(); };
@@ -101,6 +104,9 @@ export async function startArt(): Promise<void> {
     render = await api<{ render?: WorldRender | null }>("GET", `/api/world/view?room=${encodeURIComponent(room)}`)
       .then((w) => w.render).catch(() => null);
     await rebuild();
+    const before = JSON.stringify(arts);
+    for (const a of arts) fit(a, wallOf(a));    // 편집으로 비율이 바뀌어 벽을 넘게 됐으면 안으로 들인다
+    if (JSON.stringify(arts) !== before) { dirty = true; await rebuild(); }
     drawList();
     msg("");
   }
@@ -109,11 +115,25 @@ export async function startArt(): Promise<void> {
   async function rebuild(): Promise<void> {
     const lay = layout ? { ...layout, arts, light } : { items: [], doll_spot: { x: 0, y: 0 }, arts, light };
     // 배경 렌더가 있으면 TV 는 렌더에 쓴 배치로 짓는다 (stage.setWorld). 손보는 중인 그림을 거기에도 넣어 준다
-    const now = renderNow(render);
+    // 벽을 정면에서 볼 때는 렌더 없이 실시간 3D 로 (배경 렌더는 TV 카메라에서 찍은 한 장뿐이다)
+    const now = facing ? null : renderNow(render);
     await stage.setWorld(room, lay, now ? { ...now, layout: now.layout ? { ...now.layout, arts, light } : lay } : now);
     mounts = stage.room.wallMounts();
+    stage.faceWall(mounts.find((w) => w.key === facing) ?? null);
     buildWallPlanes();
+    drawViews();
     markPicked();
+  }
+
+  /** 보는 곳 고르기: TV 화면 + 방의 벽들 (가구에 달린 면은 뺀다) */
+  function drawViews(): void {
+    const box = $("#views");
+    const wallsOnly = mounts.filter((w) => w.host === null);
+    box.innerHTML = `<button data-view="" class="${facing ? "" : "on"}">TV 화면</button>`
+      + wallsOnly.map((w) => `<button data-view="${esc(w.key)}" class="${w.key === facing ? "on" : ""}">${esc(w.name)}</button>`).join("");
+    box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
+      b.onclick = () => { facing = b.dataset.view ?? ""; void rebuild(); };
+    });
   }
 
   /** 끌어 놓을 자리: 벽마다 보이지 않는 판을 하나씩 (여기에 대고 좌표를 잡는다) */
@@ -264,13 +284,13 @@ export async function startArt(): Promise<void> {
     box.innerHTML = mine.map((a) => {
       const hung = arts.filter((x) => x.image === a.file).length;
       return `<div class="card" data-file="${esc(a.file)}">
-        <img src="/${esc(a.file)}" alt="">
+        <img src="/${esc(a.file)}" alt="" style="background:${bgOf(a)}">
         <div class="card-body">
           <b>${esc(a.name)}</b>
           <small>${a.width}×${a.height}${hung ? ` · 걸린 것 ${hung}개` : ""}</small>
           <div class="row wrap">
             <button data-act="hang" class="on">벽에 걸기</button>
-            <button data-act="cut">다듬기</button>
+            <button data-act="cut">편집</button>
             <button data-act="del" class="ghost">삭제</button>
           </div>
         </div>
@@ -282,19 +302,19 @@ export async function startArt(): Promise<void> {
         const a = mine.find((x) => x.file === file);
         if (!a) return;
         if (b.dataset.act === "hang") void hang(a);
-        else if (b.dataset.act === "cut") { openArts(false); void upload.edit(a); }
+        else if (b.dataset.act === "cut") void edit(a);
         else void removeArtwork(a);
       };
     });
   }
 
   async function hang(a: Artwork): Promise<void> {
-    const w = mounts[0];
+    const w = mounts.find((x) => x.key === facing) ?? mounts.find((x) => x.id === "back") ?? mounts[0];   // 보고 있는 벽에
     if (!w) { msg("걸 수 있는 벽이 없습니다", true); return; }
     const art: LayoutArt = {
       id: `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-      image: a.file, width: w.defaultSize ?? 0.8, aspect: a.height / a.width, frame: "white",
-      mount: { host: w.host, id: w.id }, u: 0, v: 1.5,
+      image: a.file, width: w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: "white",
+      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a),
     };
     fit(art, w);
     arts.push(art);
@@ -303,6 +323,14 @@ export async function startArt(): Promise<void> {
     openArts(false);
     await rebuild();
     msg("걸었습니다. 끌어서 옮기고 아래에서 크기를 바꾸세요");
+  }
+
+  async function edit(a: Artwork): Promise<void> {
+    try {
+      if (dirty) await save();                  // 편집하면 서버가 걸린 그림들을 고치므로, 손보던 것을 먼저 저장해 둔다
+      openArts(false);
+      await upload.edit(a);
+    } catch (e) { msg(String(e), true); }
   }
 
   async function removeArtwork(a: Artwork): Promise<void> {
@@ -469,23 +497,21 @@ export async function startArt(): Promise<void> {
   window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
   const upload = mountCrop(() => kidSel.value, async (entry, replaced) => {
-    mine = [entry, ...mine.filter((a) => a.file !== entry.file)];
-    if (replaced) {
-      // 배경을 지운 사진으로 갈아 끼운다: 걸린 그림이 있으면 저장까지 한 뒤에야 옛 사진을 지울 수 있다
-      const hung = arts.filter((a) => a.image === replaced.file);
-      for (const a of hung) { a.image = entry.file; a.aspect = entry.height / entry.width; fit(a, wallOf(a)); }
-      if (hung.length) { await save(); await rebuild(); }
-      try {
-        await api("POST", "/api/artworks/delete", { file: replaced.file });
-        mine = mine.filter((a) => a.file !== replaced.file);
-      } catch { /* 다른 실에도 걸려 있으면 옛 사진은 그대로 둔다 */ }
-    }
+    // 편집한 작품이면 걸려 있던 곳은 서버가 이미 새 모습으로 고쳤다 (모든 실). 이 실을 다시 읽는다
+    if (replaced) await loadKid();
+    else mine = [entry, ...mine.filter((a) => a.file !== entry.file)];
     drawList();
     openArts(true);
-    msg(`"${entry.name}" ${replaced ? "다듬었습니다" : "올렸습니다"}`);
+    msg(`"${entry.name}" ${replaced ? "편집했습니다" : "올렸습니다"}`);
   }, msg);
 
   await loadKid();
+}
+
+/** 여백까지 넣은 세로/가로 비율 */
+function aspectOf(a: Artwork): number {
+  const size = lookSize(a.width, a.height, a);
+  return size.h / size.w;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -533,8 +559,8 @@ const PAGE = `
   .card img { width:72px; height:72px; object-fit:contain; background:#fff; border-radius:6px }
   .card-body { display:flex; flex-direction:column; gap:4px; min-width:0 }
   .card-body small { color:#8b8279 }
-  #halls { display:flex; gap:4px }
-  #halls button { padding:6px 10px }
+  #halls, #views { display:flex; gap:4px }
+  #halls button, #views button { padding:6px 10px }
   .lamp { display:flex; gap:6px; align-items:center }
   .lamp input { width:110px; accent-color:#ffd166 }
   #share-url { width:100%; box-sizing:border-box; padding:8px; border:1px solid #cdc6bd; border-radius:8px; background:#fff; color:#241f2b }
@@ -545,6 +571,7 @@ ${CROP_CSS}
   <h1>🖼 전시실</h1>
   <select id="kid"></select>
   <span id="halls"></span>
+  <span id="views"></span>
   <button id="open-arts">🖼 작품</button>
   <label class="lamp" title="전시실 조명 밝기">💡 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"></label>
   <button id="save" class="on">저장</button>
@@ -560,7 +587,7 @@ ${CROP_CSS}
     <div id="list"></div>
     <input id="file" type="file" accept="image/*" capture="environment" style="display:none">
     <button class="on" onclick="document.getElementById('file').click()">📷 작품 사진 올리기</button>
-    <p class="hint">사진을 고르면 AI 가 작품을 찾아 반듯하게 펴거나 모양대로 오려 줍니다. 이미 올린 사진도 '다듬기'로 다시 할 수 있어요.</p>
+    <p class="hint">사진을 고르면 AI 가 배경을 지워 줍니다. 여백과 배경색은 '편집'에서 언제든 바꿀 수 있어요.</p>
   </div>
 </div>
 <div id="share" class="modal">

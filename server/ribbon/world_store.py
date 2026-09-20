@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import threading
@@ -35,6 +36,25 @@ KID_BASE = "kidbase"       # 아이 전시실이 같이 쓰는 배경 (그림을
 HALL_SEP = "@"             # 전시실 2실부터: kid-<아이 id>@2 (1실은 kid-<아이 id> 그대로)
 MAX_HALLS = 9
 LIGHT_MIN, LIGHT_MAX = 0.2, 1.6   # 전시실 조명 밝기 (1 = 렌더 그대로)
+MAX_PAD = 0.4              # 작품 여백: 그림 긴 변에 대한 비율 (client world/artimage.ts 와 같다)
+_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def art_look(body: Dict[str, Any]) -> Dict[str, Any]:
+    """작품 뒤에 까는 배경색과 여백 [왼,위,오,아래]. 값이 없거나 이상하면 흰색·여백 없음"""
+    bg = str(body.get("bg") or "")
+    pad = body.get("pad")
+    ok = isinstance(pad, list) and len(pad) == 4 and all(isinstance(v, (int, float)) for v in pad)
+    return {"bg": bg.lower() if _COLOR.match(bg) else "#ffffff",
+            "pad": [round(max(0.0, min(MAX_PAD, float(v))), 4) for v in pad] if ok else [0, 0, 0, 0]}
+
+
+def look_aspect(entry: Dict[str, Any]) -> float:
+    """여백까지 넣은 세로/가로 비율 (벽에 걸린 그림의 aspect)"""
+    w, h = float(entry["width"]), float(entry["height"])
+    left, top, right, bottom = entry.get("pad") or [0, 0, 0, 0]
+    side = max(w, h)
+    return (h + (top + bottom) * side) / (w + (left + right) * side)
 KID_SHELL = "gallery"      # 아이 전시실의 방 모양·가구는 전시장 것을 쓴다
 MAX_UPLOAD = 60 * 1024 * 1024
 HISTORY_KEEP = 50
@@ -324,6 +344,9 @@ class WorldStore:
             items = self.artworks()
             found = next((a for a in items if a["file"] == rel), None)
             self.art_dir.mkdir(parents=True, exist_ok=True)
+            if found and ("bg" in body or "pad" in body):   # 같은 그림을 다시 올렸다: 배경색·여백만 새로
+                found.update(art_look(body))
+                _write_json(self.art_dir / "index.json", items)
             if found and (self.art_dir / fname).exists():
                 return found, False
             (self.art_dir / fname).write_bytes(raw)
@@ -332,14 +355,64 @@ class WorldStore:
             name = os.path.splitext(os.path.basename(str(body.get("name") or fname)))[0][:80]
             entry = {"file": rel, "name": name, "width": w, "height": h,
                      "kid_id": str(body["kid_id"]) if body.get("kid_id") else None,
-                     "added": datetime.datetime.now().isoformat(timespec="seconds")}
+                     "added": datetime.datetime.now().isoformat(timespec="seconds"), **art_look(body)}
             items.append(entry)
             _write_json(self.art_dir / "index.json", items)
             return entry, True
 
+    def _all_layout_rooms(self) -> List[str]:
+        return self.rooms() + [r for k in self.kid_ids() for r in self.kid_rooms(k)]
+
+    def _sync_arts(self, rel: str, entry: Dict[str, Any], old: Optional[str] = None) -> List[str]:
+        """저장된 배치들에서 그 작품(old 가 있으면 옛 파일)이 걸린 곳을 새 모습으로 맞춘다. 바뀐 방들을 준다"""
+        changed = []
+        for room in self._all_layout_rooms():
+            path = self.layout_path(room)
+            lay = _read_json(path)
+            if not isinstance(lay, dict):
+                continue
+            hit = [a for a in lay.get("arts", []) if a.get("image") == (old or rel)]
+            for a in hit:
+                a.update(image=rel, bg=entry["bg"], pad=entry["pad"], aspect=round(look_aspect(entry), 6))
+            if hit:
+                _write_json(path, lay)
+                changed.append(room)
+        return changed
+
+    def update_artwork(self, rel: str, body: Dict[str, Any]) -> tuple[Dict[str, Any], List[str]]:
+        """배경색·여백(·이름)을 바꾼다. 이미 걸려 있는 곳도 같이 바뀐다"""
+        with self._lock:
+            items = self.artworks()
+            entry = next((a for a in items if a["file"] == rel), None)
+            if not entry:
+                raise ValueError("없는 그림입니다")
+            entry.update(art_look({"bg": body.get("bg", entry.get("bg")), "pad": body.get("pad", entry.get("pad"))}))
+            if body.get("name"):
+                entry["name"] = str(body["name"])[:80]
+            _write_json(self.art_dir / "index.json", items)
+            return entry, self._sync_arts(rel, entry)
+
+    def replace_artwork(self, old: str, new: str) -> List[str]:
+        """편집해서 새로 올린 그림(new)으로 옛 그림(old)을 갈아 끼우고 옛 파일을 지운다"""
+        with self._lock:
+            items = self.artworks()
+            entry = next((a for a in items if a["file"] == new), None)
+            gone = next((a for a in items if a["file"] == old), None)
+            if not entry or not gone:
+                raise ValueError("없는 그림입니다")
+            if old == new:
+                return []
+            changed = self._sync_arts(new, {**art_look(entry), **entry}, old)
+            items.remove(gone)
+            _write_json(self.art_dir / "index.json", items)
+            path = self._art_file(old)
+            if path and path.is_file():
+                path.unlink()
+            return changed
+
     def art_usage(self, rel: str) -> List[str]:
         used = []
-        for room in self.rooms() + [r for k in self.kid_ids() for r in self.kid_rooms(k)]:
+        for room in self._all_layout_rooms():
             lay = _read_json(self.layout_path(room), {}) or {}
             if any(a.get("image") == rel for a in lay.get("arts", [])):
                 used.append(room)

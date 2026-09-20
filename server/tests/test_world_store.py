@@ -99,6 +99,34 @@ def test_kid_gallery_halls_light_and_share(store):
     assert store.shared_kid(token) is None                  # 아이가 지워지면 주소도 죽는다
 
 
+def test_artwork_look_is_synced_to_hung_arts(store):
+    """작품의 배경색·여백을 바꾸면 걸려 있는 곳(모든 실)의 모습과 비율도 같이 바뀐다. 새 그림으로 갈아 끼우기도 마찬가지"""
+    store.kid_ids = lambda: ["k1"]
+    store.set_halls("k1", 2)
+    up = {"name": "a", "data": "data:image/png;base64," + PNG_1PX, "width": 200, "height": 100, "kid_id": "k1"}
+    art, _ = store.add_artwork(up)
+    assert art["bg"] == "#ffffff" and art["pad"] == [0, 0, 0, 0]          # 정하지 않으면 흰 배경
+    hung = {"id": "x", "image": art["file"], "width": 1, "aspect": 0.5, "mount": {"host": None, "id": "back"}}
+    store.save_layout("kid-k1", {"items": [], "arts": [hung]})
+    store.save_layout("kid-k1@2", {"items": [], "arts": [{**hung, "id": "y"}]})
+
+    entry, rooms = store.update_artwork(art["file"], {"bg": "#FBDCE4", "pad": [0.1, 0.2, 0.1, 9]})
+    assert entry["bg"] == "#fbdce4" and entry["pad"] == [0.1, 0.2, 0.1, 0.4] and rooms == ["kid-k1", "kid-k1@2"]
+    got = store.layout("kid-k1@2")["arts"][0]
+    assert got["bg"] == "#fbdce4" and got["pad"] == [0.1, 0.2, 0.1, 0.4]
+    assert got["aspect"] == pytest.approx((100 + 0.6 * 200) / (200 + 0.2 * 200), rel=1e-4)
+    assert store.update_artwork(art["file"], {"bg": "red"})[0]["bg"] == "#ffffff"   # 이상한 색은 흰색으로
+    with pytest.raises(ValueError):
+        store.update_artwork("artworks/none.png", {})
+
+    other = base64.b64encode(base64.b64decode(PNG_1PX) + b"x").decode()  # 내용이 다른 새 파일
+    new, _ = store.add_artwork({**up, "data": "data:image/png;base64," + other, "width": 100, "height": 100, "bg": "#222222"})
+    assert store.replace_artwork(art["file"], new["file"]) == ["kid-k1", "kid-k1@2"]
+    got = store.layout("kid-k1")["arts"][0]
+    assert got["image"] == new["file"] and got["bg"] == "#222222" and got["aspect"] == 1
+    assert [a["file"] for a in store.artworks("k1")] == [new["file"]]    # 옛 그림은 지워진다
+
+
 def test_renderer_info_and_stale(store, tmp_path):
     import asyncio
 

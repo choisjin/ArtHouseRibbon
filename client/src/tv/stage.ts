@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { NavGrid, type P2 } from "../world/nav";
-import { RoomModel } from "../world/room";
+import { RoomModel, type WallMount } from "../world/room";
 import { FLOOR_LAYER, rad, toThree, WORLD_BASE, type Catalog, type Layout, type RoomInfo, type WorldRender } from "../world/types";
 
 export async function fetchCatalog(): Promise<Catalog> {
@@ -43,6 +43,7 @@ export class Stage {
   private envKey = "";
   private renderEnv: THREE.Texture | null = null;
   private view = { x: 0, y: 0, w: 1, h: 1 };
+  private wallView: WallMount | null = null;
 
   constructor(parent: HTMLElement, catalog: Catalog) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -90,6 +91,40 @@ export class Stage {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (this.wallView) this.applyWallView();
+  }
+
+  /**
+   * 벽 하나를 정면에서 본다 (전시실 꾸미기·부모님 전시실의 '왼쪽 벽 / 오른쪽 벽'). null 이면 TV 카메라로 돌아간다.
+   * 배경 렌더는 TV 카메라에서 찍은 한 장뿐이라, 돌려 볼 때는 부르는 쪽이 렌더 없이(setWorld 의 render=null) 실시간으로 그린다
+   */
+  faceWall(w: WallMount | null): void {
+    this.wallView = w;
+    if (w) this.applyWallView();
+    else if (this.room.room) this.fitCamera(this.room.room);
+  }
+
+  /** 벽이 화면에 꽉 차게 카메라를 벽 앞에 세운다. 방이 좁아 뒤로 못 물러나면 화각을 넓힌다 */
+  private applyWallView(): void {
+    const w = this.wallView;
+    const room = this.room.room;
+    if (!w || !room) return;
+    const MARGIN = 1.24;                        // 위아래에 메뉴가 덮이므로 벽 둘레를 넉넉히 남긴다
+    const aspect = this.camera.aspect;
+    let vfov = rad(46);
+    const need = (f: number) => Math.max(w.height / 2 / Math.tan(f / 2), w.width / 2 / (Math.tan(f / 2) * aspect)) * MARGIN;
+    const reach = Math.abs(w.normal.x) * room.width + Math.abs(w.normal.z) * room.depth - 0.4;   // 맞은편 벽 바로 앞까지
+    let d = need(vfov);
+    if (reach > 1 && d > reach) {
+      d = reach;
+      vfov = Math.min(rad(100), 2 * Math.atan(Math.max(w.height / 2, w.width / 2 / aspect) * MARGIN / d));
+    }
+    const center = w.o.clone().addScaledVector(w.up, w.height / 2);
+    this.camera.fov = THREE.MathUtils.radToDeg(vfov);
+    this.camera.position.copy(center).addScaledVector(w.normal, d);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(center);
+    this.camera.updateProjectionMatrix();
   }
 
   /** 방의 tv_camera 로 카메라를 맞춘다 (블렌더 TVCam 과 같은 위치·화각) */
@@ -101,6 +136,7 @@ export class Stage {
     this.camera.updateProjectionMatrix();
     this.sun.shadow.camera.updateProjectionMatrix();
     this.shadowFloor.scale.set(room.width, room.depth, 1);
+    if (this.wallView) this.applyWallView();
   }
 
   /** 그림자 빛을 리본이 머리 위(조금 앞)에 둔다. 방 천장 조명처럼 거의 바로 아래로 떨어짐 */

@@ -4,6 +4,7 @@ import {
   b2t, rad, toThree, WORLD_BASE,
   type Catalog, type Layout, type LayoutArt, type LayoutItem, type MountSpec, type RoomInfo, type TypeInfo,
 } from "./types";
+import { bgOf, composeArt, padOf } from "./artimage";
 
 /**
  * TV 가 그리는 방: 방 껍데기(벽·바닥·천장) + 배치된 가구 + 걸린 그림.
@@ -50,13 +51,30 @@ export function loadModel(file: string): Promise<THREE.Object3D> {
   return p;
 }
 
-function texture(file: string): THREE.Texture {
-  let t = texCache.get(file);
+const ART_TEX_SIDE = 2048;       // 벽에 거는 그림면의 가장 큰 변 (px)
+
+/** 그림면: 배경을 지운 작품이 검게 나오지 않도록 배경색(기본 흰색)을 깔고 여백을 둔다 (world/artimage.ts) */
+function texture(a: LayoutArt): THREE.Texture {
+  const key = `${a.image}|${bgOf(a)}|${padOf(a).join(",")}`;
+  let t = texCache.get(key);
   if (!t) {
-    t = new THREE.TextureLoader().load(`/${file}`);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
-    texCache.set(file, t);
+    const blank = document.createElement("canvas");
+    blank.width = blank.height = 2;
+    const ctx = blank.getContext("2d")!;
+    ctx.fillStyle = bgOf(a);
+    ctx.fillRect(0, 0, 2, 2);
+    const tex = new THREE.CanvasTexture(blank);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    const img = new Image();
+    img.onload = () => {
+      tex.dispose();                            // 크기가 바뀌므로 GPU 쪽을 새로 만든다
+      tex.image = composeArt(img, img.naturalWidth, img.naturalHeight, a, ART_TEX_SIDE);
+      tex.needsUpdate = true;
+    };
+    img.src = `/${a.image}`;
+    t = tex;
+    texCache.set(key, t);
   }
   return t;
 }
@@ -231,7 +249,7 @@ export class RoomModel {
       }
     }
     const img = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ map: texture(a.image), roughness: 0.6 }));
+      new THREE.MeshStandardMaterial({ map: texture(a), roughness: 0.6 }));
     img.position.z = D + MM(1);
     g.add(img);
     g.matrixAutoUpdate = false;

@@ -69,6 +69,9 @@ export interface LayoutArt {
   u?: number;               // m, 면 가운데 기준 좌우
   v?: number;               // m, 그림 중심 높이 (ledge 면은 없음)
   pose?: ArtPose;
+  /** 배경을 지운 작품 뒤에 까는 색(없으면 흰색)과 여백 [왼,위,오,아래] (world/artimage.ts). 작품을 편집하면 서버가 맞춰 준다 */
+  bg?: string;
+  pad?: number[];
 }
 
 export interface Layout {
@@ -125,7 +128,7 @@ export interface WorldView {
   kid_id?: string;              // 아이 전시실이면 그 아이
 }
 
-export interface ArtworkInfo { file: string; name: string; width: number; height: number }
+export interface ArtworkInfo { file: string; name: string; width: number; height: number; bg?: string; pad?: number[] }
 
 export const WORLD_BASE = "/world/";
 
