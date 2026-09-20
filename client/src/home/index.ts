@@ -14,6 +14,7 @@ const ITEMS: Item[] = [
   { mode: "art", icon: "🖼", title: "전시실 꾸미기", desc: "보낸 작품을 아이 전시실 벽에 겁니다", admin: true },
   { mode: "admin", icon: "⚙️", title: "관리자", desc: "아이들·캐릭터·음악·마이크 설정", admin: true },
   { mode: "tv", icon: "📺", title: "TV 화면", desc: "교실 TV 에 띄우는 리본이 화면" },
+  { mode: "mic", icon: "🎙", title: "마이크", desc: "무선 마이크 수신기를 꽂은 기기에서 열어 둡니다" },
   { mode: "editor", icon: "🗺", title: "맵 편집기", desc: "방 가구 배치 (컴퓨터에서)", admin: true },
 ];
 

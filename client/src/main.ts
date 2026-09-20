@@ -8,7 +8,7 @@ import type { ClientRole } from "./protocol";
  *   /?mode=camera    TV 위 폰. 얼굴 위치를 서버로 보내 리본이 시선에 쓴다
  *   /?mode=debug     TV 화면 + 디버그 패널 자동 표시
  *   /?mode=admin     관리자 페이지. 무선 마이크 수신기가 꽂힌 컴퓨터에서 열어 두면 마이크도 받는다 (설정 탭)
- *   /?mode=mic       (예전 마이크 화면) → 관리자 설정 탭으로 넘어간다
+ *   /?mode=mic       마이크 전용 화면. 무선 마이크 수신기를 꽂은 기기(폰·노트북)에서 이것만 열어 둔다
  *   /?mode=editor    맵 편집기. 가구 배치와 벽에 거는 그림 (Character_Creator 배치 편집기)
  *   /?mode=art       아이 전시실 꾸미기. 작품 사진을 올리고(배경 지우기) 전시실 벽에 건다
  *   /?mode=snap      폰으로 작품 찍어 보내기. 관리자 설정 → 카메라 탭의 QR 로 연다 (서버로 사진만 보낸다)
@@ -26,11 +26,7 @@ const NEEDS_ADMIN: Record<string, string> = {
 };
 
 async function boot(): Promise<void> {
-  if (mode === "mic") {
-    // 마이크 설정·받기는 관리자 설정 탭으로 옮겼다 (예전 주소·start_ribbon 설정을 위해 남겨 둔다)
-    location.replace("/?mode=admin#settings");
-    return;
-  }
+
   const { requireLogin } = await import("./auth/index");
   await requireLogin({ need: NEEDS_ADMIN[mode] ? "admin" : "member", what: NEEDS_ADMIN[mode] });
   if (mode === "editor") {
@@ -41,6 +37,13 @@ async function boot(): Promise<void> {
   if (mode === "art") {
     const { startArt } = await import("./art/index");
     await startArt();
+    return;
+  }
+  if (mode === "mic") {
+    const { startMicPage } = await import("./mic/index");
+    const socket = new RibbonSocket("mic");
+    socket.connect();
+    startMicPage(socket);
     return;
   }
   if (mode === "home") {
