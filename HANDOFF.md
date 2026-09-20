@@ -140,6 +140,17 @@
   관리자·맵 편집기·전시실 꾸미기·디버그는 admin 이어야 열린다. 관리자 설정 → **👤 계정** 탭에서 권한 주기·지우기·내 비밀번호.
   마지막 관리자는 내리거나 지울 수 없다. 맥미니 TV·관리자 화면도 한 번은 로그인해야 한다 (쿠키 60일).
 
+- **서율 새 디자인·동작 가져옴** (2026-09-20): `blender -b Character_Creator/seoyul.blend --factory-startup
+  -P tools/blender/export_doll.py -- client/public/world/seoyul.glb` (또는 `python tools/sync_world.py --doll`).
+  `doll_actions.build(keep_existing=True)` 로 바꿔서 **블렌더 파일에 이미 있는 동작은 덮어쓰지 않는다** —
+  Character_Creator 가 캐릭터마다 만든 Walk·Greet·`make_sway` 의 Sway 가 그대로 실린다. 나머지(Nod·Shake·Tilt·Stretch·
+  Point·Clap·Jump·LookUp·Peek·Sit)는 `doll_actions.py` 가 채운다. 서율은 Sway 가 블렌더 것, 리본이·올리는 아직 doll_actions 것.
+- **관리자 페이지 = 리모컨** (사용자 설명 2026-09-20): TV 서버는 학원(맥미니)에서만 돌고, 폰은 리모컨으로 쓴다.
+  `admin/index.ts isHostDevice()`: localhost 로 연 화면만 "학원 컴퓨터"로 보고 마이크·카메라 자동 시작과 Spotify 재생을 맡는다.
+  폰·다른 컴퓨터에서 열면 그것들을 켜지 않는다 (설정 → 마이크·카메라 탭의 띠에서 바꿀 수 있다, `ctx.host`/`ctx.setHost`).
+  음악 '재생할 곳'이 관리자 화면인데 리모컨에서 보고 있으면 경고를 띄운다. **폰 브라우저는 Spotify 스피커가 될 수 없다**
+  (Web Playback SDK 가 모바일 미지원) -> 재생할 곳은 TV 화면으로 둔다.
+
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**
   (아이가 물을 때만 답, 가끔 한 번만 되묻기), 화제 바꾸지 않기, 퀴즈·학습은 아이가 원할 때만.

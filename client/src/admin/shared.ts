@@ -26,6 +26,10 @@ export interface AdminCtx {
   onCam(fn: () => void): void;
   /** 다른 탭으로 옮기기 (예: 대시보드에서 아이 설정으로) */
   go(hash: string): void;
+  /** 이 화면이 학원 컴퓨터(맥미니)인가. 아니면 리모컨(폰·다른 컴퓨터)이라 마이크·카메라·음악 재생을 켜지 않는다 */
+  host: boolean;
+  /** 이 기기를 학원 컴퓨터로 쓸지 바꾸기 (다시 읽는다) */
+  setHost(on: boolean): void;
 }
 
 export async function api<T>(method: string, url: string, body?: unknown): Promise<T> {

@@ -190,15 +190,23 @@ ACTIONS = [
 ]
 
 
-def build(rig):
-    """뼈대에 동작들을 만들어 넣는다. 이미 있는 같은 이름 액션은 지운다"""
-    made = []
+def build(rig, keep_existing=True):
+    """뼈대에 동작들을 만들어 넣는다.
+
+    keep_existing 이면 **블렌더 파일에 이미 있는 같은 이름 동작은 그대로 둔다** — Character_Creator 에서
+    캐릭터마다 손으로 만든 동작(Walk·Greet·make_sway 의 Sway)이 더 좋으므로 덮어쓰지 않는다 (2026-09-20).
+    여기 ACTIONS 는 블렌더 파일에 없는 동작(끄덕임·가리키기 등)을 채워 넣는 몫이다."""
+    made, kept = [], []
     for name, frames, fill in ACTIONS:
         old = bpy.data.actions.get(name)
-        if old:
+        if old is not None and keep_existing:
+            kept.append(name)                     # 캐릭터 파일이 만든 것을 쓴다
+            continue
+        if old is not None:
             bpy.data.actions.remove(old)
         made.append(make(rig, name, frames, fill).name)
     rest(rig)
     bpy.context.view_layer.update()
-    print(f"[doll] 동작 추가: {', '.join(made)}")
-    return made
+    print(f"[doll] 동작 추가: {', '.join(made) or '없음'}"
+          + (f" / 캐릭터 파일 것 그대로: {', '.join(kept)}" if kept else ""))
+    return made + kept

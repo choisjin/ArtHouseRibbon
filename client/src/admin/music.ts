@@ -165,14 +165,17 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       q<HTMLInputElement>("[name=enabled]").checked = cfg.enabled;
       q<HTMLSelectElement>("[name=market]").value = cfg.market ?? "KR";
     }
-    const where = cfg?.output === "admin" ? "이 컴퓨터" : "TV 화면";
+    const where = cfg?.output === "admin" ? "관리자 화면을 연 컴퓨터" : "TV 화면";
     const ready = !!cfg?.enabled && !!status?.devices.includes(cfg.output);
+    // 이 화면이 리모컨(폰)인데 재생할 곳이 "관리자 화면"이면 소리가 날 곳이 없다
+    const remoteWarn = !ctx.host && cfg?.output === "admin"
+      ? `<br><span class="warn-text">이 화면은 리모컨이라 여기서는 소리가 나지 않습니다. 재생할 곳을 <b>TV 화면</b>으로 두세요.</span>` : "";
     const err = status?.error || status?.last_error;
     q<HTMLElement>("[data-role=where]").innerHTML = !cfg?.enabled
       ? `음악이 꺼져 있습니다. <b>⚙ 계정 · 설정</b> 에서 켜세요.`
       : (ready ? `<span class="ok-text">${where}이 Spotify 스피커로 준비됐습니다.</span>`
         : `<span class="warn-text">${where}이 아직 준비되지 않았습니다. 그 화면을 Chrome 으로 열고 한 번 눌러 주세요.</span>`)
-        + (err ? `<br><span class="warn-text">최근 문제: ${esc(err)}</span>` : "");
+        + remoteWarn + (err ? `<br><span class="warn-text">최근 문제: ${esc(err)}</span>` : "");
     renderNow();
   }
 

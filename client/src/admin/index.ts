@@ -18,7 +18,8 @@ import type { AdminCtx } from "./shared";
  *   #characters  TV 에 나올 캐릭터, 캐릭터별 프로필(#characters/<id> 설정 페이지)
  *   #map         맵 편집기 (방 목록에서 아이들 전시실도 고른다)
  *   #settings    작은 탭: 마이크(이 컴퓨터에서 받기) · 카메라(웹캠 얼굴 찾기) · TV 소리 출력 · 대화 모델(LLM) · 화면 스타일
- * 무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 페이지를 열어 두면 마이크 소리를 서버로 보낸다.
+ * 이 페이지는 **리모컨**이다: 폰에서 열어도 학원 컴퓨터(맥미니)에서 도는 리본이를 조작한다.
+ * 맥미니에서 연 화면(localhost)만 "학원 컴퓨터"로 보고 마이크·카메라·음악 재생을 함께 맡는다 (설정 탭에서 바꿀 수 있다).
  * 저장은 REST API 로, 화면 반영은 서버가 보내는 state 브로드캐스트로 이뤄진다.
  */
 const TABS = [
@@ -29,6 +30,17 @@ const TABS = [
   { id: "settings", name: "설정", icon: "⚙️" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
+
+const HOST_KEY = "ribbon.admin.host";
+
+/** 이 브라우저를 학원 컴퓨터로 쓸지. 한 번 고르면 기억한다 (기본: localhost 로 연 화면만 학원 컴퓨터) */
+function isHostDevice(): boolean {
+  try {
+    const v = localStorage.getItem(HOST_KEY);
+    if (v !== null) return v === "1";
+  } catch { /* 저장소 없음 */ }
+  return ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+}
 
 export async function startAdmin(socket: RibbonSocket): Promise<void> {
   document.title = "리본 관리자";
@@ -51,9 +63,13 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   let active: TabId = "dashboard";
   const listeners: ((s: StateMsg) => void)[] = [];
   let toastTimer = 0;
-  const mic = new Mic(socket, { autoStart: true });
-  const cam = new FaceCam(socket, { autoStart: true });
-  new MusicPlayer(socket, "admin", "리본 관리자");   // '재생할 곳'이 관리자 페이지면 이 컴퓨터(맥미니)가 Spotify 스피커
+  // 이 화면이 학원 컴퓨터(맥미니)인가, 리모컨(폰)인가.
+  // 맥미니는 start_ribbon 이 localhost 로 열고, 폰·다른 컴퓨터는 도메인으로 들어온다.
+  // 리모컨에서는 마이크·카메라·음악 재생을 켜지 않는다 (학원 컴퓨터에서 돈다). 필요하면 설정에서 바꾼다
+  const host = isHostDevice();
+  const mic = new Mic(socket, { autoStart: host });
+  const cam = new FaceCam(socket, { autoStart: host });
+  if (host) new MusicPlayer(socket, "admin", "리본 관리자");   // '재생할 곳'이 관리자 페이지일 때 이 컴퓨터가 Spotify 스피커
   const ctx: AdminCtx = {
     socket,
     mic,
@@ -72,6 +88,11 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
     onMic: () => undefined,           // 아래에서 채운다
     onCam: () => undefined,
     go(hash) { location.hash = hash; },
+    host,
+    setHost(on) {
+      try { localStorage.setItem(HOST_KEY, on ? "1" : "0"); } catch { /* 저장소 없음 */ }
+      location.reload();
+    },
   };
 
   // 탭은 처음 열 때 만든다 (지도·3D 미리보기를 쓰지 않을 때 무겁지 않게)

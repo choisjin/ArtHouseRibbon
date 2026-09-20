@@ -52,12 +52,14 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     <div class="settings">
       <section class="card" data-subpanel="mic" hidden>
         <h2>🎙 마이크 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <div data-role="role-note"></div>
         <div id="mic" class="agent"></div>
         <p class="hint">무선 마이크 수신기가 꽂힌 컴퓨터(맥미니)에서 이 관리자 페이지를 열어 두세요. 한 번 켜 두면 이 브라우저가 기억해서
           다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 듣지 못합니다.</b> 다른 탭으로 옮겨도 계속 받습니다.</p>
       </section>
       <section class="card" data-subpanel="cam" hidden>
         <h2>📷 카메라 <small class="hint">이 컴퓨터에서 받기</small></h2>
+        <div data-role="role-note"></div>
         <div id="cam" class="agent"></div>
         <p class="hint">TV 위에 단 웹캠으로 아이들 얼굴 위치를 찾아 리본이가 그쪽을 바라봅니다. 영상은 저장하거나 보내지 않습니다.
           마이크처럼 한 번 켜 두면 이 브라우저가 기억해서 다음에 열 때 자동으로 켭니다. <b>이 창을 닫으면 리본이가 아이들을 보지 못합니다.</b></p>
@@ -194,6 +196,21 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     llmShown = JSON.stringify(c);
     fillLlm(c);
     if (first) void loadModels();
+  });
+
+  // ---- 이 화면이 학원 컴퓨터인가, 리모컨인가 ----
+  el.querySelectorAll<HTMLElement>("[data-role=role-note]").forEach((note) => {
+    note.className = "role-note";
+    note.innerHTML = ctx.host
+      ? `<b>🖥 이 화면이 학원 컴퓨터입니다.</b> 마이크·카메라·음악 재생을 이 컴퓨터가 맡습니다.
+         <button data-act="to-remote">리모컨으로 바꾸기</button>`
+      : `<b>📱 이 화면은 리모컨입니다.</b> 마이크·카메라는 학원 컴퓨터(맥미니)에서 돕니다.
+         여기서 켜면 <b>이 기기</b>의 마이크·카메라를 쓰게 됩니다.
+         <button data-act="to-host">이 기기를 학원 컴퓨터로 쓰기</button>`;
+    note.querySelector("[data-act=to-remote]")?.addEventListener("click", () => ctx.setHost(false));
+    note.querySelector("[data-act=to-host]")?.addEventListener("click", () => {
+      if (confirm("이 기기의 마이크·카메라를 쓰고 음악도 여기서 재생할까요? (보통은 학원 컴퓨터에서만 켭니다)")) ctx.setHost(true);
+    });
   });
 
   // ---- 폰으로 작품 찍어 보내기: 주소 QR (카메라 탭) ----
