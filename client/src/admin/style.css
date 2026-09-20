@@ -278,6 +278,9 @@
 #admin .modal h3 { margin: 0 0 10px; }
 #admin .modal h4 { margin: 10px 0 4px; }
 #admin .modal > * + * { margin-top: 8px; }
+/* 아이 고르기 모달 (대시보드 작품 촬영·전시) */
+#admin .pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+#admin .pick-list button { padding: 12px 10px; }
 #admin .modal .x { position: absolute; top: 12px; right: 14px; width: auto; padding: 4px 10px; }
 /* 노래 줄 (음악 탭: 재생목록의 곡과 검색 결과) */
 #admin .tracks { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; }

@@ -850,6 +850,13 @@ async def api_world_get(room: str | None = None):
                          "render": renderer.status()})
 
 
+@app.get("/api/world/view")
+async def api_world_view(room: str | None = None):
+    """TV 가 그리는 그대로의 값(배치 + 배경 렌더). 전시실 꾸미기(?mode=art)가 TV 와 같은 화면을 띄운다"""
+    r = _room_param(room)
+    return JSONResponse({"room": r, "layout": world.layout(r), "render": world.render_info(r)})
+
+
 @app.put("/api/world/layout")
 async def api_world_layout_put(room: str, data: dict = Body(...)):
     r = _room_param(room)

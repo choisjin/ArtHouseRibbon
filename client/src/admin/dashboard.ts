@@ -58,7 +58,12 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
         </section>
       </div>
     </div>
-    <section class="card sch" data-subpanel="schedule" hidden><div id="sch"></div></section>`;
+    <section class="card sch" data-subpanel="schedule" hidden><div id="sch"></div></section>
+    <dialog class="modal" data-role="pick">
+      <h3 data-role="pick-title">아이 고르기</h3>
+      <button class="x" data-act="pick-close">닫기</button>
+      <div class="pick-list" data-role="pick-list"></div>
+    </dialog>`;
   const $ = <T extends HTMLElement>(sel: string) => el.querySelector(sel) as T;
 
   let today: Occurrence[] = [];
@@ -156,6 +161,15 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   }
 
   // ---- 지금 수업 ----
+  /** 지금 교실에 있는 아이들 (수업 시간 · 등원 · 손으로 추가한 아이) */
+  function nowKids(): KidInfo[] {
+    const now = new Date();
+    const m = now.getHours() * 60 + now.getMinutes();
+    const ids = new Set([...today.filter((o) => toMin(o.start) - 30 <= m && m < toMin(o.end)).map((o) => o.kid_id),
+                         ...ctx.kids().filter((k) => k.present).map((k) => k.id), ...extra]);
+    return ctx.kids().filter((k) => ids.has(k.id));
+  }
+
   function renderNow(): void {
     const kids = ctx.kids();
     const now = new Date();
@@ -222,27 +236,41 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
   const file = $("#art-file") as HTMLInputElement;
   const sentBox = $("#art-sent");
 
-  /** 아이 고르기 (없으면 null). 수업 중인 아이를 먼저 보여 준다 */
-  function pickKid(title: string): KidInfo | null {
-    const kids = ctx.kids();
-    if (!kids.length) { ctx.msg("아이를 먼저 추가하세요", true); return null; }
-    const lines = kids.map((k, i) => `${i + 1}. ${kidLabel(k)}`).join("\n");
-    const answer = prompt(`${title}\n\n${lines}\n\n번호나 이름을 넣어 주세요`, "1");
-    if (!answer) return null;
-    const n = Number(answer.trim());
-    const kid = Number.isFinite(n) && n >= 1 && n <= kids.length
-      ? kids[n - 1]
-      : kids.find((k) => k.name === answer.trim() || k.nickname === answer.trim());
-    if (!kid) { ctx.msg("그런 아이가 없습니다", true); return null; }
-    return kid;
+  /** 아이 고르기 (고르지 않으면 null). 수업 중인 아이를 위에 보여 준다 */
+  const pickDlg = $("[data-role=pick]") as HTMLDialogElement;
+  function pickKid(title: string): Promise<KidInfo | null> {
+    const all = ctx.kids();
+    if (!all.length) { ctx.msg("아이를 먼저 추가하세요", true); return Promise.resolve(null); }
+    const here = new Set(nowKids().map((k) => k.id));
+    const sorted = [...all].sort((a, b) =>
+      Number(here.has(b.id)) - Number(here.has(a.id)) || a.name.localeCompare(b.name, "ko"));
+    ($("[data-role=pick-title]") as HTMLElement).textContent = title;
+    const list = $("[data-role=pick-list]") as HTMLElement;
+    list.innerHTML = sorted.map((k) =>
+      `<button data-kid="${esc(k.id)}" class="${here.has(k.id) ? "primary" : ""}">${esc(kidLabel(k))}${here.has(k.id) ? " · 수업 중" : ""}</button>`).join("");
+    pickDlg.showModal();
+    return new Promise<KidInfo | null>((done) => {
+      const finish = (kid: KidInfo | null): void => {
+        list.onclick = null;
+        pickDlg.onclose = null;
+        pickDlg.close();
+        done(kid);
+      };
+      list.onclick = (ev) => {
+        const b = (ev.target as HTMLElement).closest("button") as HTMLElement | null;
+        if (b?.dataset.kid) finish(all.find((k) => k.id === b.dataset.kid) ?? null);
+      };
+      pickDlg.onclose = () => finish(null);
+    });
   }
+  ($("[data-act=pick-close]") as HTMLButtonElement).onclick = () => pickDlg.close();
 
   $("#art-shoot").onclick = () => file.click();
   file.onchange = async () => {
     const f = file.files?.[0];
     file.value = "";
     if (!f) return;
-    const kid = pickKid("누구 작품인가요?");
+    const kid = await pickKid("누구 작품인가요?");
     if (!kid) return;
     ctx.msg("사진을 보내는 중…");
     try {
@@ -269,8 +297,8 @@ export function mountDashboard(el: HTMLElement, ctx: AdminCtx, isActive: () => b
     } catch (e) { ctx.msg(`보내지 못했습니다: ${e}`, true); }
   };
 
-  $("#art-show").onclick = () => {
-    const kid = pickKid("누구 전시실을 열까요?");
+  $("#art-show").onclick = async () => {
+    const kid = await pickKid("누구 전시실을 열까요?");
     if (!kid) return;
     window.open(`/?mode=art&kid=${encodeURIComponent(kid.id)}`, "_blank");
     ctx.msg(`${kid.name} 전시실을 열었습니다`);

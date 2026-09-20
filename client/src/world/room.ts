@@ -27,6 +27,13 @@ const rotZ = (v: V3, deg: number): V3 => {
 
 export interface Mount { host: string | null; spec: MountSpec; o: V3; n: V3; up: V3; right: V3 }
 
+/** 그림을 걸 수 있는 면 하나 (three 좌표). o 는 면 가운데, right/up 은 면 위 방향, normal 은 바깥쪽 */
+export interface WallMount {
+  key: string; host: string | null; id: string; name: string;
+  width: number; height: number; defaultSize?: number;
+  o: THREE.Vector3; right: THREE.Vector3; up: THREE.Vector3; normal: THREE.Vector3;
+}
+
 /** 그림이 걸린 자리 (리본이 구경하러 가는 곳) */
 export interface ArtSpot { id: string; center: THREE.Vector3; normal: THREE.Vector3 }
 
@@ -171,6 +178,25 @@ export class RoomModel {
     } catch (err) {
       console.warn("가구 모델을 불러오지 못함", t.file, err);
     }
+  }
+
+  /** 그림을 걸 수 있는 면들 (three 좌표). 전시실 꾸미기(?mode=art)가 여기에 대고 끌어 놓는다 */
+  wallMounts(): WallMount[] {
+    const lay = this.layout;
+    if (!lay) return [];
+    const out: WallMount[] = [];
+    const add = (host: string | null, spec: MountSpec, e: { x: number; y: number; rot: number }): void => {
+      if (spec.ledge) return;                        // 받침대(이젤)는 자리가 하나라 끌어 놓지 않는다
+      const m = makeMount(host, spec, e);
+      out.push({ key: `${host ?? "#room"}:${spec.id}`, host, id: spec.id, name: spec.name,
+                 width: spec.width, height: spec.height, defaultSize: spec.default_size,
+                 o: b2t(m.o), right: b2t(m.right), up: b2t(m.up), normal: b2t(m.n) });
+    };
+    for (const m of this.room?.mounts ?? []) add(null, m, { x: 0, y: 0, rot: 0 });
+    for (const e of lay.items) {
+      for (const m of this.types.get(e.type)?.mounts ?? []) add(e.id, m, e);
+    }
+    return out;
   }
 
   private artCenter(a: LayoutArt, m: Mount): V3 {
