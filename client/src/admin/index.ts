@@ -3,6 +3,7 @@ import type { AppConfig, KidInfo, ServerMsg, StateMsg } from "../protocol";
 import { Mic } from "../audio/mic";
 import { FaceCam } from "../camera/facecam";
 import { MusicPlayer } from "../music/player";
+import { keepAwake } from "../util/wakelock";
 import type { RibbonSocket } from "../ws";
 import { mountCharacters } from "./characters";
 import { mountDashboard } from "./dashboard";
@@ -67,6 +68,7 @@ export async function startAdmin(socket: RibbonSocket): Promise<void> {
   // 맥미니는 start_ribbon 이 localhost 로 열고, 폰·다른 컴퓨터는 도메인으로 들어온다.
   // 리모컨에서는 마이크·카메라·음악 재생을 켜지 않는다 (학원 컴퓨터에서 돈다). 필요하면 설정에서 바꾼다
   const host = isHostDevice();
+  if (host) void keepAwake();        // 마이크를 받는 기기는 화면이 꺼지면 소리가 끊긴다
   const mic = new Mic(socket, { autoStart: host });
   const cam = new FaceCam(socket, { autoStart: host });
   if (host) new MusicPlayer(socket, "admin", "리본 관리자");   // '재생할 곳'이 관리자 페이지일 때 이 컴퓨터가 Spotify 스피커

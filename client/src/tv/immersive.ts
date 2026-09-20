@@ -7,15 +7,7 @@
  * - **화면 꺼짐 막기**: Wake Lock (https 에서만 된다). 다른 앱에 갔다 오면 다시 건다.
  * - 폰에서 "홈 화면에 추가" 로 열면 (manifest display: fullscreen) 처음부터 주소창 없이 뜬다.
  */
-let wake: { release(): Promise<void>; released: boolean } | null = null;
-
-async function keepAwake(): Promise<void> {
-  const nav = navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<typeof wake> } };
-  if (!nav.wakeLock || (wake && !wake.released)) return;
-  try {
-    wake = await nav.wakeLock.request("screen");
-  } catch { /* 배터리 절약 중이거나 https 가 아님: 화면이 꺼질 수 있다 */ }
-}
+import { keepAwake } from "../util/wakelock";
 
 async function goFull(): Promise<void> {
   if (document.fullscreenElement) return;
@@ -40,5 +32,4 @@ export function startImmersive(): void {
   const once = () => { void goFull(); void keepAwake(); };
   for (const ev of ["pointerdown", "keydown"]) window.addEventListener(ev, once, { once: true, passive: true });
   void keepAwake();
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) void keepAwake(); });
 }
