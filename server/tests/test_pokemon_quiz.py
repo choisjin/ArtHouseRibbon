@@ -161,9 +161,7 @@ async def test_dialogue_plays_without_llm(tmp_path, monkeypatch):
     dm._wait_spoken = fast_wait
     await dm.on_wake(0)
     await dm.on_utterance(0, "포켓몬 그림 보고 맞추기 하자")
-    assert dm.quiz.phase == "confirm"                    # 고른 걸 반짝이며 한 번 더 묻는다
-    await dm.on_utterance(0, "응")
-    assert dm.quiz.active and dm.quiz.phase == "playing"
+    assert dm.quiz.active and dm.quiz.phase == "playing"   # 콕 집어 말하면 바로 시작
     await dm.on_utterance(1, "피카츄!")                  # 다른 아이가 맞혀도 된다
     speaks = [m["text"] for m in sent if m.get("type") == "speak"]
     assert "딩동댕! 정답은 피카츄야!" in speaks
@@ -206,20 +204,23 @@ async def test_no_pokedex_says_so_instead_of_chatting(tmp_path):
     assert dm.queue.active() is None
 
 
-def test_menu_pick_highlight_confirm(tmp_path):
+def test_menu_pick_starts_right_away(tmp_path):
+    """번호 없이 게임 이름만 보여 주고, 고르면 묻지 않고 바로 시작 (2026-09-21 요청)"""
     q = quiz(tmp_path)
     r = q.open_menu()
     v = q.view()
-    assert v["kind"] == "menu" and v["selected"] is None and [i["num"] for i in v["items"]] == [1, 2, 3]
-    q.handle("2번")
-    assert q.view()["selected"] == "image" and q.phase == "confirm"
-    q.handle("아니 가린 그림")                            # 다른 걸 고르면 그쪽이 반짝
-    assert q.view()["selected"] == "peek"
-    q.handle("다른 거 할래")                              # 싫다는 말 ("할래" 가 있어도)
-    assert q.phase == "choosing" and q.view()["selected"] is None
-    q.handle("설명 듣고 맞추기")
-    r = q.handle("좋아")
-    assert q.phase == "playing" and q.mode == "describe" and q.view()["kind"] == "play"
+    assert v["kind"] == "menu" and [i["mode"] for i in v["items"]] == ["describe", "image", "peek"]
+    assert all("num" not in i for i in v["items"])
+    assert "1번" not in " ".join(r.lines) and "설명 듣고 맞추기" in " ".join(r.lines)
+    r = q.handle("그림 보고 맞추기")
+    assert q.phase == "playing" and q.mode == "image" and q.view()["kind"] == "play"
+    assert "시작" in r.lines[0]
+
+
+def test_menu_can_be_opened_with_a_game_name(tmp_path):
+    q = quiz(tmp_path)
+    q.open_menu("peek")                                  # 콕 집어 말하면 바로 그 게임으로
+    assert q.phase == "playing" and q.mode == "peek"
 
 
 async def test_menu_answer_repeating_ribbon_is_not_echo(tmp_path):
@@ -239,7 +240,7 @@ async def test_menu_answer_repeating_ribbon_is_not_echo(tmp_path):
     await dm.on_wake(0)
     await dm.on_utterance(0, "포켓몬 맞추기 하자")        # 리본: "... 2번 그림 보고 맞추기 ..."
     await dm.on_utterance(0, "그림 보고 맞추기")
-    assert dm.quiz.phase == "confirm" and dm.quiz.pending == "image"
+    assert dm.quiz.phase == "playing" and dm.quiz.mode == "image"
 
 
 def test_play_words_open_the_game():

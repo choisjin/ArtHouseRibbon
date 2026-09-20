@@ -1103,15 +1103,40 @@ def _update_mic() -> None:
         _spawn(hub.broadcast({"type": "mic", "on": on}))
 
 
+def _kid_channels() -> List[int]:
+    return sorted({k.mic_channel for k in kids.all() if k.mic_channel is not None}) or list(processors)
+
+
+def _listening() -> bool:
+    """지금 아이 말을 받는 중인가 (버튼을 누른 뒤 마이크가 열려 있는 상태)"""
+    return any(processors[c].state == "listening" for c in _kid_channels() if c in processors)
+
+
 async def _on_button() -> None:
-    """DJI 송신기 버튼: 아이가 등록된 채널을 잠깐 듣고, 먼저 말한 아이가 부른 아이 (audio/button.py)"""
+    """호출 버튼 (DJI 송신기 · TV 화면 스위치 · /api/call). 지금 무엇을 하고 있었냐에 따라 다르게 (2026-09-21):
+      - 리본이가 말하는 중  -> 말을 멈추고 "이어서 말할까? 새로 말할래?" 묻고 대답을 듣는다
+      - 아이 말을 듣는 중   -> 이번 입력을 취소한다 (한 번 더 눌렀다 = 그만)
+      - 그 밖              -> 하던 것을 멈추고 새로 듣는다 (먼저 말한 아이가 부른 아이, audio/button.py)"""
     if dialogue.ignore_calls:
         log.info("호출 무시 중이라 버튼을 받지 않음")
+        return
+    channels = _kid_channels()
+    if dialogue.talking():
+        await dialogue.pause_for_button()
+        for proc in processors.values():
+            proc.stop_listening()
+        armed = button_call.press(channels, store.config.ribbon.button_window_s)
+        log.info("호출 버튼(말하는 중): 멈추고 마이크 %s 듣는 중", [c + 1 for c in armed])
+        return
+    if _listening():
+        for proc in processors.values():
+            proc.stop_listening()
+        button_call.cancel()
+        await dialogue.cancel_listening()
         return
     await dialogue.reset_for_button()          # 하던 대화를 멈추고 처음부터 듣는다
     for proc in processors.values():
         proc.stop_listening()                    # 이어 말하기로 듣던 채널도 버튼 기준으로 새로
-    channels = sorted({k.mic_channel for k in kids.all() if k.mic_channel is not None}) or list(processors)
     await dialogue.on_button(channels)
     armed = button_call.press(channels, store.config.ribbon.button_window_s)   # 바로 듣는다 (TV 에 마이크 표시)
     log.info("호출 버튼: 마이크 %s 듣는 중", [c + 1 for c in armed])

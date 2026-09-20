@@ -109,6 +109,15 @@ class ButtonCall:
         self.until = now + window_s
         return list(self.armed)
 
+    def cancel(self) -> None:
+        """기다리기를 그만둔다 (버튼을 한 번 더 눌러 입력을 취소했을 때, 2026-09-21)"""
+        for ch in self.armed:
+            proc = self.processors.get(ch)
+            if proc is not None:
+                proc.stop_listening()
+        self.armed = []
+        self.until = 0.0
+
     def check(self, channel: int, now: Optional[float] = None) -> Optional[int]:
         """오디오 한 조각을 넣은 뒤 부른다. 이 채널이 먼저 말을 시작했으면 채널 번호를 돌려주고 나머지를 끈다"""
         now = time.time() if now is None else now

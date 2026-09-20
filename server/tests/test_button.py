@@ -1,4 +1,6 @@
 """DJI 호출 버튼: 누가 눌렀는지 몰라서 먼저 말한 채널이 부른 아이"""
+import asyncio
+
 import numpy as np
 
 from ribbon.audio.button import ButtonCall
@@ -110,3 +112,57 @@ def test_button_mode_does_not_wake_by_voice():
     proc.voice_wake = False
     assert all(proc.feed(LOUD, now=100.0 + i * 0.02) == [] for i in range(50))
     assert proc.state == "idle"
+
+
+def test_cancel_stops_waiting():
+    """버튼을 한 번 더 누르면 기다리기를 그만둔다 (2026-09-21)"""
+    p = procs()
+    bc = ButtonCall(p)
+    bc.press([0, 1], 6.0)
+    assert bc.armed == [0, 1]
+    bc.cancel()
+    assert bc.armed == [] and all(pr.state == "idle" for pr in p.values())
+
+
+async def test_button_while_talking_asks_to_continue_or_start_over():
+    """말하는 중에 버튼: 말을 멈추고 이어서 할지 물어본다 (2026-09-21 요청)"""
+    from test_dialogue_flow import make, speaks
+
+    dm, sent, llm = make()
+    await dm.on_wake(0)
+    ev = asyncio.Event()
+    dm._pending_done = [("u1", ev, 5, "남은 말이야."), ("u2", asyncio.Event(), 4, "또 있어.")]
+    dm.target_kid = "a"
+    await dm.pause_for_button()
+    assert dm._paused["lines"] == ["남은 말이야.", "또 있어."]
+    assert "이어서 말할까" in speaks(sent)[-1]
+    assert any(m.get("type") == "speak.stop" for m in sent)        # TV 는 하던 소리를 버린다
+
+    await dm.on_utterance(0, "이어서")                              # 이어서 -> 남은 말을 다시 한다
+    assert speaks(sent)[-2:] == ["남은 말이야.", "또 있어."]
+    assert dm._paused is None
+
+
+async def test_button_while_talking_then_new_words_start_over():
+    from test_dialogue_flow import make, speaks
+
+    dm, sent, llm = make()
+    await dm.on_wake(0)
+    dm._pending_done = [("u1", asyncio.Event(), 5, "남은 말이야.")]
+    await dm.pause_for_button()
+    await dm.on_utterance(0, "공룡 얘기 해줘")                       # 새로 말하면 그 말로 새 이야기
+    assert dm._paused is None
+    assert "남은 말이야." not in speaks(sent)[-2:]
+    assert llm.heard and "공룡" in llm.heard[-1]
+
+
+async def test_button_while_listening_cancels_input():
+    """듣는 중에 버튼을 한 번 더 누르면 이번 입력을 취소한다"""
+    from test_dialogue_flow import make, speaks
+
+    dm, sent, _ = make()
+    await dm.on_wake(0)
+    assert dm.queue.active() is not None
+    await dm.cancel_listening()
+    assert dm.queue.active() is None and dm.ribbon_state == "idle"
+    assert "취소" in speaks(sent)[-1]

@@ -137,12 +137,8 @@
       #game-menu .gm-logo b { font-size: 2.7vw; color: #fff; -webkit-text-stroke: .45vw #c2255c; text-shadow: 0 .45vw 0 #1c1c1c; }
       #game-menu .gm-image .gm-logo b { -webkit-text-stroke-color: #364fc7; }
       #game-menu .gm-peek .gm-logo b { -webkit-text-stroke-color: #5f3dc4; }
-      #game-menu .gm-num { position: absolute; top: -1.8vw; left: -1.4vw; width: 4.6vw; height: 4.6vw; border-radius: 50%; background: #d6336c;
-        color: #fff; border: .35vw solid #fff; display: grid; place-items: center; font-size: 2.6vw; font-weight: 900; box-shadow: 0 .4vw 1vw rgba(0,0,0,.3); }
-      #game-menu .gm-sub { margin-top: 1.4vh; font-size: clamp(13px, 1.4vw, 22px); font-weight: 700; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.35); }
-      #game-menu.picked .gm-card { opacity: .4; filter: grayscale(.7); transform: scale(.92); }
-      #game-menu.picked .gm-card.on { opacity: 1; filter: none; transform: scale(1.1); }
-      #game-menu.picked .gm-card.on .gm-cover { animation: glow 1s ease-in-out infinite alternate; }
+      #game-menu .gm-card { cursor: pointer; }
+      #game-menu .gm-card:active { transform: scale(.96); }
       @keyframes glow { from { box-shadow: 0 0 0 6px #ffd43b, 0 10px 30px rgba(0,0,0,.3); } to { box-shadow: 0 0 0 12px #fff3bf, 0 0 60px 10px #ffd43b; } }
       #game-menu .gm-hint { font-size: clamp(20px, 3vw, 44px); font-weight: 800; color: #fff; text-shadow: 0 3px 8px rgba(0,0,0,.35); }
       #game .g-types:empty, #game .g-board:empty, #game .g-answer:empty { display: none; }

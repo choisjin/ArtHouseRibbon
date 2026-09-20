@@ -167,7 +167,7 @@ class PokemonQuiz:
         self.dex = pokedex
         self.rng = rng or random.Random()
         self.active = False
-        self.phase = ""              # offer (할까?) | choosing (고르기 화면) | confirm (고른 것 확인) | playing | revealed
+        self.phase = ""              # offer (할까?) | choosing (고르기 화면) | playing | revealed
         self.mode = ""
         self.answer: Optional[Dict] = None
         self.hints: List[str] = []   # 남은 힌트 종류
@@ -193,20 +193,15 @@ class PokemonQuiz:
         return Reply(["포켓몬 맞추기 할까?"])
 
     def open_menu(self, mode: str = "") -> Reply:
-        """아이가 하자고 할 때: TV 에 게임 고르기 화면. 이미 게임을 말했으면 그걸 골라 두고 한 번 더 묻는다"""
+        """아이가 하자고 할 때: TV 에 게임 고르기 화면. 게임을 이미 말했으면 **바로 시작**한다
+        (2026-09-21 요청: 번호 없애고, 고르면 묻지 않고 시작)"""
         self.active = True
         self.last_at = time.time()
         self.phase = "choosing"
         self.pending = ""
         if mode in MODES:
-            return self._pick(mode, intro="좋아!")
-        return Reply(["좋아, 포켓몬 맞추기 하자! 1번 설명 듣고 맞추기, 2번 그림 보고 맞추기, 3번 조금 보고 맞추기. 뭐 할래?"])
-
-    def _pick(self, mode: str, intro: str = "") -> Reply:
-        """고른 게임을 TV 에서 반짝이게 하고 맞는지 묻는다"""
-        self.pending = mode
-        self.phase = "confirm"
-        return Reply([f"{intro} {MODE_NAME[mode]}! 이걸로 할까?".strip()])
+            return self.start(mode)
+        return Reply(["좋아, 포켓몬 맞추기 하자! 설명 듣고 맞추기, 그림 보고 맞추기, 조금 보고 맞추기. 뭐 할래?"])
 
     def start(self, mode: str = "") -> Reply:
         """바로 시작 (확인을 받았거나 선생님이 대시보드에서 누름). mode 가 없으면 고르기 화면"""
@@ -308,21 +303,8 @@ class PokemonQuiz:
                 self.phase = ""
                 return Reply(ended=True, passthrough=True)
             if not mode:
-                return Reply(["1번 설명 듣고, 2번 그림 보고, 3번 조금 보고 중에 골라 줘!"])
-            return self._pick(mode)
-        if self.phase == "confirm":
-            mode = detect_mode(text)
-            if _has(text, "그만할래", "안할래", "끝", "됐어"):
-                return self.stop()
-            if mode and mode != self.pending:
-                return self._pick(mode)                           # 다른 걸 고름: 그쪽을 반짝이게
-            if _is_no(text):                                       # "다른 거 할래" 는 싫다는 말 (할래 보다 먼저 본다)
-                self.phase = "choosing"
-                self.pending = ""
-                return Reply(["그럼 뭐 할래? 1번, 2번, 3번 중에 골라 줘!"])
-            if mode == self.pending or _is_yes(text):
-                return self.start(self.pending)
-            return Reply([f"{MODE_NAME[self.pending]} 할까? 좋으면 응 이라고 해 줘."])
+                return Reply(["설명 듣고 맞추기, 그림 보고 맞추기, 조금 보고 맞추기 중에 골라 줘!"])
+            return self.start(mode)                                # 고르면 바로 시작
         if self.phase == "revealed":
             # 정답을 보여 주고 다음 문제로 넘어가는 잠깐 사이. 그만하자는 말만 받는다
             if _is_no(text) or _has(text, "그만", "끝", "안할래"):
@@ -458,13 +440,13 @@ class PokemonQuiz:
     def view(self) -> Optional[Dict]:
         if not self.active or self.phase == "offer":
             return None                                   # "할까?" 물을 때는 아직 화면을 열지 않는다
-        if self.phase in ("choosing", "confirm"):
-            # 게임 고르기 화면: 썸네일(tools/make_game_thumbs.py 가 MLX 로 만든 것)과 제목, 고른 것은 반짝
-            return {"kind": "menu", "selected": self.pending or None,
-                    "items": [{"mode": m, "num": i + 1, "title": MODE_NAME[m], "sub": MODE_SUB[m],
+        if self.phase == "choosing":
+            # 게임 고르기 화면: 표지(tools/make_game_thumbs.py 가 MLX 로 만든 것)와 제목. 고르면 바로 시작한다
+            return {"kind": "menu",
+                    "items": [{"mode": m, "title": MODE_NAME[m], "sub": MODE_SUB[m],
                                # 만들어 둔 표지가 있으면 그것, 없으면 공식 그림으로 TV 가 표지를 꾸민다
                                "thumb": f"/api/game/thumb/{m}" if self._has_thumb(m) else None,
-                               "art": f"/api/pokemon/{MODE_ART[m]}/image"} for i, m in enumerate(MODES)]}
+                               "art": f"/api/pokemon/{MODE_ART[m]}/image"} for m in MODES]}
         if not self.answer:
             return None
         e = self.answer

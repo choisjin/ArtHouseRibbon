@@ -64,7 +64,8 @@ class DialogueManager:
         self._history: Dict[str, List[Dict[str, str]]] = {}
         self._responding = False
         self._spoken: Dict[str, asyncio.Event] = {}
-        self._pending_done: List[tuple] = []   # (utterance_id, Event, 글자수) - 아직 재생 완료를 안 기다린 문장
+        self._pending_done: List[tuple] = []   # (utterance_id, Event, 글자수, 문장) - 아직 재생 완료를 안 기다린 문장
+        self._paused: Optional[Dict] = None    # 버튼으로 말을 멈췄다: 이어서 할 말과 누구에게 하던 말인지
         self._speak_lock = asyncio.Lock()
         self._last_spoken_at = 0.0
         self.ignore_calls = False                     # 관리자 "호출 무시": 호출어·새 말을 받지 않는다
@@ -180,6 +181,44 @@ class DialogueManager:
         if self.busy():
             await self.stop(clear_queue=True, advance=False, reason="호출 버튼으로 대화 멈춤")
 
+    def talking(self) -> bool:
+        """리본이가 지금 말하고 있거나 답을 만드는 중인가 (버튼을 누르면 멈출 것이 있나)"""
+        return bool(self._responding or self._speak_lock.locked() or self._pending_done or self._waiting)
+
+    async def pause_for_button(self) -> None:
+        """말하는 중에 버튼을 눌렀다 (2026-09-21): 말을 멈추고 **이어서 할지 새로 말할지** 묻는다.
+        아직 재생하지 않은 문장들을 들고 있다가 "이어서" 라고 하면 그 문장부터 다시 말한다"""
+        rest = [text for _uid, _ev, _n, text in self._pending_done]
+        kid_id = self.target_kid
+        await self.stop(advance=False, reason="호출 버튼: 말 멈춤")
+        self._paused = {"lines": rest, "kid_id": kid_id}
+        log.info("버튼으로 말 멈춤 (남은 문장 %d개)", len(rest))
+        await self._say(persona.paused_question(), kid_id, final=True)
+        await self._set_ribbon("listening", kid_id)
+        await self._broadcast_state()
+
+    async def cancel_listening(self) -> None:
+        """듣는 중에 버튼을 한 번 더 눌렀다 (2026-09-21): 이번 입력을 취소한다"""
+        self._paused = None
+        self.queue.clear()
+        await self.broadcast({"type": "speak.stop"})
+        log.info("호출 버튼을 한 번 더 눌러 입력 취소")
+        await self._say(persona.input_cancelled(), None, final=True)
+        await self._set_ribbon("idle", None)
+        await self._broadcast_state()
+
+    async def _resume_paused(self, kid: KidInfo, channel: int) -> None:
+        """멈춰 둔 말을 이어서 한다"""
+        paused, self._paused = self._paused, None
+        self.queue.cancel(channel)
+        lines = paused.get("lines") or []
+        log.info("멈춘 말을 이어서 (%d문장)", len(lines))
+        if not lines:
+            await self._say(persona.nothing_to_resume(), kid.id, final=True)
+        for i, line in enumerate(lines):
+            await self._say(line, paused.get("kid_id") or kid.id, final=i == len(lines) - 1)
+        await self._after_turn()
+
     async def on_button(self, channels: List[int]) -> None:
         """호출 버튼(DJI 송신기)이 눌렸다. 말은 하지 않는다 (2026-09-20 "지금 말해줘" 삭제). main 이 채널들을 바로
         듣기 시작하고, 듣는 동안 TV 오른쪽 위에 마이크 표시가 뜬다 (main._update_mic). 먼저 말하는 아이를 기다린다 (claim)"""
@@ -204,13 +243,20 @@ class DialogueManager:
             return
         kid = self._kid_for_channel(channel)
         # 게임 고르기 화면에서는 아이가 리본이가 읽어 준 게임 이름을 따라 말한다 ("그림 보고 맞추기"). 짧은 말은 에코로 버리지 않는다
-        choosing = bool(self.quiz and self.quiz.active and self.quiz.phase in ("choosing", "confirm")
+        choosing = bool(self.quiz and self.quiz.active and self.quiz.phase == "choosing"
                         and len(self._compact(text)) <= 12)
         if not choosing and self._is_own_echo(text):
             log.info("리본이가 방금 한 말이 마이크로 들어온 것 같아 버림: ch=%s %s", channel, text)
             return
         log.info("%s> %s", kid.name, text)
         await self.broadcast(TranscriptMessage(kid_id=kid.id, channel=channel, text=text).model_dump())
+
+        # 버튼으로 멈춰 둔 말이 있으면: "이어서" 면 그 말을 잇고, 아니면 이 말을 새 이야기로 받는다
+        if self._paused is not None:
+            if persona.wants_resume(text):
+                await self._resume_paused(kid, channel)
+                return
+            self._paused = None
 
         # 포켓몬 맞추기 게임: 게임 중에는 누가 말하든 답으로 본다 (대화 모델을 거치지 않는다)
         if self.quiz and self.quiz.active:
@@ -296,7 +342,7 @@ class DialogueManager:
         self._stop_gen += 1                           # 인사·"말해봐"처럼 차례를 기다리던 말도 하지 않는다
         if self._waiting:
             self._waiting.set()
-        for _uid, ev, _n in self._pending_done:
+        for _uid, ev, _n, _text in self._pending_done:
             ev.set()                                   # 재생 완료를 기다리던 곳을 풀어 준다
         self._pending_done.clear()
         self._spoken.clear()
@@ -331,7 +377,7 @@ class DialogueManager:
     # ---------- 포켓몬 맞추기 게임 (games/pokemon_quiz.py) ----------
     async def start_quiz(self, mode: str, kid: Optional[KidInfo] = None, channel: Optional[int] = None,
                          confirm: bool = True, ask_first: bool = False) -> None:
-        """게임 시작. 아이가 하자고 하면(confirm) TV 에 고르기 화면 -> 고른 걸 반짝이며 한 번 더 묻고 시작.
+        """게임 시작. 아이가 하자고 하면 TV 에 고르기 화면 -> 고르면 바로 시작 (2026-09-21: 확인 단계 없앰).
         선생님이 대시보드에서 누르면 바로 시작 (mode "" 면 고르기 화면)"""
         if not self.quiz or not len(self.pokedex or []):
             log.warning("포켓몬 맞추기를 하자는데 도감이 없습니다 (python tools/fetch_pokedex.py)")
@@ -755,7 +801,7 @@ class DialogueManager:
                 audio_b64 = base64.b64encode(audio).decode("ascii")
             ev = asyncio.Event()
             self._spoken[utt_id] = ev
-            self._pending_done.append((utt_id, ev, len(text)))
+            self._pending_done.append((utt_id, ev, len(text), text))
             await self.broadcast(SpeakMessage(utterance_id=utt_id, text=text, kid_id=kid_id,
                                               audio_b64=audio_b64, final=final).model_dump())
             if wait:
@@ -764,7 +810,7 @@ class DialogueManager:
     async def _wait_spoken(self) -> None:
         """지금까지 보낸 문장들의 재생 완료를 순서대로 기다린다 (문장당 최대 글자수 비례 시간)."""
         while self._pending_done:
-            uid, pending_ev, n = self._pending_done.pop(0)
+            uid, pending_ev, n, _text = self._pending_done.pop(0)
             self._waiting = pending_ev
             try:
                 await asyncio.wait_for(pending_ev.wait(), timeout=2.0 + 0.25 * n)

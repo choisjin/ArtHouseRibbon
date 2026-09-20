@@ -55,6 +55,7 @@ export async function startTv(socket: RibbonSocket, opts: TvOptions): Promise<vo
   let faces: FacePosition[] = [];
   let facesAt = 0;
   const game = new GameBoard();
+  game.onPick = (mode) => socket.sendJson({ type: "admin.game", mode });   // 카드를 누르면 바로 시작
   const musicBar = new MusicBar();
   const musicList = new MusicList();
   startImmersive();                  // 주소창 없이 화면 가득 + 화면 꺼짐 막기

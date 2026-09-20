@@ -191,9 +191,9 @@ export interface ButtonMsg { type: "button"; channels: number[] }
 /** 포켓몬 맞추기 게임 고르기 화면: 카드 3장, 고른 것(selected)은 반짝이고 한 번 더 묻는다 */
 export interface GameMenuView {
   kind: "menu";
-  selected: GameMode | null;
-  /** thumb: MLX 로 만든 게임 표지 (없으면 null), art: 표지에 올릴 포켓몬 공식 그림 */
-  items: { mode: GameMode; num: number; title: string; sub: string; thumb: string | null; art: string }[];
+  /** thumb: MLX 로 만든 게임 표지 (없으면 null), art: 표지에 올릴 포켓몬 공식 그림.
+   *  번호는 2026-09-21 에 없앴다 (이름을 말하거나 카드를 누르면 바로 시작) */
+  items: { mode: GameMode; title: string; sub: string; thumb: string | null; art: string }[];
 }
 export type GameMode = "describe" | "image" | "peek";
 

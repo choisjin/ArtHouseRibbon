@@ -16,6 +16,8 @@ function decoration(mode: GameMode): string {
  *   빛줄기 + 포켓몬 공식 그림 + 장식으로 꾸민다. 제목은 굵은 테두리 글씨로 표지 위에. 고른 카드는 반짝이고 나머지는 흐려진다
  */
 export class GameBoard {
+  /** 카드를 누르면 그 게임으로 바로 시작 (tv/index.ts 가 서버로 보낸다) */
+  onPick?: (mode: GameMode) => void;
   private el: HTMLElement;
   private img: HTMLImageElement;
   private mask: HTMLElement;
@@ -39,6 +41,10 @@ export class GameBoard {
     this.menu.id = "game-menu";
     this.menu.className = "overlay";
     document.body.appendChild(this.menu);
+    this.menu.addEventListener("click", (ev) => {
+      const card = (ev.target as HTMLElement).closest(".gm-card") as HTMLElement | null;
+      if (card?.dataset.mode) this.onPick?.(card.dataset.mode as GameMode);
+    });
     this.img = this.el.querySelector("img")!;
     this.mask = this.el.querySelector(".g-mask")!;
   }
@@ -68,17 +74,13 @@ export class GameBoard {
                 : `<div class="gm-rays"></div><img class="gm-art" alt="" src="${i.art}" />${decoration(i.mode)}`}
               <div class="gm-logo"><small>포켓몬</small><b>${i.title}</b></div>
             </div>
-            <div class="gm-num">${i.num}</div>
             <div class="gm-sub">${i.sub}</div>
           </div>`).join("")}
         </div>
         <div class="gm-hint"></div>`;
 
     }
-    this.menu.classList.toggle("picked", !!v.selected);
-    this.menu.querySelectorAll<HTMLElement>(".gm-card").forEach((c) => c.classList.toggle("on", c.dataset.mode === v.selected));
-    (this.menu.querySelector(".gm-hint") as HTMLElement).textContent = v.selected
-      ? "이걸로 할까? \"응\" 하면 시작!" : "번호나 게임 이름을 말해 줘!";
+    (this.menu.querySelector(".gm-hint") as HTMLElement).textContent = "하고 싶은 것을 말하거나 눌러 줘!";
   }
 
   private renderPlay(v: Extract<GameView, { kind: "play" }>): void {
