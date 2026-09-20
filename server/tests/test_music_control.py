@@ -27,6 +27,12 @@ class FakeSpotify:
     async def next(self, device_id):
         self.calls.append(("next", device_id))
 
+    async def repeat(self, device_id, mode):
+        self.calls.append(("repeat", device_id, mode))
+
+    async def shuffle(self, device_id, on):
+        self.calls.append(("shuffle", device_id, on))
+
     async def playlists(self):
         return [{"id": "p1", "uri": "spotify:playlist:p1", "title": "우리 노래", "mine": True}]
 
@@ -57,11 +63,39 @@ async def test_off_means_normal_talk(tmp_path):
     assert await mc.handle("피카츄 노래 틀어줘") is None
 
 
-async def test_search_and_play_on_output_device(tmp_path):
+async def test_search_with_one_result_plays_just_that_song(tmp_path):
     mc, sp, _ = control(tmp_path)
     assert await mc.handle("피카츄 노래 틀어줘") == ["피카츄 송, 틀어 줄게!"]
     assert ("search", "피카츄") in sp.calls
+    # 찾은 곡 하나만 튼다: 끝나도 다음 곡으로 넘어가지 않는다
     assert ("play", "dev-tv", ("spotify:track:1",), "") in sp.calls
+    assert mc.source_info()["kind"] == "search" and mc.list_view() is None
+
+
+async def test_search_with_many_results_asks_for_a_number(tmp_path):
+    mc, sp, _ = control(tmp_path)
+    sp.tracks = tracks(3)
+    lines = await mc.handle("상어 노래 틀어줘")
+    view = mc.list_view()
+    assert view["kind"] == "search" and view["total"] == 3     # TV 에 번호로 보여 준다
+    assert "3개 찾았어" in lines[0] and "몇 번 틀까" in lines[2]
+    assert not any(c[0] == "play" for c in sp.calls)           # 고를 때까지 틀지 않는다
+
+    assert await mc.handle("2번") == ["2번 노래, 틀어 줄게!"]
+    assert ("play", "dev-tv", ("spotify:track:2",), "") in sp.calls
+    assert mc.list_view() is None                              # 고르면 화면을 내린다
+
+
+async def test_repeat_and_shuffle_words(tmp_path):
+    mc, sp, _ = control(tmp_path)
+    assert await mc.handle("반복해줘") is None                  # 음악이 안 나오면 음악 이야기가 아니다
+    mc.set_state({"playing": True, "track": sp.tracks[0], "position_ms": 0})
+    assert await mc.handle("이 노래만 반복해줘") == ["이 노래만 계속 틀게!"]
+    assert ("repeat", "dev-tv", "track") in sp.calls
+    assert await mc.handle("반복 꺼줘") == ["반복 껐어."]
+    assert await mc.handle("노래 섞어줘") == ["노래를 섞을게!"]
+    assert ("shuffle", "dev-tv", True) in sp.calls
+    assert await mc.handle("순서대로 틀어줘") == ["순서대로 틀게."]
 
 
 async def test_no_player_screen(tmp_path):

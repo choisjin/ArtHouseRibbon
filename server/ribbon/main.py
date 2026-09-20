@@ -495,9 +495,11 @@ async def api_music_play(data: dict = Body(...)):
     try:
         if data.get("uri"):
             await spotify.play(music.device(), uris=[str(data["uri"])])
+            music.source = {"kind": "search", "title": str(data.get("title") or "고른 노래")}
         else:
             pid = str(data.get("playlist_id") or "") or (await music.default_list())["id"]
             await spotify.play(music.device(), context_uri=f"spotify:playlist:{pid}")
+            music.source = {"kind": "playlist", "title": str(data.get("title") or ""), "id": pid}
     except Exception as e:  # noqa: BLE001
         raise _music_fail(e)
     return JSONResponse({"ok": True})
@@ -982,7 +984,10 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         # 재생 화면이 알려 온 재생 상태 -> TV 아래 상태바. 지금 '재생할 곳' 화면의 것만 받는다
         if hub.clients.get(ws) == store.config.music.output:
             state = {"type": "music.state", "playing": bool(msg.get("playing")), "track": msg.get("track"),
-                     "position_ms": int(msg.get("position_ms") or 0)}
+                     "position_ms": int(msg.get("position_ms") or 0),
+                     # 상태바 표시: 반복·섞기와 무엇을 틀고 있나 (검색한 한 곡 / 재생목록 이름)
+                     "repeat": str(msg.get("repeat") or "off"), "shuffle": bool(msg.get("shuffle")),
+                     "source": music.source_info(str(msg.get("context_uri") or ""))}
             music.set_state(state)
             await hub.broadcast(state)
     elif t == "face.positions":

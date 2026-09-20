@@ -29,7 +29,15 @@ from ribbon.music_intent import parse
     ("이 노래 저장해줘", "add", ""),
     ("이 노래 목록에서 빼줘", "remove", ""),
     ("이 노래 지워줘", "remove", ""),
+    ("반복해줘", "repeat", "context"),
+    ("이 노래만 반복", "repeat", "track"),
+    ("반복 꺼줘", "repeat", "off"),
+    ("노래 섞어줘", "shuffle", "on"),
+    ("셔플 켜줘", "shuffle", "on"),
+    ("순서대로 틀어줘", "shuffle", "off"),
     ("이 노래 뭐야?", "what", ""),
+    ("플레이리스트 보여줘", "show", ""),
+    ("목록에 무슨 노래 있어?", "show", ""),
     ("무슨 노래야", "what", ""),
 ])
 def test_music_requests(text, kind, query):

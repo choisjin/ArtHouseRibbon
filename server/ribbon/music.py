@@ -259,6 +259,10 @@ class SpotifyAccount:
     async def shuffle(self, device_id: str, on: bool) -> None:
         await self.api("PUT", "/me/player/shuffle", {"state": "true" if on else "false", "device_id": device_id})
 
+    async def repeat(self, device_id: str, mode: str) -> None:
+        """off | context (목록 반복) | track (한 곡 반복)"""
+        await self.api("PUT", "/me/player/repeat", {"state": mode, "device_id": device_id})
+
     async def current(self) -> Optional[Dict[str, Any]]:
         r = await self.api("GET", "/me/player/currently-playing")
         t = r.get("item") if r else None

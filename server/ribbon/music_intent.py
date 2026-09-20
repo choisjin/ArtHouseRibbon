@@ -26,8 +26,9 @@ _PLAY = re.compile(r"(틀어(줘|주|봐|줄|$)|틀자|틀래|재생(해|하|시
 
 @dataclass
 class Intent:
-    kind: str            # play | play_list | pause | resume | next | prev | louder | quieter | add | remove | what | show
-    query: str = ""
+    kind: str            # play | play_list | pause | resume | next | prev | louder | quieter | add | remove
+                         # | what | show | repeat | shuffle
+    query: str = ""      # play 면 찾을 말, repeat 면 off|track|context, shuffle 이면 on|off
 
 
 #: "3번", "세 번째", "셋", "삼" -> 3 (목록을 보여 줄 때 지울 노래 고르기)
@@ -70,6 +71,13 @@ def parse(text: str, name: str = "리본") -> Optional[Intent]:
         return Intent("add")
     if re.search(_LIST + r"에서(빼|지워|지우|삭제|없애)|(노래|곡).*(빼|지워|지우|삭제|없애)", c):
         return Intent("remove")
+    if re.search(r"(반복|리피트)", c):
+        off = re.search(r"(꺼|끄|해제|안해|하지마|그만)", c)
+        one = re.search(r"(한곡|이것만|이거만|이노래만|이것|계속이것)", c)
+        return Intent("repeat", "off" if off else "track" if one else "context")
+    if re.search(r"(섞어|섞자|셔플|랜덤|무작위|섞지|순서대로)", c):
+        off = re.search(r"(섞지마|섞지말|끄|해제|안섞|순서대로)", c)
+        return Intent("shuffle", "off" if off else "on")
     if re.search(_MUSIC + r".*(꺼|끄|멈춰|멈추|정지|그만)|그만틀|(음악|노래)?일시정지", c):
         return Intent("pause")
     if re.search(r"(다시|계속|이어서)(틀|켜|재생|들려)", c):
@@ -107,7 +115,8 @@ class MusicControl:
         self.state: Dict[str, Any] = {}          # 재생 화면이 보낸 마지막 상태 (music.state)
         self.state_at = 0.0
         self.last_error = ""
-        self.listing: Optional[Dict[str, Any]] = None   # TV 에 띄운 번호 목록 (보여 줘 -> 번호로 빼기)
+        self.source: Dict[str, Any] = {}         # 무엇을 틀었나 (검색한 한 곡 / 재생목록) -> TV 상태바
+        self.listing: Optional[Dict[str, Any]] = None   # TV 에 띄운 번호 목록 (보여 줘 -> 번호로 빼기 / 찾은 노래 -> 번호로 틀기)
         self._view_changed = False
         self._undo: Optional[Dict[str, Any]] = None     # 방금 뺀 노래 (되돌려)
 
@@ -158,7 +167,7 @@ class MusicControl:
             return None
         start = lst["page"] * self.PAGE
         page = lst["tracks"][start:start + self.PAGE]
-        return {"title": lst["title"], "page": lst["page"] + 1,
+        return {"kind": lst["kind"], "title": lst["title"], "page": lst["page"] + 1,
                 "pages": max(1, -(-len(lst["tracks"]) // self.PAGE)), "total": len(lst["tracks"]),
                 "items": [{"n": start + i + 1, "title": t["title"], "artists": t["artists"],
                            "art": t.get("album_art") or ""} for i, t in enumerate(page)]}
@@ -176,7 +185,7 @@ class MusicControl:
     async def refresh_list(self, playlist_id: str, tracks: List[Dict[str, Any]]) -> bool:
         """관리자 페이지에서 그 목록을 고쳤다: TV 에 띄워 둔 번호 목록도 새 곡들로 (바꿨으면 True)"""
         lst = self.listing
-        if not lst or lst["playlist"]["id"] != playlist_id:
+        if not lst or (lst.get("playlist") or {}).get("id") != playlist_id:
             return False
         lst["tracks"] = tracks
         lst["at"] = time.time()
@@ -197,10 +206,18 @@ class MusicControl:
         if not tracks:
             self.close_list()
             return [f"{pl['title'] or '내 목록'}에 아직 노래가 없어."]
-        self.listing = {"playlist": pl, "title": pl["title"] or "내 목록", "tracks": tracks, "page": 0,
-                        "at": time.time()}
+        self._open_list("playlist", pl["title"] or "내 목록", tracks, playlist=pl)
+        return [f"{pl['title'] or '내 목록'}에 {len(tracks)}곡 있어.", self._read_page(), self._ask()]
+
+    def _open_list(self, kind: str, title: str, tracks: List[Dict[str, Any]],
+                   playlist: Optional[Dict[str, Any]] = None) -> None:
+        """TV 에 번호 목록을 띄운다. kind = playlist (번호로 빼기) | search (번호로 틀기)"""
+        self.listing = {"kind": kind, "title": title, "tracks": tracks, "page": 0, "at": time.time(),
+                        "playlist": playlist}
         self._view_changed = True
-        return [f"{self.listing['title']}에 {len(tracks)}곡 있어.", self._read_page(), "빼고 싶은 노래는 번호를 말해 줘."]
+
+    def _ask(self) -> str:
+        return "빼고 싶은 노래는 번호를 말해 줘." if self.listing["kind"] == "playlist" else "몇 번 틀까? 번호를 말해 줘."
 
     def _read_page(self) -> str:
         return " ".join(f"{t['n']}번 {t['title']}," for t in (self.list_view() or {}).get("items", [])).rstrip(",")
@@ -220,7 +237,7 @@ class MusicControl:
                 return ["이게 마지막이야."]
             lst["page"] += 1
             self._view_changed = True
-            return [self._read_page(), "빼고 싶은 노래는 번호를 말해 줘."]
+            return [self._read_page(), self._ask()]
         if re.search(r"(이전|앞에|앞으로|전에거)", c) and lst["page"] > 0:
             lst["page"] -= 1
             self._view_changed = True
@@ -230,6 +247,8 @@ class MusicControl:
             return None
         if not 1 <= n <= len(lst["tracks"]):
             return [f"그 번호는 없어. 1번부터 {len(lst['tracks'])}번까지야."]
+        if lst["kind"] == "search":
+            return await self._play_track(lst["tracks"][n - 1])      # 찾은 노래 중에 고른 것
         return await self._remove_number(n)
 
     async def _remove_number(self, n: int) -> List[str]:
@@ -271,10 +290,13 @@ class MusicControl:
             if lines is not None:
                 return lines
         intent = parse(text, name)
-        if intent is None or (intent.kind in ("what", "louder", "quieter", "prev") and not self.active()):
+        if intent is None or (intent.kind in ("what", "louder", "quieter", "prev", "repeat", "shuffle")
+                              and not self.active()):
             # 음악 이야기가 아니다 ("무슨 노래 좋아해?"). 목록을 보여 주는 중이었으면 화면을 내리고 보통 대화로
             self.close_list()
             return None
+        if self.listing and self.listing["kind"] == "search" and intent.kind != "show":
+            self.close_list()                    # 찾은 노래를 고르다가 다른 부탁을 했다
         if not self.account.connected:
             return ["음악 계정이 아직 연결되지 않았어. 선생님께 부탁해 줘."]
         log.info("음악 부탁: %s %s", intent.kind, intent.query)
@@ -295,16 +317,53 @@ class MusicControl:
         return mine[0]
 
     async def _do_play(self, it: Intent) -> List[str]:
-        found = await self.account.search(it.query, limit=5)
+        """찾은 노래가 하나면 바로, 여러 개면 TV 에 번호로 보여 주고 고르게 한다"""
+        found = await self.account.search(it.query, limit=8)
         if not found:
-            return [f"'{it.query}' 노래는 못 찾았어."]
-        await self.account.play(self.device(), uris=[t["uri"] for t in found])
-        return [f"{found[0]['title']}, 틀어 줄게!"]
+            self.close_list()
+            return [f"{it.query} 노래는 못 찾았어."]
+        if len(found) == 1:
+            return await self._play_track(found[0])
+        self._open_list("search", f"{it.query} 찾은 노래", found)
+        return [f"{it.query} 노래 {len(found)}개 찾았어.", self._read_page(), self._ask()]
+
+    async def _play_track(self, t: Dict[str, Any]) -> List[str]:
+        """한 곡만 튼다. 끝나도 다음 곡으로 넘어가지 않는다 (검색해서 튼 노래)"""
+        await self.account.play(self.device(), uris=[t["uri"]])
+        self.source = {"kind": "search", "title": t["title"]}
+        self.close_list()
+        return [f"{t['title']}, 틀어 줄게!"]
 
     async def _do_play_list(self, it: Intent) -> List[str]:
         pl = await self.default_list()
         await self.account.play(self.device(), context_uri=pl["uri"])
+        self.source = {"kind": "playlist", "title": pl["title"] or "내 목록", "id": pl.get("id", "")}
         return [f"{pl['title'] or '내 목록'}, 틀어 줄게!"]
+
+    async def _do_repeat(self, it: Intent) -> List[str]:
+        await self.account.repeat(self.device(), it.query)
+        return {"off": ["반복 껐어."], "track": ["이 노래만 계속 틀게!"], "context": ["목록을 반복할게!"]}[it.query]
+
+    async def _do_shuffle(self, it: Intent) -> List[str]:
+        on = it.query == "on"
+        await self.account.shuffle(self.device(), on)
+        return ["노래를 섞을게!"] if on else ["순서대로 틀게."]
+
+    def source_info(self, context_uri: str = "") -> Dict[str, str]:
+        """TV 상태바에 보일 "무엇을 틀고 있나". 재생 화면이 알려 준 context 를 먼저 본다"""
+        if context_uri.startswith("spotify:playlist:"):
+            pid = context_uri.rsplit(":", 1)[-1]
+            cfg = self.store.config.music
+            title = (self.source.get("title") if self.source.get("id") == pid else "") or \
+                    (cfg.playlist_title if cfg.playlist_id == pid else "") or "재생목록"
+            return {"kind": "playlist", "title": title}
+        if context_uri.startswith("spotify:album:"):
+            return {"kind": "album", "title": "앨범"}
+        if context_uri.startswith("spotify:artist:"):
+            return {"kind": "artist", "title": "가수 노래"}
+        if self.source.get("kind") == "search":
+            return {"kind": "search", "title": str(self.source.get("title") or "")}
+        return {"kind": "track", "title": ""}
 
     async def _do_pause(self, it: Intent) -> List[str]:
         if not (self.state or {}).get("playing"):

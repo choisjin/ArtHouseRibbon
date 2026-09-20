@@ -12,7 +12,15 @@ import type { RibbonSocket } from "../ws";
  */
 
 interface SdkTrack { uri: string; name: string; duration_ms: number; artists: { name: string }[]; album: { images: { url: string }[] } }
-interface SdkState { paused: boolean; position: number; track_window: { current_track: SdkTrack | null } }
+interface SdkState {
+  paused: boolean;
+  position: number;
+  /** 0 = 안 함, 1 = 목록 반복, 2 = 한 곡 반복 */
+  repeat_mode: number;
+  shuffle: boolean;
+  context: { uri: string | null };
+  track_window: { current_track: SdkTrack | null };
+}
 interface SdkPlayer {
   connect(): Promise<boolean>;
   disconnect(): void;
@@ -118,11 +126,14 @@ export class MusicPlayer {
     const track = toTrack(s?.track_window.current_track ?? null);
     const playing = !!s && !s.paused && !!track;
     const position_ms = s?.position ?? 0;
-    // 같은 곡·같은 재생 여부면 위치만 조금 바뀐 것: 자주 보내지 않는다 (상태바가 스스로 흘려 보인다)
-    const key = `${track?.uri}|${playing}|${Math.round(position_ms / 5000)}`;
+    const repeat = ["off", "context", "track"][s?.repeat_mode ?? 0] ?? "off";
+    const shuffle = !!s?.shuffle;
+    const context_uri = s?.context.uri ?? "";
+    // 같은 곡·같은 상태면 위치만 조금 바뀐 것: 자주 보내지 않는다 (상태바가 스스로 흘려 보인다)
+    const key = `${track?.uri}|${playing}|${repeat}|${shuffle}|${Math.round(position_ms / 5000)}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
-    this.socket.sendJson({ type: "music.state", playing, track, position_ms });
+    this.socket.sendJson({ type: "music.state", playing, track, position_ms, repeat, shuffle, context_uri });
   }
 
   private target(): number {

@@ -247,6 +247,8 @@ export interface MusicTrack {
 
 /** "플레이리스트 보여줘": TV 에 띄우는 번호 목록 (서버 music_intent.MusicControl.list_view) */
 export interface MusicListView {
+  /** playlist = 번호를 말하면 목록에서 뺀다 | search = 번호를 말하면 그 노래를 튼다 */
+  kind: "playlist" | "search";
   title: string;
   page: number;
   pages: number;
@@ -266,6 +268,11 @@ export interface MusicStateMsg {
   playing: boolean;
   track: MusicTrack | null;
   position_ms: number;
+  /** 반복: off = 안 함 | context = 목록 반복 | track = 한 곡 반복 */
+  repeat?: "off" | "context" | "track";
+  shuffle?: boolean;
+  /** 무엇을 틀고 있나 (서버 music_intent.source_info) */
+  source?: { kind: "search" | "playlist" | "album" | "artist" | "track"; title: string };
 }
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg

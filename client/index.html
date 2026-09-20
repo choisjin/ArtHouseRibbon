@@ -44,6 +44,11 @@
       #music-bar .mb-text span { font-size: clamp(13px, 1.5vw, 20px); color: #bbb; }
       #music-bar .mb-prog { height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
       #music-bar .mb-prog i { display: block; height: 100%; width: 0; background: #1db954; transition: width .5s linear; }
+      #music-bar .mb-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: .4vh;
+        font-size: clamp(11px, 1.2vw, 16px); color: #ddd; max-width: 26%; }
+      #music-bar .mb-src { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: #1db954; font-weight: 700; }
+      #music-bar .mb-modes { display: flex; gap: .8vw; white-space: nowrap; }
+      #music-bar .mb-modes .off { color: #777; }
       #music-bar .mb-icon { flex: none; font-size: clamp(20px, 2.6vw, 36px); color: #1db954; width: 3vw; text-align: center; }
       #music-bar.paused { opacity: .75; }
       #music-bar.paused .mb-icon { color: #bbb; }
