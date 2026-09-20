@@ -40,9 +40,27 @@ def test_prepare_boosts_quiet_voice_and_cuts_rumble():
     t = np.arange(sr) / sr
     quiet = (0.03 * np.sin(2 * np.pi * 300 * t) * 32767).astype(np.int16)
     y = prepare(quiet, sr)
-    assert 0.2 < float(np.abs(y).max()) <= 1.0                     # 작은 목소리를 키운다
+    rms = float(np.sqrt(np.mean(np.square(y))))
+    assert 0.05 < rms < 0.15 and float(np.abs(y).max()) <= 1.0     # 작게 말해도 늘 비슷한 크기로
+    loud = (0.6 * np.sin(2 * np.pi * 300 * t) * 32767).astype(np.int16)
+    assert abs(float(np.sqrt(np.mean(np.square(prepare(loud, sr))))) - rms) < 0.03   # 크게 말해도 같은 크기로
     rumble = (0.3 * np.sin(2 * np.pi * 20 * t) * 32767).astype(np.int16)
     assert float(np.abs(prepare(rumble, sr)).std()) < float(np.abs(rumble / 32768).std())
+
+
+def test_slow_makes_audio_longer_and_lower():
+    """아이 목소리는 높고 빨라서, 조금 늦추면(=낮추면) Whisper 가 더 잘 알아듣는다 (RIBBON_STT_SLOW)"""
+    from ribbon.providers.stt import prepare, stretch
+    sr = 16000
+    t = np.arange(sr) / sr
+    voice = (0.2 * np.sin(2 * np.pi * 400 * t) * 32767).astype(np.int16)
+    same = prepare(voice, sr, slow=1.0)
+    slower = prepare(voice, sr, slow=0.8)
+    assert len(slower) == int(round(len(same) / 0.8))
+    # 같은 시간 안에 0 을 지나는 횟수(= 음높이)가 줄어든다
+    rate = lambda y: float(np.sum(np.diff(np.signbit(y)) != 0)) / len(y)  # noqa: E731
+    assert rate(slower) < rate(same) * 0.9
+    assert len(stretch(voice.astype(np.float32), 1.0)) == len(voice)
 
 
 def test_prompt_echo_only_for_long_repeats():

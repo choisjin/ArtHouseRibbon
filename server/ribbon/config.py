@@ -34,8 +34,13 @@ class Settings(BaseSettings):
     llm_autoload: bool = False
     llm_mock_delay_s: float = 0.0       # mock LLM 응답 지연 (추임새 동작 확인용)
 
-    stt_model: str = "large-v3-turbo"
+    stt_model: str = "large-v3-turbo"   # 아이 목소리는 large-v3 가 더 정확하다 (느리다). tools/stt_eval.py 로 견줘 본다
     stt_language: str = "ko"
+    #: 아이 목소리 잘 듣기 (2026-09-21). 1.0 = 그대로, 0.85 = 조금 느리고 낮게 만들어 어른 목소리에 가깝게
+    #: (Whisper 는 높고 빠른 아이 목소리에 약하다). tools/stt_eval.py --slow 로 값을 고른다
+    stt_slow: float = 1.0
+    stt_beam: int = 5                   # 빔 탐색 크기 (1 = 끔). 크면 조금 느리지만 정확해진다
+    stt_target_rms: float = 0.08        # 이 크기로 목소리를 키운다 (작게 말하는 아이)
 
     wake_phrase: str = "리본아"
     wakeword_model_path: str = ""

@@ -6,6 +6,7 @@
     source server/.venv/bin/activate
     python tools/stt_eval.py                                  # 기본 두 모델, 최근 녹음 30개
     python tools/stt_eval.py --models large-v3-turbo large-v3 medium --limit 50
+    python tools/stt_eval.py --models large-v3 --slow 1.0 0.9 0.85   # 아이 목소리: 느리게 해서 견주기
     python tools/stt_eval.py --no-prompt                      # 인식 힌트 없이 (힌트 효과 보기)
     python tools/stt_eval.py --no-prepare                     # 소리 다듬기 없이
 
@@ -60,6 +61,8 @@ def main():
     ap.add_argument("--limit", type=int, default=30, help="최근 녹음 몇 개")
     ap.add_argument("--no-prompt", action="store_true")
     ap.add_argument("--no-prepare", action="store_true")
+    ap.add_argument("--slow", nargs="+", type=float, default=[1.0],
+                    help="소리를 이만큼 느리고 낮게 만들어 본다 (아이 목소리용, 예: --slow 1.0 0.9 0.85)")
     args = ap.parse_args()
 
     import mlx_whisper
@@ -77,28 +80,32 @@ def main():
         sys.exit(f"녹음이 없습니다: {args.dir} (관리자 캐릭터 탭에서 '아이 말 녹음 저장' 을 켜고 대화해 보세요)")
     print(f"녹음 {len(recs)}개, 정답을 적어 둔 것 {sum(1 for r in recs if r.get('correct'))}개\n")
 
-    results = {m: [] for m in args.models}
-    times = {m: [] for m in args.models}
-    for m in args.models:
-        print(f"== {m} ({repo(m)}) 불러오는 중...", flush=True)
+    # 모델 x 느리기 조합마다 돌려 본다 ("large-v3 @0.85" 처럼 이름을 붙인다)
+    runs = [(m, s) for m in args.models for s in args.slow]
+    label = lambda m, s: m if s == 1.0 else f"{m} @{s:g}"          # noqa: E731
+    results = {label(m, s): [] for m, s in runs}
+    times = {label(m, s): [] for m, s in runs}
+    for m, slow in runs:
+        name = label(m, slow)
+        print(f"== {name} ({repo(m)}) 불러오는 중...", flush=True)
         try:
             pcm, sr = load(recs[0]["path"])
             mlx_whisper.transcribe(prepare(pcm, sr), path_or_hf_repo=repo(m), language="ko")   # 첫 호출은 빼고 잰다
         except Exception as e:  # noqa: BLE001
             print(f"   못 씀: {e}")
-            results[m] = None
+            results[name] = None
             continue
         for r in recs:
             pcm, sr = load(r["path"])
-            audio = pcm.astype(np.float32) / 32768.0 if args.no_prepare else prepare(pcm, sr)
+            audio = pcm.astype(np.float32) / 32768.0 if args.no_prepare else prepare(pcm, sr, slow)
             t0 = time.perf_counter()
             out = mlx_whisper.transcribe(audio, path_or_hf_repo=repo(m), language="ko",
                                          condition_on_previous_text=False,
                                          initial_prompt=None if args.no_prompt else (r.get("prompt") or None))
-            times[m].append(time.perf_counter() - t0)
-            results[m].append(clean_segments(out.get("segments") or []))
+            times[name].append(time.perf_counter() - t0)
+            results[name].append(clean_segments(out.get("segments") or []))
 
-    ok_models = [m for m in args.models if results[m] is not None]
+    ok_models = [label(m, s) for m, s in runs if results[label(m, s)] is not None]
     for i, r in enumerate(recs):
         print(f"\n[{i + 1}] {r['file']} ({r['seconds']}초)" + (f"  정답: {r['correct']}" if r.get("correct") else ""))
         for m in ok_models:

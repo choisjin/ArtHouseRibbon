@@ -58,8 +58,19 @@ class STT(Protocol):
     async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str: ...
 
 
-def prepare(pcm: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
-    """인식 전에 소리를 다듬는다: 직류 빼기, 80Hz 아래 웅웅거림 거르기, 작은 목소리 키우기 (아이들은 작게 말한다)"""
+def stretch(x: np.ndarray, factor: float) -> np.ndarray:
+    """소리를 느리게(=낮게) 만든다. factor 0.85 면 1.18배 길어지고 음높이는 그만큼 내려간다.
+    아이 목소리는 높고 빨라서 Whisper 가 약한데, 조금 늦추면 어른 목소리에 가까워져 잘 알아듣는 경우가 있다"""
+    if factor >= 0.999 or x.size < 2:
+        return x
+    n = int(round(x.size / factor))
+    idx = np.linspace(0.0, x.size - 1, n)
+    return np.interp(idx, np.arange(x.size), x).astype(np.float32)
+
+
+def prepare(pcm: np.ndarray, sample_rate: int = 16000, slow: float = 1.0, target_rms: float = 0.08) -> np.ndarray:
+    """인식 전에 소리를 다듬는다: 직류 빼기, 80Hz 아래 웅웅거림 거르기, 목소리 크기 맞추기,
+    (slow < 1 이면) 조금 느리고 낮게 만들기"""
     x = pcm.astype(np.float32) / 32768.0 if pcm.dtype != np.float32 else pcm.astype(np.float32)
     if x.size == 0:
         return x
@@ -71,9 +82,13 @@ def prepare(pcm: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
     hi = np.minimum(lo + k, x.size)
     lo = np.maximum(lo, 0)
     y = x - (c[hi] - c[lo]) / (hi - lo)
+    # 목소리 크기를 늘 비슷하게 (RMS 기준). 작게 말하는 아이도 또렷해진다. 잡음까지 키우지 않게 12배까지만
+    rms = float(np.sqrt(np.mean(np.square(y)))) or 1e-6
+    y = y * min(target_rms / rms, 12.0)
     peak = float(np.max(np.abs(y))) or 1.0
-    if peak < 0.5:
-        y = y * min(0.8 / peak, 8.0)           # 너무 작으면 키운다 (잡음까지 너무 키우지 않게 최대 8배)
+    if peak > 0.95:
+        y = y * (0.95 / peak)                  # 찌그러지지 않게
+    y = stretch(y, slow)
     return np.clip(y, -1.0, 1.0).astype(np.float32)
 
 
@@ -119,14 +134,16 @@ class FasterWhisperSTT:
 
         self._model = WhisperModel(settings.stt_model, device="auto", compute_type="auto")
         self._language = settings.stt_language
+        self._slow, self._rms = settings.stt_slow, settings.stt_target_rms
+        self._beam = max(1, settings.stt_beam)
 
     async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str:
-        audio = prepare(pcm, sample_rate)
+        audio = prepare(pcm, sample_rate, self._slow, self._rms)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._run, audio, prompt)
 
     def _run(self, audio: np.ndarray, prompt: str = "") -> str:
-        segments, _ = self._model.transcribe(audio, language=self._language, vad_filter=False, beam_size=5,
+        segments, _ = self._model.transcribe(audio, language=self._language, vad_filter=False, beam_size=self._beam,
                                              condition_on_previous_text=False, initial_prompt=prompt or None)
         text = clean_segments(segments)
         return "" if _echoes_prompt(text, prompt) else text
@@ -148,10 +165,12 @@ class MLXWhisperSTT:
         name = settings.stt_model
         self._repo = mlx_repo(name)
         self._language = settings.stt_language
+        self._slow, self._rms = settings.stt_slow, settings.stt_target_rms
+        self._beam = max(1, settings.stt_beam)
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-stt")
 
     async def transcribe(self, pcm: np.ndarray, sample_rate: int, prompt: str = "") -> str:
-        audio = prepare(pcm, sample_rate)
+        audio = prepare(pcm, sample_rate, self._slow, self._rms)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._pool, self._run, audio, prompt)
 
