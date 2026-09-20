@@ -1801,10 +1801,11 @@ $('room').onchange = async () => {
     $('room').value = roomId;
     return;
   }
-  if (r.startsWith('kid:')) {
-    // 아이 전시실은 전시실 꾸미기 화면에서 (index.ts addGalleries)
+  if (r === 'gallery' || r.startsWith('kid:')) {
+    // 전시장과 아이 전시실은 가구 없이 작품만 건다: 전시실 꾸미기 화면에서 (index.ts addGalleries)
     const embed = new URLSearchParams(location.search).has('embed') ? '&embed=1' : '';
-    location.href = `/?mode=art&kid=${encodeURIComponent(r.slice(4))}${embed}`;
+    location.href = r === 'gallery' ? `/?mode=art&room=gallery${embed}`
+      : `/?mode=art&kid=${encodeURIComponent(r.slice(4))}${embed}`;
     return;
   }
   try {
@@ -1814,7 +1815,10 @@ $('room').onchange = async () => {
   }
 };
 
-const startRoom = ['classroom', 'gallery'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'classroom';
+if (location.hash === '#gallery') {       // 예전 주소로 들어왔다: 전시장은 이제 전시실 꾸미기에서
+  location.replace(`/?mode=art&room=gallery${new URLSearchParams(location.search).has('embed') ? '&embed=1' : ''}`);
+}
+const startRoom = 'classroom';
 loadRoom(startRoom).catch((err) => {
   $('loading').textContent = '시작 실패: ' + err.message;
   console.error(err);

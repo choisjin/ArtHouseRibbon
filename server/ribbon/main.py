@@ -868,7 +868,7 @@ async def api_world_layout_put(room: str, data: dict = Body(...)):
     except (ValueError, TypeError, KeyError) as e:
         raise HTTPException(400, str(e))
     # 아이 전시실은 배경을 같이 쓰므로 다시 렌더하지 않는다 (그림은 TV 가 실시간으로 그린다)
-    rendering = bool(settings.render_auto and world.kid_of(r) is None and renderer.request(r))
+    rendering = bool(settings.render_auto and not world.live_arts(r) and renderer.request(r))
     if r == world.active:
         await dialogue.notify_config_changed()
     return JSONResponse({"ok": True, "rendering": rendering})

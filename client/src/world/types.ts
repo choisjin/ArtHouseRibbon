@@ -73,8 +73,8 @@ export interface LayoutArt {
   /** 배경을 지운 작품 뒤에 까는 색(없으면 흰색)과 여백 [왼,위,오,아래] (world/artimage.ts). 작품을 편집하면 서버가 맞춰 준다 */
   bg?: string;
   pad?: number[];
-  /** 이 그림에 단 천장 핀 조명 (world/lamp.ts). 없으면 달지 않은 것 */
-  lamp?: { on?: boolean; power?: number; angle?: number; tone?: number; tilt?: number } | null;
+  /** 이 그림에 건 이미지 필터와 하이라이트 (world/artfx.ts 의 ArtFx). 없으면 원본 그대로 */
+  fx?: Partial<Record<"b" | "c" | "s" | "w" | "sepia" | "glow" | "glowTone" | "glowSize", number>> | null;
 }
 
 export interface Layout {

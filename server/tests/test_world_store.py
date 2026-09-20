@@ -127,6 +127,22 @@ def test_artwork_look_is_synced_to_hung_arts(store):
     assert [a["file"] for a in store.artworks("k1")] == [new["file"]]    # 옛 그림은 지워진다
 
 
+def test_gallery_holds_artworks_only(store):
+    """전시장(과 아이 전시실)에는 가구를 두지 않는다: 저장해도 가구는 버리고 작품과 조명 밝기만 남긴다"""
+    art, _ = store.add_artwork({"name": "a", "data": "data:image/png;base64," + PNG_1PX, "width": 1, "height": 1})
+    wall = {"id": "x", "image": art["file"], "width": 1, "aspect": 1, "mount": {"host": None, "id": "back"}}
+    easel = {**wall, "id": "y", "mount": {"host": "easel_1", "id": "canvas"}}
+    store.save_layout("gallery", {"items": [{"id": "bench", "type": "bench", "x": 0, "y": 0, "rot": 0}],
+                                  "arts": [wall, easel], "light": 0.4})
+    lay = store.layout("gallery")
+    assert lay["items"] == [] and [a["id"] for a in lay["arts"]] == ["x"] and lay["light"] == 0.4
+    assert store.live_arts("gallery") and not store.live_arts("classroom")
+    assert store.layout("kidbase")["items"] == [] and "light" not in store.layout("kidbase")
+    # 미술실은 그대로 가구를 둔다
+    store.save_layout("classroom", {"items": [{"id": "t", "type": "table", "x": 0, "y": 0, "rot": 0}], "arts": []})
+    assert len(store.layout("classroom")["items"]) == 1
+
+
 def test_renderer_info_and_stale(store, tmp_path):
     import asyncio
 
@@ -151,16 +167,21 @@ def test_renderer_info_and_stale(store, tmp_path):
     store._catalog["rooms"]["gallery"].update(front_y=-8.0, back_y=8.0, unit_per_m=2.0)
     pos = r.pano_pos("gallery")
     assert pos == [0.0, pytest.approx(-0.18 * 16), pytest.approx(1.9 * 2.0)] and r.pano_pos("classroom") is None
-    gal = store.layout("gallery")
-    (r.dir / "gallery_day.png").write_bytes(b"png")
-    (r.dir / "gallery_day_pano.jpg").write_bytes(b"jpg")
-    (r.dir / "gallery.json").write_text(json.dumps({"layout": gal, "rendered_at": 7}), encoding="utf-8")
-    old = r.info("gallery")
+    # 전시장과 아이 전시실은 빈 전시실 배경(kidbase) 한 벌을 같이 쓰고, 걸린 그림은 TV 가 실시간으로 그린다
+    assert "gallery" not in store.render_rooms() and "kidbase" in store.render_rooms()
+    assert r.info("gallery") is None
+    base = store.layout("kidbase")
+    (r.dir / "kidbase_day.png").write_bytes(b"png")
+    (r.dir / "kidbase_day_pano.jpg").write_bytes(b"jpg")
+    (r.dir / "kidbase.json").write_text(json.dumps({"layout": base, "rendered_at": 7}), encoding="utf-8")
+    old = r.info("kidbase")
     assert old["stale"] and old["pano"] is None                  # 판도 자리도 없는 옛 렌더
-    (r.dir / "gallery.json").write_text(json.dumps({"layout": gal, "rendered_at": 7, "pano_pos": pos,
+    (r.dir / "kidbase.json").write_text(json.dumps({"layout": base, "rendered_at": 7, "pano_pos": pos,
                                                     "version": SHELL_VERSION["gallery"]}), encoding="utf-8")
-    new = r.info("gallery")
-    assert not new["stale"] and new["pano"] == "/world-render/gallery_day_pano.jpg?v=7" and new["pano_pos"] == pos
+    new = r.info("kidbase")
+    assert not new["stale"] and new["pano"] == "/world-render/kidbase_day_pano.jpg?v=7" and new["pano_pos"] == pos
+    gal = r.info("gallery")
+    assert gal["bg"] == new["bg"] and gal["arts_live"] and gal["layout"]["items"] == [] and not gal["stale"]
     if r.blender is None:   # 블렌더가 없으면 요청을 받지 않는다
         assert asyncio.run(_request(r)) is False
 

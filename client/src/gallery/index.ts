@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { Stage, fetchCatalog } from "../tv/stage";
+import { filterCanvas, fxOf } from "../world/artfx";
 import { bgOf, composeArt } from "../world/artimage";
 import { LookAround } from "../world/lookaround";
-import { renderNow, type Layout, type WorldRender } from "../world/types";
+import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 
 /**
  * 부모님께 보내는 전시실 (?mode=gallery&k=<열쇠>). **보기 전용**이고 로그인하지 않는다.
@@ -51,21 +52,23 @@ export async function startGallery(): Promise<void> {
     const strip = $("#strip");
     strip.innerHTML = files.map((f) => `<img src="/${esc(f)}" data-file="${esc(f)}" alt="" loading="lazy"
       style="background:${bgOf(data.artworks.find((x) => x.file === f))}">`).join("");
-    strip.querySelectorAll<HTMLImageElement>("img").forEach((img) => { img.onclick = () => open(img.dataset.file!); });
+    strip.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
+      img.onclick = () => open(img.dataset.file!, h.layout?.arts?.find((a) => a.image === img.dataset.file));
+    });
     $("#note").textContent = files.length ? "옆으로 쓸어 넘겨 둘러보세요 · 작품을 누르면 크게 볼 수 있어요" : "아직 걸린 작품이 없어요";
   }
 
   // ---------- 방 안의 그림 누르기 ----------
   const canvas = stage.renderer.domElement;
   const ray = new THREE.Raycaster();
-  const artAt = (ev: PointerEvent | MouseEvent): string | null => {
+  const artAt = (ev: PointerEvent | MouseEvent): LayoutArt | null => {
     const r = canvas.getBoundingClientRect();
     ray.setFromCamera(new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1,
                                         -((ev.clientY - r.top) / r.height) * 2 + 1), stage.camera);
     for (const hit of ray.intersectObject(stage.room.group, true)) {
       for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
         const id = o.userData.art as string | undefined;
-        if (id) return data.halls[hall].layout?.arts?.find((a) => a.id === id)?.image ?? null;
+        if (id) return data.halls[hall].layout?.arts?.find((a) => a.id === id) ?? null;
       }
     }
     return null;
@@ -80,31 +83,33 @@ export async function startGallery(): Promise<void> {
     const was = looker.dragging;
     looker.end(ev);
     if (ev.type !== "pointerup" || !was || looker.dragging || looker.moved >= 6) return;
-    const f = artAt(ev);                     // 끌지 않고 눌렀다 뗐다: 작품이면 크게 본다
-    if (f) open(f);
+    const a = artAt(ev);                     // 끌지 않고 눌렀다 뗐다: 작품이면 크게 본다
+    if (a) open(a.image, a);
   };
 
   // ---------- 크게 보기 · 내려받기 ----------
   const box = $("#big");
   const bigCv = $<HTMLCanvasElement>("#big-cv");
   const bgIn = $<HTMLInputElement>("#big-bg");
-  let shown: { art: Artwork | undefined; file: string; img: HTMLImageElement } | null = null;
+  let shown: { art: Artwork | undefined; file: string; img: HTMLImageElement; hung?: LayoutArt } | null = null;
   const safe = (t: string): string => t.replace(/[\\/:*?"<>|]/g, "_");
 
   /** 고른 배경색을 깔고 여백까지 합쳐서 보여 준다 (학원에서 정해 둔 색이 처음 값) */
   function paint(): void {
     if (!shown) return;
-    const c = composeArt(shown.img, shown.img.naturalWidth, shown.img.naturalHeight, { bg: bgIn.value, pad: shown.art?.pad });
+    // 벽에 걸린 모습 그대로: 여백·배경색을 합치고, 그 그림에 건 필터를 입힌다 (world/artfx.ts)
+    const c = filterCanvas(composeArt(shown.img, shown.img.naturalWidth, shown.img.naturalHeight,
+                                      { bg: bgIn.value, pad: shown.art?.pad }), fxOf(shown.hung?.fx));
     bigCv.width = c.width;
     bigCv.height = c.height;
     bigCv.getContext("2d")!.drawImage(c, 0, 0);
   }
 
-  function open(file: string): void {
+  function open(file: string, hung?: LayoutArt): void {
     const art = data.artworks.find((x) => x.file === file);
     const img = new Image();
     img.onload = () => {
-      shown = { art, file, img };
+      shown = { art, file, img, hung };
       bgIn.value = bgOf(art);
       paint();
       $("#big-name").textContent = art?.name ?? "";

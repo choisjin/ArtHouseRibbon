@@ -143,6 +143,17 @@ class WorldStore:
             _write_json(self.dir / "world.json", {"active": self.kid_room(kid_id)})
         return count
 
+    def live_arts(self, room: str) -> bool:
+        """걸린 그림을 배경에 굽지 않고 TV 가 실시간으로 그리는 방인가: 아이 전시실과 전시장.
+        이 방들은 가구가 없고(작품만 건다) 빈 전시실 배경(kidbase) 한 벌을 같이 쓴다"""
+        return room == KID_SHELL or self.kid_of(room) is not None
+
+    @staticmethod
+    def _arts_only(lay: Dict[str, Any]) -> Dict[str, Any]:
+        """전시장·전시실은 가구를 두지 않는다 (2026-09-21). 가구에 올려 두었던 그림(이젤)도 같이 뺀다"""
+        arts = [a for a in lay.get("arts", []) if not (a.get("mount") or {}).get("host")]
+        return {**lay, "items": [], "storage": [], "arts": arts}
+
     def shell_room(self, room: str) -> str:
         """그 방의 모양·조명을 어디서 가져오는가 (블렌더 렌더가 쓴다)"""
         if room == KID_BASE or self.kid_of(room):
@@ -176,7 +187,7 @@ class WorldStore:
 
     def render_rooms(self) -> List[str]:
         """배경을 렌더해 두어야 하는 방 (아이 전시실은 kidbase 한 장을 같이 쓴다)"""
-        return self.rooms() + [KID_BASE]
+        return [r for r in self.rooms() if not self.live_arts(r)] + [KID_BASE]
 
     def check_room(self, room: str) -> str:
         kid = self.kid_of(room)
@@ -216,9 +227,12 @@ class WorldStore:
         return (cat.get("default_layouts") or {}).get(room) or cat.get("default_layout")
 
     def layout(self, room: str) -> Optional[Dict[str, Any]]:
-        if room == KID_BASE:                    # 그림을 뺀 전시실 (아이 전시실 배경용)
+        if room == KID_BASE:                    # 그림을 뺀 빈 전시실 (전시장·아이 전시실이 같이 쓰는 배경)
             base = self.layout(KID_SHELL)
-            return {**base, "room": KID_BASE, "shell": KID_SHELL, "arts": []} if base else None
+            if not base:
+                return None
+            base = {k: v for k, v in base.items() if k != "light"}
+            return {**base, "room": KID_BASE, "shell": KID_SHELL, "arts": []}
         kid = self.kid_of(room)
         if kid is not None:                     # 가구는 전시실 것, 그림은 그 아이 것
             base = self.layout(KID_SHELL)
@@ -226,9 +240,11 @@ class WorldStore:
                 return None
             mine = _read_json(self.layout_path(room), {}) or {}
             # shell: 방 모양·벽(그림 거는 면)을 어디서 가져오는지 TV 에 알려 준다
+            base = {k: v for k, v in base.items() if k != "light"}
             return {**base, "room": room, "shell": KID_SHELL, "kid_id": kid, "arts": mine.get("arts", []),
                     "light": mine.get("light", 1.0), "hall": self.hall_of(room), "halls": self.halls(kid)}
-        return _read_json(self.layout_path(room)) or self.default_layout(room)
+        lay = _read_json(self.layout_path(room)) or self.default_layout(room)
+        return self._arts_only(lay) if lay and room == KID_SHELL else lay
 
     def has_layout(self, room: str) -> bool:
         return self.layout_path(room).exists()
@@ -282,6 +298,11 @@ class WorldStore:
                 _write_json(self.layout_path(room), saved)
             log.info("kid gallery saved: %s arts=%d", room, len(saved["arts"]))
             return self.layout(room) or saved
+        if room == KID_SHELL:                   # 전시장도 작품만 (가구는 받지 않는다). 조명 밝기는 같이 둔다
+            base = self.layout(room) or {}
+            data = {**{k: v for k, v in base.items() if k not in ("arts", "light")},
+                    **self._arts_only({"arts": data.get("arts", [])}),
+                    "light": max(LIGHT_MIN, min(LIGHT_MAX, float(data.get("light", 1.0))))}
         data = self.validate(data)
         data["room"] = room
         path = self.layout_path(room)

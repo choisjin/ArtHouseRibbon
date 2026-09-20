@@ -4,7 +4,7 @@ import type { WallMount } from "../world/room";
 import { renderNow, type Catalog, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 import { bgOf, lookSize, padOf } from "../world/artimage";
 import { FRAME_STYLES } from "../world/frames";
-import { LAMP_DEFAULT, LAMP_LIMIT, lampOf, type ArtLamp } from "../world/lamp";
+import { FX_LIMIT, FX_PRESETS, fxOf, type ArtFx } from "../world/artfx";
 import { LookAround } from "../world/lookaround";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
@@ -18,7 +18,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
  *   - **쓸어 넘겨 둘러본다** (world/lookaround.ts): 방 가운데에 서서 고개를 돌리듯 왼쪽·오른쪽 벽을 본다. 배경은 같은
  *     자리에서 구운 360° 파노라마라 어느 벽이든 렌더 품질 그대로다. 📺 단추로 TV 에 나오는 화면도 볼 수 있다
- *   - 액자는 world/frames.ts 의 종류에서 고르고, 그림마다 천장 핀 조명을 단다 (world/lamp.ts: 켜기·조도·퍼짐·각도·빛 색)
+ *   - 액자는 world/frames.ts 의 종류에서 고르고, 그림마다 이미지 필터와 하이라이트를 건다 (world/artfx.ts)
+ *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 작품 목록은 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
  *   - 🔗 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
  * 저장하면 그 아이 전시실(kid-<아이 id>)의 arts 만 바뀐다. 배경은 모든 아이가 같은 렌더(kidbase)를 쓰므로
@@ -26,6 +27,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  */
 
 interface Kid { id: string; name: string }
+
+const GALLERY = "room:gallery";           // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
 const WALL_FILL = 0.96;                   // 벽을 꽉 채우지는 않게
@@ -52,17 +55,22 @@ export async function startArt(): Promise<void> {
 
   const kids = await api<Kid[]>("GET", "/api/kids");
   const kidSel = $<HTMLSelectElement>("#kid");
-  // 고를 곳: 방(맵 편집기로 간다) + 아이들 전시실
+  // 고를 곳: 전시장 + 아이들 전시실은 여기서, 그 밖의 방(미술실)은 맵 편집기로 간다
   const rooms = await api<{ catalog: Catalog }>("GET", "/api/world")
     .then((w) => Object.entries(w.catalog.rooms ?? {}).map(([id, r]) => [id, r.name] as [string, string]))
     .catch(() => [["classroom", "미술실"], ["gallery", "전시장"]] as [string, string][]);
   kidSel.innerHTML = `<optgroup label="방">${rooms.map(([id, n]) => `<option value="room:${id}">${esc(n)}</option>`).join("")}</optgroup>`
     + `<optgroup label="아이들 전시실">${[...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))
       .map((k) => `<option value="${k.id}">🖼 ${esc(k.name)} 전시실</option>`).join("")}</optgroup>`;
-  const wanted = new URLSearchParams(location.search).get("kid") || location.hash.slice(1);
-  kidSel.value = wanted && kids.some((k) => k.id === wanted) ? wanted : kids[0]?.id ?? "";
+  const query = new URLSearchParams(location.search);
+  const wanted = query.get("room") === "gallery" ? GALLERY : query.get("kid") || decodeURIComponent(location.hash.slice(1));
+  kidSel.value = wanted === GALLERY || kids.some((k) => k.id === wanted) ? wanted : kids[0]?.id ?? GALLERY;
   let curKid = kidSel.value;
-  if (!kids.length) { msg("관리자 페이지에서 아이를 먼저 추가하세요", true); return; }
+  const inGallery = (): boolean => kidSel.value === GALLERY;
+  const kidName = (id: string | null | undefined): string => kids.find((k) => k.id === id)?.name ?? "아이 없음";
+  const upKid = $<HTMLSelectElement>("#up-kid");   // 전시장에서 사진을 올릴 때: 누구 작품인가
+  upKid.innerHTML = [...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))
+    .map((k) => `<option value="${esc(k.id)}">${esc(k.name)}</option>`).join("");
 
   // ---------- TV 와 같은 3D 화면 ----------
   const stage = new Stage($("#view"), await fetchCatalog());
@@ -93,8 +101,15 @@ export async function startArt(): Promise<void> {
   async function loadKid(): Promise<void> {
     const kid = kidSel.value;
     location.hash = kid;
-    const d = await api<{ room: string; hall: number; halls: number; layout: Layout | null; artworks: Artwork[] }>(
-      "GET", `/api/kids/${encodeURIComponent(kid)}/gallery?hall=${hall}`);
+    const gallery = inGallery();
+    // 전시장은 모든 아이의 작품을 걸 수 있다 (목록은 아이별로 묶는다). 실 나누기와 부모님 공유는 아이 전시실에만 있다
+    const d = gallery
+      ? { hall: 1, halls: 1, ...await api<{ room: string; layout: Layout | null; artworks: Artwork[] }>("GET", "/api/world?room=gallery") }
+      : await api<{ room: string; hall: number; halls: number; layout: Layout | null; artworks: Artwork[] }>(
+        "GET", `/api/kids/${encodeURIComponent(kid)}/gallery?hall=${hall}`);
+    $("#halls").hidden = gallery;
+    $("#open-share").hidden = gallery;
+    $("#up-who").hidden = !gallery;
     room = d.room;
     hall = d.hall;
     halls = d.halls;
@@ -212,7 +227,7 @@ export async function startArt(): Promise<void> {
     if (marker) { stage.scene.remove(marker); marker = null; }
     const g = picked ? findArt(picked) : undefined;
     if (g) {
-      marker = new THREE.BoxHelper(g.getObjectByName("art-core") ?? g, 0xe9557d);   // 핀 조명은 빼고 그림만 두른다
+      marker = new THREE.BoxHelper(g.getObjectByName("art-core") ?? g, 0xe9557d);   // 그림자·빛은 빼고 그림만 두른다
       (marker.material as THREE.LineBasicMaterial).depthTest = false;
       marker.renderOrder = 10;
       stage.scene.add(marker);
@@ -328,10 +343,10 @@ export async function startArt(): Promise<void> {
       box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 아래에서 사진을 올려 보세요.</p>`;
       return;
     }
-    box.innerHTML = mine.map((a) => {
+    const card = (a: Artwork): string => {
       const hung = arts.filter((x) => x.image === a.file).length;
       return `<div class="card" data-file="${esc(a.file)}">
-        <img src="/${esc(a.file)}" alt="" style="background:${bgOf(a)}">
+        <img src="/${esc(a.file)}" alt="" loading="lazy" style="background:${bgOf(a)}">
         <div class="card-body">
           <b>${esc(a.name)}</b>
           <small>${a.width}×${a.height}${hung ? ` · 걸린 것 ${hung}개` : ""}</small>
@@ -342,7 +357,20 @@ export async function startArt(): Promise<void> {
           </div>
         </div>
       </div>`;
-    }).join("");
+    };
+    if (inGallery()) {
+      // 아이를 갈래로: 이름 순, 작품이 걸려 있는 아이는 펼쳐 둔다
+      const groups = new Map<string, Artwork[]>();
+      for (const a of mine) groups.set(a.kid_id ?? "", [...(groups.get(a.kid_id ?? "") ?? []), a]);
+      const order = [...groups.keys()].sort((x, y) => (x ? 0 : 1) - (y ? 0 : 1) || kidName(x).localeCompare(kidName(y), "ko"));
+      box.innerHTML = order.map((id, i) => {
+        const list = groups.get(id)!;
+        const hung = list.filter((a) => arts.some((x) => x.image === a.file)).length;
+        return `<details class="group" ${hung || (i === 0 && !arts.length) ? "open" : ""}>
+          <summary><b>${esc(kidName(id))}</b> <small>${list.length}점${hung ? ` · 걸린 것 ${hung}점` : ""}</small></summary>
+          ${list.map(card).join("")}</details>`;
+      }).join("");
+    } else box.innerHTML = mine.map(card).join("");
     box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
       b.onclick = () => {
         const file = (b.closest("[data-file]") as HTMLElement).dataset.file!;
@@ -369,7 +397,7 @@ export async function startArt(): Promise<void> {
     const art: LayoutArt = {
       id: `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
       image: a.file, width: w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: "white",
-      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a), lamp: { ...LAMP_DEFAULT },
+      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a),
     };
     fit(art, w);
     arts.push(art);
@@ -417,7 +445,7 @@ export async function startArt(): Promise<void> {
       <label>액자 <select id="frame">${FRAME_STYLES.map((f) =>
         `<option value="${f.id}" ${(a.frame ?? "canvas") === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></label>
       <button id="down" class="ghost">벽에서 내리기</button>
-      ${w?.host === null ? lampHtml(lampOf(a.lamp)) : ""}`;
+      ${fxHtml(fxOf(a.fx))}`;
     const wIn = box.querySelector<HTMLInputElement>("#w")!;
     const base = a.width;
     const g = findArt(a.id);
@@ -450,20 +478,34 @@ export async function startArt(): Promise<void> {
       dirty = true;
       void rebuild();
     };
-    // 핀 조명: 켜기 · 조도 · 퍼짐 · 각도 · 빛 색
-    const lampOn = box.querySelector<HTMLInputElement>("#lamp-on");
-    if (lampOn) {
-      const cur = (): ArtLamp => lampOf(a.lamp) ?? { ...LAMP_DEFAULT, on: false };
-      lampOn.onchange = () => { a.lamp = { ...cur(), on: lampOn.checked }; dirty = true; void rebuild(); };
-      box.querySelectorAll<HTMLInputElement>("[data-lamp]").forEach((el) => {
-        el.oninput = () => {
-          a.lamp = { ...cur(), [el.dataset.lamp!]: Number(el.value) };
-          el.parentElement!.querySelector("b")!.textContent = lampText(el.dataset.lamp!, Number(el.value));
-          dirty = true;
-          later();
-        };
+    // 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다)
+    const fxIns = [...box.querySelectorAll<HTMLInputElement>("[data-fx]")];
+    const showFx = (fx: ArtFx): void => {
+      fxIns.forEach((el) => {
+        const key = el.dataset.fx as keyof ArtFx;
+        el.value = String(fx[key]);
+        el.parentElement!.querySelector("b")!.textContent = fxText(key, fx[key]);
       });
-    }
+    };
+    const setFx = (patch: Partial<ArtFx>, wall: boolean): void => {
+      const fx = { ...fxOf(a.fx), ...patch };
+      a.fx = fx;
+      stage.room.setArtFx(a.id, fx);
+      showFx(fx);
+      dirty = true;
+      if (wall) later();
+    };
+    fxIns.forEach((el) => {
+      el.oninput = () => {
+        const key = el.dataset.fx as keyof ArtFx;
+        setFx({ [key]: Number(el.value) }, key.startsWith("glow"));
+        if (!key.startsWith("glow")) box.querySelector<HTMLSelectElement>("#preset")!.value = "";
+      };
+    });
+    box.querySelector<HTMLSelectElement>("#preset")!.onchange = (e) => {
+      const preset = FX_PRESETS.find((x) => x.id === (e.target as HTMLSelectElement).value);
+      if (preset) setFx(preset.fx, false);
+    };
     box.querySelector<HTMLButtonElement>("#down")!.onclick = () => {
       arts = arts.filter((x) => x.id !== a.id);
       picked = null;
@@ -473,17 +515,26 @@ export async function startArt(): Promise<void> {
     };
   }
 
-  const lampText = (key: string, v: number): string =>
-    key === "power" ? `${Math.round(v * 100)}%` : key === "tone" ? (v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게") : `${Math.round(v)}°`;
+  const fxText = (key: keyof ArtFx, v: number): string =>
+    key === "s" || key === "glowSize" ? `${Math.round(v * 100)}%`
+      : key === "glow" ? (v <= 0 ? "끔" : `${Math.round(v * 100)}%`)
+        : key === "glowTone" ? (v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게")
+          : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`;
 
-  function lampHtml(lamp: ArtLamp | null): string {
-    const l = lamp ?? { ...LAMP_DEFAULT, on: false };
-    const row = (key: keyof typeof LAMP_LIMIT, label: string, step: number): string =>
-      `<label class="grow">${label} <input data-lamp="${key}" type="range" min="${LAMP_LIMIT[key][0]}" max="${LAMP_LIMIT[key][1]}"
-        step="${step}" value="${l[key]}" ${l.on ? "" : "disabled"}> <b>${lampText(key, l[key])}</b></label>`;
-    return `<div class="lamp-row">
-      <label><input id="lamp-on" type="checkbox" ${l.on ? "checked" : ""}> 💡 핀 조명</label>
-      ${row("power", "조도", 0.05)}${row("angle", "퍼짐", 1)}${row("tilt", "각도", 1)}${row("tone", "빛 색", 0.05)}
+  function fxHtml(fx: ArtFx): string {
+    const row = (key: keyof ArtFx, label: string): string =>
+      `<label class="grow">${label} <input data-fx="${key}" type="range" min="${FX_LIMIT[key][0]}" max="${FX_LIMIT[key][1]}"
+        step="0.01" value="${fx[key]}"> <b>${fxText(key, fx[key])}</b></label>`;
+    const same = (p: Partial<ArtFx>): boolean => (Object.keys(p) as (keyof ArtFx)[]).every((k) => Math.abs((p[k] ?? 0) - fx[k]) < 0.005);
+    const cur = FX_PRESETS.find((x) => same(x.fx))?.id ?? "";
+    return `<div class="fx-row">
+      <label>🎨 필터 <select id="preset"><option value="">직접 맞춤</option>${FX_PRESETS.map((x) =>
+        `<option value="${x.id}" ${x.id === cur ? "selected" : ""}>${x.name}</option>`).join("")}</select></label>
+      ${row("b", "밝기")}${row("c", "대비")}${row("s", "채도")}${row("w", "색온도")}
+    </div>
+    <div class="fx-row">
+      <label>✨ 하이라이트</label>
+      ${row("glow", "세기")}${row("glowSize", "번짐")}${row("glowTone", "빛 색")}
     </div>`;
   }
 
@@ -571,13 +622,14 @@ export async function startArt(): Promise<void> {
   $("#show").onclick = async () => {
     try {
       if (dirty) await save();
-      await api("POST", "/api/world/visit", { kid_id: kidSel.value, hall, seconds: 120 });
-      msg("TV 가 이 전시실을 보러 갑니다 (2분 뒤 교실로)");
+      await api("POST", "/api/world/visit", inGallery() ? { room: "gallery", seconds: 120 }
+        : { kid_id: kidSel.value, hall, seconds: 120 });
+      msg(`TV 가 이 ${inGallery() ? "전시장" : "전시실"}을 보러 갑니다 (2분 뒤 교실로)`);
     } catch (e) { msg(String(e), true); }
   };
   kidSel.onchange = () => {
     if (dirty && !confirm("저장하지 않은 것이 있습니다. 옮길까요?")) { kidSel.value = curKid; return; }
-    if (kidSel.value.startsWith("room:")) {
+    if (kidSel.value.startsWith("room:") && !inGallery()) {
       const embed = new URLSearchParams(location.search).has("embed") ? "&embed=1" : "";
       location.href = `/?mode=editor${embed}#${kidSel.value.slice(5)}`;
       return;
@@ -588,7 +640,7 @@ export async function startArt(): Promise<void> {
   };
   window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
-  const upload = mountCrop(() => kidSel.value, async (entry, replaced) => {
+  const upload = mountCrop(() => (inGallery() ? upKid.value : kidSel.value), async (entry, replaced) => {
     // 편집한 작품이면 걸려 있던 곳은 서버가 이미 새 모습으로 고쳤다 (모든 실). 이 실을 다시 읽는다
     if (replaced) await loadKid();
     else mine = [entry, ...mine.filter((a) => a.file !== entry.file)];
@@ -653,11 +705,15 @@ const PAGE = `
   .card-body small { color:#8b8279 }
   #halls { display:flex; gap:4px }
   #halls button { padding:6px 10px }
-  #picked .lamp-row { flex:1 1 100%; display:flex; gap:14px; align-items:center; flex-wrap:wrap;
-                      border-top:1px solid #3a3346; padding-top:8px }
-  #picked .lamp-row .grow { flex:1 1 150px }
-  #picked .lamp-row input[type=range] { min-width:70px; accent-color:#ffd166 }
-  #picked .lamp-row b { min-width:3.2em }
+  #picked .fx-row { flex:1 1 100%; display:flex; gap:14px; align-items:center; flex-wrap:wrap;
+                    border-top:1px solid #3a3346; padding-top:8px }
+  #picked .fx-row .grow { flex:1 1 140px }
+  #picked .fx-row input[type=range] { min-width:64px; accent-color:#ffd166 }
+  #picked .fx-row b { min-width:3.2em }
+  details.group { border:1px solid #e3ded8; border-radius:10px; padding:6px 8px; margin-bottom:8px; background:#fff }
+  details.group summary { cursor:pointer; padding:4px 2px }
+  details.group summary small { color:#8b8279 }
+  details.group .card { margin:8px 0 0 }
   .lamp { display:flex; gap:6px; align-items:center }
   .lamp input { width:110px; accent-color:#ffd166 }
   #share-url { width:100%; box-sizing:border-box; padding:8px; border:1px solid #cdc6bd; border-radius:8px; background:#fff; color:#241f2b }
@@ -682,6 +738,7 @@ ${CROP_CSS}
   <div class="box">
     <div class="row"><h2>작품</h2><span class="grow"></span><button id="close-arts" class="ghost">닫기</button></div>
     <div id="list"></div>
+    <label class="row" id="up-who" hidden>누구 작품인가요? <select id="up-kid"></select></label>
     <input id="file" type="file" accept="image/*" capture="environment" style="display:none">
     <button class="on" onclick="document.getElementById('file').click()">📷 작품 사진 올리기</button>
     <p class="hint">사진을 고르면 AI 가 배경을 지워 줍니다. 여백과 배경색은 '편집'에서 언제든 바꿀 수 있어요.</p>

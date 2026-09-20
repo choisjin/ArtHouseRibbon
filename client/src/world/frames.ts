@@ -167,6 +167,9 @@ export interface FrameParts {
   meshes: THREE.Object3D[];
   /** 벽에 떨어지는 그림자 (그림 크기를 잴 때는 빼야 해서 따로 준다) */
   shade: THREE.Object3D;
+  /** 액자까지 넣은 바깥 크기 (장면 단위) */
+  outerW: number;
+  outerH: number;
 }
 
 /** 그림(w × h, 장면 단위) 둘레의 액자·매트·뒤판·그림자를 만든다 */
@@ -209,8 +212,8 @@ export function buildFrame(w: number, h: number, f: FrameStyle, mm: (v: number) 
   const drop = mm(14) + depth * 0.6;
   const shade = new THREE.Mesh(new THREE.PlaneGeometry(outerW * 1.6 + drop, outerH * 1.6 + drop),
     new THREE.MeshBasicMaterial({ map: wallShadow(), transparent: true, opacity: 0.36, depthWrite: false, toneMapped: false,
-                                  polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+                                  polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4 }));
   shade.position.set(0, -drop * 0.55, mm(2));
   shade.renderOrder = 1;
-  return { pictureZ, meshes, shade };
+  return { pictureZ, meshes, shade, outerW, outerH };
 }

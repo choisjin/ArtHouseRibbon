@@ -37,7 +37,7 @@ DAYLIGHT_ROOMS = {"classroom"}          # 창이 있어 시간대별로 렌더�
 
 
 #: 방 모양(shell)별 렌더 방식 판. 올리면 그 껍데기를 쓰는 방은 켜질 때 다시 렌더한다
-#: gallery 2: 천장 레일 조명을 빼고(작품마다 핀 조명을 단다), 둘러보기 파노라마를 같이 굽는다
+#: gallery 2: 천장 레일 조명을 빼고, 둘러보기 파노라마를 같이 굽는다
 #: gallery 3: 파노라마에만 앞벽을 세운다 (열린 앞면으로 바깥이 보이지 않게)
 SHELL_VERSION = {"gallery": 3}
 PANO_SHELLS = {"gallery"}
@@ -92,8 +92,7 @@ class WorldRenderer:
     def info(self, room: str) -> Optional[Dict[str, Any]]:
         """렌더가 있으면 TV 가 쓸 주소(시간대별)와 그때의 배치.
         아이 전시실은 그림을 뺀 공용 배경(kidbase)을 쓰고, 걸린 그림은 TV 가 실시간으로 그린다."""
-        kid = self.world.kid_of(room)
-        if kid is not None:
+        if self.world.live_arts(room):           # 전시장·아이 전시실: 빈 전시실 배경을 같이 쓴다
             shared = self.info("kidbase")
             if not shared:
                 return None
@@ -170,6 +169,8 @@ class WorldRenderer:
         if not self.available:
             return False
         self.world.check_room(room)
+        if self.world.live_arts(room):           # 그림만 거는 방은 따로 굽지 않는다: 같이 쓰는 빈 전시실 배경을
+            room = "kidbase"
         if room not in self.pending:           # 그 방을 렌더 중이면 끝난 뒤 한 번 더
             self.pending.append(room)
         if not self._task or self._task.done():

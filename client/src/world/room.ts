@@ -6,7 +6,7 @@ import {
 } from "./types";
 import { bgOf, composeArt, padOf } from "./artimage";
 import { buildFrame, frameReach, frameStyle } from "./frames";
-import { buildLamp, lampColor, lampOf } from "./lamp";
+import { buildGlow, fxOf, pictureMaterial, setPictureFx, type ArtFx } from "./artfx";
 
 /**
  * TV 가 그리는 방: 방 껍데기(벽·바닥·천장) + 배치된 가구 + 걸린 그림.
@@ -14,10 +14,8 @@ import { buildLamp, lampColor, lampOf } from "./lamp";
  */
 
 type V3 = [number, number, number];
-/** 전시장 천장의 레일 조명 (방 뼈대 glb 에 들어 있다). 작품마다 핀 조명을 따로 달면서 뺐다 (world/lamp.ts) */
+/** 전시장 천장의 레일 조명 (방 뼈대 glb 에 들어 있다). 작품을 돋보이게 하는 일은 작품별 하이라이트가 한다 (world/artfx.ts) */
 const SHELL_HIDE = /^Ceiling(Track|Spot)/;
-/** 핀 조명을 받은 그림이 스스로 밝아지는 정도 (조도 1 일 때) */
-const LAMP_GLOW = 0.55;
 
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
@@ -126,12 +124,20 @@ export class RoomModel {
   get U(): number { return this.room?.unit_per_m ?? 2.2222; }
 
   private exposure = 1;
-  /** 방 밝기(노출)가 바뀌었다: 핀 조명을 받은 그림은 방이 어두워져도 같은 밝기로 빛나게 맞춘다 (Stage.setLight) */
+  /** 방 밝기가 바뀌었다: 그림면은 조명을 받지 않는 재질이라 직접 알려 준다 (하이라이트를 켠 그림은 그대로 밝다, Stage.setLight) */
   setExposure(v: number): void {
     this.exposure = Math.max(0.05, v);
     this.group.traverse((o) => {
-      const mat = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-      if (mat && !Array.isArray(mat) && mat.userData?.glow) mat.emissiveIntensity = mat.userData.glow / this.exposure;
+      const mat = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
+      if (o.name === "art-picture" && mat?.uniforms) setPictureFx(mat, mat.userData.fx as ArtFx, this.exposure);
+    });
+  }
+
+  /** 걸린 그림 하나의 필터를 바로 바꾼다 (전시실 꾸미기에서 막대를 움직이는 동안. 벽 빛은 다시 지어야 바뀐다) */
+  setArtFx(id: string, fx: ArtFx): void {
+    this.group.traverse((o) => {
+      if (o.name !== "art-picture" || o.parent?.parent?.userData.art !== id) return;
+      setPictureFx((o as THREE.Mesh).material as THREE.ShaderMaterial, fx, this.exposure);
     });
   }
 
@@ -243,30 +249,21 @@ export class RoomModel {
     const g = new THREE.Group();
     g.userData.art = a.id;
     const w = a.width * U, h = w * a.aspect;
-    // 그림과 액자는 'art-core' 에 모은다 (전시실 꾸미기가 고른 그림의 테두리를 여기에 맞춘다. 핀 조명은 빼고)
+    // 그림과 액자는 'art-core' 에 모은다 (전시실 꾸미기가 고른 그림의 테두리를 여기에 맞춘다. 그림자·하이라이트 빛은 빼고)
     const core = new THREE.Group();
     core.name = "art-core";
     const frame = buildFrame(w, h, frameStyle(a.frame), MM);
     core.add(...frame.meshes);
     g.add(frame.shade);
-    const lamp = m.host === null && !m.spec.ledge ? lampOf(a.lamp) : null;   // 핀 조명은 방의 벽에 건 그림만
-    const mat = new THREE.MeshStandardMaterial({ map: texture(a), roughness: 0.6 });
-    if (lamp?.on && lamp.power > 0) {
-      // 빛을 받은 만큼 그림이 스스로 밝아진다 (방 밝기를 낮춰도 그림은 살아 있게, setExposure 가 맞춘다)
-      mat.emissive = lampColor(lamp.tone);
-      mat.emissiveMap = mat.map;
-      mat.userData.glow = LAMP_GLOW * lamp.power;
-      mat.emissiveIntensity = mat.userData.glow / this.exposure;
-    }
-    const img = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    // 그림면: 방 조명을 받지 않고 올린 색 그대로. 작품별 필터와 하이라이트는 world/artfx.ts
+    const fx = fxOf(a.fx);
+    const img = new THREE.Mesh(new THREE.PlaneGeometry(w, h), pictureMaterial(texture(a), fx, this.exposure));
+    img.name = "art-picture";
     img.position.z = frame.pictureZ + MM(1);
     core.add(img);
     g.add(core);
-    if (lamp) {
-      const drop = m.spec.height - (c[0] - m.o[0]) * m.up[0] - (c[1] - m.o[1]) * m.up[1] - (c[2] - m.o[2]) * m.up[2];
-      const fixture = buildLamp(lamp, drop, MM);
-      if (fixture) g.add(fixture);
-    }
+    const glow = buildGlow(frame.outerW, frame.outerH, fx, MM);
+    if (glow) g.add(glow);
     g.matrixAutoUpdate = false;
     g.matrix.copy(basis(m, c));
     return g;
