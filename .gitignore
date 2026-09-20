@@ -13,6 +13,8 @@ client/dist/
 data/kids.json
 data/settings.json
 data/spotify_auth.json
+data/users.json
+data/sessions.json
 data/schedule.json
 data/memory.json*
 data/pokedex.json

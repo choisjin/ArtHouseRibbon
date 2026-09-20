@@ -15,7 +15,8 @@
   맥미니 자신(localhost·랜 IP)에서 열면 예전처럼 바로 TV 화면이다.
 - 공유기 포트를 열지 않는다 (맥미니가 밖으로 연결을 건다).
 - 인증서는 Cloudflare 가 준다. 맥미니에서 인증서를 받거나 갱신할 일이 없다.
-- **Cloudflare Access** 로 "허락한 사람만" 들어오게 막는다. 서버 자체에는 아직 로그인이 없으니 이 문을 꼭 세운다.
+- 서버에 **로그인·회원가입**이 있다 (2026-09-20, `server/ribbon/auth.py`). 첫 가입자가 관리자이고, 관리 화면은 관리자만 들어간다.
+  Cloudflare **Access** 로 한 겹 더 막으면(이메일 허용 목록) 로그인 화면 자체가 밖에 노출되지 않는다. 둘 다 쓰는 것을 권한다.
 
 ## 1. 맥미니에서 터널 만들기
 
@@ -72,7 +73,7 @@ sudo cp ~/.cloudflared/config.yml ~/.cloudflared/<터널ID>.json /etc/cloudflare
 sudo cloudflared service install
 ```
 
-## 3. Cloudflare Access 로 문 잠그기 (꼭)
+## 3. Cloudflare Access 로 한 겹 더 (권장)
 
 Cloudflare 대시보드 → Zero Trust → Access → Applications → Add an application → **Self-hosted**
 
@@ -80,7 +81,7 @@ Cloudflare 대시보드 → Zero Trust → Access → Applications → Add an ap
 - Policy: Allow → **Emails** → 쓸 사람 이메일 (본인, 선생님). 로그인은 이메일로 오는 숫자 코드(OTP)나 구글 계정.
 - Session duration 을 1개월쯤으로 두면 폰에서 매번 로그인하지 않는다.
 
-무료 요금제로 50명까지 된다. 이걸 켜지 않으면 주소를 아는 누구나 관리자 페이지와 아이들 사진에 들어올 수 있다.
+무료 요금제로 50명까지 된다. 켜지 않아도 서버 로그인이 막아 주지만, 켜 두면 로그인 화면조차 밖에 보이지 않는다.
 
 ## 4. 리본 서버 쪽 설정
 
@@ -107,5 +108,5 @@ TV·관리자 화면은 맥미니에서 `http://localhost:8765` 로 그대로 �
 - **WebSocket** 은 Cloudflare Tunnel 이 그대로 통과시킨다. 주소가 https 면 클라이언트가 알아서 `wss://` 로 붙는다.
 - 사진 업로드는 Cloudflare 무료 요금제의 100MB 제한에 걸리지 않는다 (폰 사진을 긴 변 2000px 로 줄여 보낸다, `src/snap/index.ts`).
 - Access 를 켜면 Spotify 에서 돌아오는 주소도 Access 를 거치는데, 이미 로그인한 브라우저라 그대로 통과한다.
-- 아이 얼굴·그림이 오가므로 Access 없이는 절대 열어 두지 않는다.
+- 아이 얼굴·그림이 오간다. 서버 로그인(첫 가입자가 관리자)을 먼저 만들어 두고, Access 도 걸어 두는 것이 안전하다.
 - 터널이 도는지 보기: `cloudflared tunnel info ribbon`, 로그: `sudo tail -f /Library/Logs/com.cloudflare.cloudflared.err.log`

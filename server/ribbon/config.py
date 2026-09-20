@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     settings_file: str = "../data/settings.json"
     schedule_file: str = "../data/schedule.json"   # 시간표의 하루짜리 변경 (schedule.py)
     memory_file: str = "../data/memory.json"       # 리본이가 기억하는 약속 (memory.py)
+    users_file: str = "../data/users.json"          # 로그인 계정 (auth.py, git 제외)
+    sessions_file: str = "../data/sessions.json"    # 로그인 세션 (auth.py, git 제외)
     music_auth_file: str = "../data/spotify_auth.json"  # Spotify 앱 정보·토큰 (music.py, git 제외)
     pokedex_file: str = "../data/pokedex.json"     # 포켓몬 도감 (tools/fetch_pokedex.py 로 받는다)
     world_dir: str = "../data/world"          # 방별 가구 배치 (world_store.py)
@@ -79,6 +81,12 @@ class Settings(BaseSettings):
 
     def settings_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.settings_file).resolve()
+
+    def users_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.users_file).resolve()
+
+    def sessions_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.sessions_file).resolve()
 
     def music_auth_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.music_auth_file).resolve()

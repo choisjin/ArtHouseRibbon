@@ -1,5 +1,6 @@
 import type { MicChoice } from "../audio/mic";
 import type { DevicesMsg, LLMConfig, ServerMsg } from "../protocol";
+import { mountAccounts } from "./accounts";
 import { mountMusic } from "./music";
 import { type AdminCtx, api, esc } from "./shared";
 
@@ -15,6 +16,7 @@ import { type AdminCtx, api, esc } from "./shared";
  *                 .env 의 RIBBON_LLM_* 는 처음 한 번 이 칸을 채우는 데만 쓴다
  *   음악        : Spotify (admin/music.ts): 플레이어 · 내 목록 관리 · 노래 검색 · 계정 설정 모달
  *                 (서버 music.py · music_intent.py, 재생 화면 music/player.ts)
+ *   계정        : 가입한 사람 목록·권한(admin/member)·내 비밀번호 (admin/accounts.ts, 서버 auth.py)
  *   화면 스타일  : 라이트 · 다크 · 기기 설정 따르기 (이 기기에만 저장)
  */
 type ThemePref = "light" | "dark" | "system";
@@ -45,7 +47,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   ];
   el.innerHTML = `
     <div class="subtabs seg many">
-      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="theme">🎨 화면</button>
+      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="accounts">👤 계정</button><button data-sub="theme">🎨 화면</button>
     </div>
     <div class="settings">
       <section class="card" data-subpanel="mic" hidden>
@@ -100,6 +102,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
         <p class="hint">저장하면 서버를 다시 켜지 않아도 리본이의 다음 대답부터 바뀝니다. 맥미니에서는 MLX 를 씁니다.</p>
       </section>
       <div class="music-tab" data-subpanel="music" hidden></div>
+      <div class="music-tab" data-subpanel="accounts" hidden></div>
       <section class="card" data-subpanel="theme" hidden>
         <h2>🎨 화면 스타일</h2>
         <div class="theme-options">
@@ -212,6 +215,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   })();
 
   // ---- 음악 (Spotify): 플레이어·목록·검색·계정 모달은 admin/music.ts 가 전부 그린다 ----
+  const accounts = mountAccounts(el.querySelector('[data-subpanel=accounts]') as HTMLElement, ctx);
   const music = mountMusic(el.querySelector('[data-subpanel=music]') as HTMLElement, ctx);
 
   // ---- 마이크 (이 컴퓨터) ----
@@ -384,7 +388,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   ctx.socket.sendJson({ type: "devices.get" });
 
   // ---- 작은 탭 (마지막으로 본 것을 기억, 주소는 #settings/mic 처럼) ----
-  const SUBS = ["mic", "cam", "output", "llm", "music", "theme"];
+  const SUBS = ["mic", "cam", "output", "llm", "music", "accounts", "theme"];
   const SUB_KEY = "ribbon.admin.settings.sub";
   function show(sub?: string): void {
     let want = sub;
@@ -395,6 +399,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     try { localStorage.setItem(SUB_KEY, want); } catch { /* 저장소 없음 */ }
     el.querySelectorAll<HTMLElement>("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== want; });
     if (want === "music") music.show();               // 음악 탭을 열 때마다 새로 읽는다
+    if (want === "accounts") accounts.show();
     el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === want));
   }
   el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => { b.onclick = () => ctx.go(`settings/${b.dataset.sub}`); });

@@ -20,12 +20,19 @@ const local = ["localhost", "127.0.0.1", "::1"].includes(location.hostname) || /
 // mode 가 없으면: 맥미니에서 열었으면 TV, 도메인(폰 등)으로 들어왔으면 무엇을 할지 고르는 메뉴
 const mode = (params.get("mode") ?? (local ? "tv" : "home")) as ClientRole;
 
+/** 관리 화면은 관리자만. 나머지 화면도 로그인한 사람만 (아무도 가입 전이면 그냥 열린다, auth.py) */
+const NEEDS_ADMIN: Record<string, string> = {
+  admin: "관리자", editor: "맵 편집기", art: "전시실 꾸미기", debug: "디버그",
+};
+
 async function boot(): Promise<void> {
   if (mode === "mic") {
     // 마이크 설정·받기는 관리자 설정 탭으로 옮겼다 (예전 주소·start_ribbon 설정을 위해 남겨 둔다)
     location.replace("/?mode=admin#settings");
     return;
   }
+  const { requireLogin } = await import("./auth/index");
+  await requireLogin({ need: NEEDS_ADMIN[mode] ? "admin" : "member", what: NEEDS_ADMIN[mode] });
   if (mode === "editor") {
     const { startEditor } = await import("./editor/index");
     await startEditor();

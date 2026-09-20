@@ -131,6 +131,15 @@
   `server/.env` 에 `RIBBON_PUBLIC_URL=https://ribbon.arthouseribbon.com` 을 넣으면 QR 주소와 **Spotify Redirect URI** 가 그 주소가 된다
   (Spotify 앱 설정에도 같은 주소를 넣어야 한다). `start_ribbon.command` 는 `--proxy-headers` 로 띄운다.
 
+- **로그인 · 회원가입 · 권한** (2026-09-20 요청, `server/ribbon/auth.py` · `client/src/auth/index.ts`):
+  `data/users.json`·`data/sessions.json`(둘 다 git 제외). 비밀번호는 pbkdf2-sha256 20만 번, 세션은 쿠키
+  `ribbon_session`(60일, httponly). **첫 가입자가 자동으로 관리자**, 그 뒤는 `member`.
+  서버 미들웨어가 막는다 (`auth.permitted`): 로그인 전 = 화면 파일과 `/api/auth/*` 만, member = 보기(state·kids·config·
+  world·artworks·pokemon·game·tts/voices)와 작품 보내기(POST /api/artworks), **그 밖의 모든 `/api/` 는 admin 만**. WS 도 로그인 필요.
+  아무도 가입하지 않았으면 전부 열려 있다 (첫 관리자를 만들 수 있게). 화면 쪽은 `main.ts` 가 열기 전에 `requireLogin()`,
+  관리자·맵 편집기·전시실 꾸미기·디버그는 admin 이어야 열린다. 관리자 설정 → **👤 계정** 탭에서 권한 주기·지우기·내 비밀번호.
+  마지막 관리자는 내리거나 지울 수 없다. 맥미니 TV·관리자 화면도 한 번은 로그인해야 한다 (쿠키 60일).
+
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**
   (아이가 물을 때만 답, 가끔 한 번만 되묻기), 화제 바꾸지 않기, 퀴즈·학습은 아이가 원할 때만.

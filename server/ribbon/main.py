@@ -12,13 +12,14 @@ import json
 import logging
 import mimetypes
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from . import auth as auth_mod
 from .audio import recorder
 from .audio.bargein import BargeIn
 from .audio.button import ButtonCall, DjiButton
@@ -92,6 +93,7 @@ store = ConfigStore(settings.settings_path())
 memory = MemoryStore(settings.memory_path(), store.config.ribbon.memory_max_per_kid)
 pokedex = Pokedex(settings.pokedex_path(), settings.pokedex_path().parent / "pokemon_looks_cache.json")
 schedule = sched.ScheduleStore(settings.schedule_path())
+auth = auth_mod.AuthStore(settings.users_path(), settings.sessions_path())
 spotify = SpotifyAccount(settings.music_auth_path())
 music = MusicControl(spotify, store)
 spotify.market = store.config.music.market   # 어느 나라 카탈로그로 찾을지 (제목 언어)
@@ -161,6 +163,129 @@ app = FastAPI(title="Ribbon", lifespan=lifespan)
 @app.get("/api/state")
 async def api_state():
     return JSONResponse(dialogue.snapshot().model_dump())
+
+
+# ---------- 로그인 · 회원가입 · 권한 (auth.py) ----------
+# 아무도 가입하지 않았으면 전부 열려 있다 (첫 가입자가 관리자가 된다).
+# 가입한 사람이 생기면: 아래 MEMBER_* 는 로그인한 사람, 나머지 /api/ 는 관리자만.
+
+def _session_user(request: Request) -> Optional[Dict[str, Any]]:
+    return auth.user_for(request.cookies.get(auth_mod.COOKIE))
+
+
+def _allowed(request: Request, user: Optional[Dict[str, Any]]) -> bool:
+    if auth.empty:
+        return True                                   # 아직 아무도 가입하지 않았다 (첫 가입자가 관리자)
+    return auth_mod.permitted(request.url.path, request.method, user["role"] if user else None)
+
+
+@app.middleware("http")
+async def auth_guard(request: Request, call_next):
+    user = _session_user(request)
+    request.state.user = user
+    if not _allowed(request, user):
+        return JSONResponse({"detail": "로그인이 필요합니다" if user is None else "관리자만 쓸 수 있습니다"},
+                            status_code=401 if user is None else 403)
+    return await call_next(request)
+
+
+def _set_cookie(response: JSONResponse, token: str, request: Request) -> None:
+    secure = request.url.scheme == "https" or settings.public_url.startswith("https")
+    response.set_cookie(auth_mod.COOKIE, token, max_age=auth_mod.SESSION_DAYS * 86400,
+                        httponly=True, samesite="lax", secure=secure, path="/")
+
+
+def _require_admin(request: Request) -> Dict[str, Any]:
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(401, "로그인이 필요합니다")
+    if user["role"] != "admin":
+        raise HTTPException(403, "관리자만 쓸 수 있습니다")
+    return user
+
+
+@app.get("/api/auth/me")
+async def api_auth_me(request: Request):
+    """로그인 상태. needs_setup 이면 아직 아무도 없으니 첫 가입자가 관리자가 된다"""
+    user = getattr(request.state, "user", None)
+    return JSONResponse({"user": auth.public(user) if user else None, "needs_setup": auth.empty})
+
+
+@app.post("/api/auth/signup")
+async def api_auth_signup(request: Request, data: dict = Body(...)):
+    """회원가입. 첫 사람은 관리자, 그 뒤는 member (관리자가 올려 준다)"""
+    try:
+        user = auth.signup(str(data.get("email") or ""), str(data.get("password") or ""),
+                           str(data.get("name") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    res = JSONResponse({"user": auth.public(user)})
+    _set_cookie(res, auth.start_session(user), request)
+    return res
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(request: Request, data: dict = Body(...)):
+    try:
+        user = auth.login(str(data.get("email") or ""), str(data.get("password") or ""))
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+    log.info("로그인: %s (%s)", user["email"], user["role"])
+    res = JSONResponse({"user": auth.public(user)})
+    _set_cookie(res, auth.start_session(user), request)
+    return res
+
+
+@app.post("/api/auth/logout")
+async def api_auth_logout(request: Request):
+    auth.end_session(request.cookies.get(auth_mod.COOKIE))
+    res = JSONResponse({"ok": True})
+    res.delete_cookie(auth_mod.COOKIE, path="/")
+    return res
+
+
+@app.post("/api/auth/password")
+async def api_auth_password(request: Request, data: dict = Body(...)):
+    """내 비밀번호 바꾸기 (지금 비밀번호를 한 번 더 확인한다)"""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(401, "로그인이 필요합니다")
+    try:
+        auth.login(user["email"], str(data.get("current") or ""))
+        auth.set_password(user["id"], str(data.get("password") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/auth/users")
+async def api_auth_users(request: Request):
+    _require_admin(request)
+    return JSONResponse({"users": auth.list_users()})
+
+
+@app.put("/api/auth/users/{uid}")
+async def api_auth_user_role(uid: str, request: Request, data: dict = Body(...)):
+    """권한 주기·거두기 (admin | member)"""
+    me = _require_admin(request)
+    try:
+        user = auth.set_role(uid, str(data.get("role") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    log.info("권한 바꿈: %s -> %s (%s 가)", user["email"], user["role"], me["email"])
+    return JSONResponse({"user": auth.public(user)})
+
+
+@app.delete("/api/auth/users/{uid}")
+async def api_auth_user_delete(uid: str, request: Request):
+    me = _require_admin(request)
+    if uid == me["id"]:
+        raise HTTPException(400, "자기 계정은 지울 수 없습니다")
+    try:
+        auth.remove(uid)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/net")
@@ -1060,6 +1185,9 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    if not auth.empty and auth.user_for(ws.cookies.get(auth_mod.COOKIE)) is None:
+        await ws.close(code=4401)          # 로그인하지 않았다 (화면이 로그인 창을 띄운다)
+        return
     await ws.accept()
     hub.clients[ws] = "unknown"
     try:
