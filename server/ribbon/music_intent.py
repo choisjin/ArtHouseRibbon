@@ -173,12 +173,26 @@ class MusicControl:
             self.listing = None
             self._view_changed = True
 
+    async def refresh_list(self, playlist_id: str, tracks: List[Dict[str, Any]]) -> bool:
+        """관리자 페이지에서 그 목록을 고쳤다: TV 에 띄워 둔 번호 목록도 새 곡들로 (바꿨으면 True)"""
+        lst = self.listing
+        if not lst or lst["playlist"]["id"] != playlist_id:
+            return False
+        lst["tracks"] = tracks
+        lst["at"] = time.time()
+        if not tracks:
+            self.close_list()
+        elif lst["page"] * self.PAGE >= len(tracks):
+            lst["page"] = max(0, -(-len(tracks) // self.PAGE) - 1)
+        self._view_changed = True
+        return True
+
     def _page_tracks(self) -> List[Dict[str, Any]]:
         lst = self.listing
         return lst["tracks"][lst["page"] * self.PAGE: lst["page"] * self.PAGE + self.PAGE] if lst else []
 
     async def _do_show(self, it: Intent) -> List[str]:
-        pl = await self._default_list()
+        pl = await self.default_list()
         tracks = await self.account.playlist_tracks(pl["id"])
         if not tracks:
             self.close_list()
@@ -271,7 +285,7 @@ class MusicControl:
             log.warning("음악 조작 실패 (%s): %s", intent.kind, e)
             return ["지금은 음악을 틀 수가 없어. 선생님께 말해 줘."]
 
-    async def _default_list(self) -> Dict[str, str]:
+    async def default_list(self) -> Dict[str, str]:
         cfg = self.store.config.music
         if cfg.playlist_id:
             return {"id": cfg.playlist_id, "uri": f"spotify:playlist:{cfg.playlist_id}", "title": cfg.playlist_title}
@@ -288,7 +302,7 @@ class MusicControl:
         return [f"{found[0]['title']}, 틀어 줄게!"]
 
     async def _do_play_list(self, it: Intent) -> List[str]:
-        pl = await self._default_list()
+        pl = await self.default_list()
         await self.account.play(self.device(), context_uri=pl["uri"])
         return [f"{pl['title'] or '내 목록'}, 틀어 줄게!"]
 
@@ -346,7 +360,7 @@ class MusicControl:
         t = await self._current()
         if not t:
             return ["지금 나오는 노래가 없어."]
-        pl = await self._default_list()
+        pl = await self.default_list()
         if any(x["uri"] == t["uri"] for x in await self.account.playlist_tracks(pl["id"])):
             return ["그 노래는 벌써 목록에 있어."]
         await self.account.add(pl["id"], [t["uri"]])
@@ -357,7 +371,7 @@ class MusicControl:
         t = await self._current()
         if not t:
             return ["지금 나오는 노래가 없어."]
-        pl = await self._default_list()
+        pl = await self.default_list()
         if not any(x["uri"] == t["uri"] for x in await self.account.playlist_tracks(pl["id"])):
             return ["그 노래는 목록에 없어."]
         await self.account.remove(pl["id"], [t["uri"]])

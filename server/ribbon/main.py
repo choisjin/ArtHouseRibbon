@@ -445,6 +445,64 @@ async def api_music_playlist_create(data: dict = Body(...)):
     return JSONResponse({"ok": True, "playlist": pl})
 
 
+@app.get("/api/music/playlist")
+async def api_music_playlist(id: str = ""):
+    """관리자 '목록' 탭: 그 목록의 곡들 (id 가 없으면 설정에서 고른 내 목록)"""
+    try:
+        pid = id or (await music.default_list())["id"]
+        return JSONResponse({"id": pid, "tracks": await spotify.playlist_tracks(pid)})
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+
+
+@app.post("/api/music/playlist/edit")
+async def api_music_playlist_edit(data: dict = Body(...)):
+    """목록 고치기: {action: add|remove|move, id, uri, from, to}. 목록을 보여 주던 화면도 새로 고친다"""
+    action, pid = str(data.get("action") or ""), str(data.get("id") or "")
+    try:
+        if not pid:
+            pid = (await music.default_list())["id"]
+        if action == "add":
+            await spotify.add(pid, [str(data["uri"])])
+        elif action == "remove":
+            await spotify.remove(pid, [str(data["uri"])])
+        elif action == "move":
+            await spotify.move(pid, int(data["from"]), int(data["to"]))
+        else:
+            raise HTTPException(400, f"모르는 동작입니다: {action}")
+        tracks = await spotify.playlist_tracks(pid)
+    except KeyError as e:
+        raise HTTPException(400, f"값이 빠졌습니다: {e}")
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+    if await music.refresh_list(pid, tracks):        # TV 에 번호 목록을 띄워 둔 중이면 같이 바뀐다
+        await hub.broadcast({"type": "music.list", "view": music.list_view()})
+    return JSONResponse({"id": pid, "tracks": tracks})
+
+
+@app.get("/api/music/search")
+async def api_music_search(q: str, limit: int = 10):
+    """관리자 '목록' 탭의 노래 검색 (Spotify 개발 모드는 한 번에 10곡까지)"""
+    try:
+        return JSONResponse({"tracks": await spotify.search(q, limit)})
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+
+
+@app.post("/api/music/play")
+async def api_music_play(data: dict = Body(...)):
+    """관리자 화면에서 눌러 듣기: {uri} 한 곡, 또는 {playlist_id} 목록 전체. 재생할 곳은 설정을 따른다"""
+    try:
+        if data.get("uri"):
+            await spotify.play(music.device(), uris=[str(data["uri"])])
+        else:
+            pid = str(data.get("playlist_id") or "") or (await music.default_list())["id"]
+            await spotify.play(music.device(), context_uri=f"spotify:playlist:{pid}")
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/music/token")
 async def api_music_token():
     """재생 화면(Web Playback SDK)이 쓰는 접근 토큰 (1시간짜리, 필요할 때마다 다시 받는다)"""

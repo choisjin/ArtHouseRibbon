@@ -44,7 +44,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   ];
   el.innerHTML = `
     <div class="subtabs seg many">
-      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="theme">🎨 화면</button>
+      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="playlist">📃 목록</button><button data-sub="theme">🎨 화면</button>
     </div>
     <div class="settings">
       <section class="card" data-subpanel="mic" hidden>
@@ -131,6 +131,22 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
           <label>시험 <input name="try" placeholder="피카츄 노래 틀어줘" spellcheck="false" /></label>
           <div class="actions"><button data-act="try">리본이에게 말하듯 보내기</button></div>
           <p class="hint" data-role="result"></p>
+        </div>
+      </section>
+      <section class="card" data-subpanel="playlist" hidden>
+        <h2>📃 목록 <small class="hint">곡 넣기·빼기·순서, 검색해서 추가</small></h2>
+        <div id="playlist" class="agent">
+          <div class="row"><label class="grow">목록 <select name="which"></select></label>
+            <button data-act="pl-play" title="설정의 '재생할 곳'에서 틉니다">▶ 목록 틀기</button>
+            <button data-act="pl-reload">다시 읽기</button></div>
+          <p class="hint" data-role="pl-msg"></p>
+          <div class="tracks" data-role="tracks"></div>
+          <hr />
+          <h3>🔎 노래 찾아서 넣기</h3>
+          <div class="row"><input name="q" placeholder="노래 제목이나 가수 (예: 상어가족)" spellcheck="false" class="grow" />
+            <button data-act="search" class="primary">검색</button></div>
+          <p class="hint">Spotify 는 한 번에 10곡까지 찾아 줍니다.</p>
+          <div class="tracks" data-role="results"></div>
         </div>
       </section>
       <section class="card" data-subpanel="theme" hidden>
@@ -379,6 +395,106 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   // 음악 항목을 보는 동안만 장치 준비·계정 상태를 새로 본다
   setInterval(() => { if (musicBox.offsetParent !== null) void loadMusic(); }, 5000);
 
+  // ---- 목록 관리 (Spotify): 곡 빼기·순서·검색해서 넣기 ----
+  const plBox = el.querySelector("#playlist") as HTMLElement;
+  const pq = <T extends Element>(s: string) => plBox.querySelector(s) as T;
+  const plWhich = pq<HTMLSelectElement>("[name=which]");
+  const plMsg = pq<HTMLElement>("[data-role=pl-msg]");
+  const plRows = pq<HTMLElement>("[data-role=tracks]");
+  const plResults = pq<HTMLElement>("[data-role=results]");
+  const plQuery = pq<HTMLInputElement>("[name=q]");
+  type Track = { uri: string; title: string; artists: string; album_art: string };
+  let plTracks: Track[] = [];
+  let plListed = false;
+
+  function trackRow(t: Track, n: number | null, buttons: string): string {
+    return `<div class="track" data-uri="${esc(t.uri)}">
+      ${n === null ? "" : `<b class="t-n">${n}</b>`}
+      ${t.album_art ? `<img src="${esc(t.album_art)}" alt="" />` : `<div class="t-art"></div>`}
+      <div class="t-text"><b>${esc(t.title)}</b><span>${esc(t.artists)}</span></div>
+      <div class="t-btns">${buttons}</div></div>`;
+  }
+  function renderTracks(): void {
+    plRows.innerHTML = !plTracks.length ? `<p class="hint">이 목록에는 아직 노래가 없습니다. 아래에서 찾아 넣어 보세요.</p>`
+      : plTracks.map((t, i) => trackRow(t, i + 1,
+        `<button data-act="play" title="들어보기">▶</button>
+         <button data-act="up" ${i === 0 ? "disabled" : ""} title="위로">▲</button>
+         <button data-act="down" ${i === plTracks.length - 1 ? "disabled" : ""} title="아래로">▼</button>
+         <button data-act="del" title="목록에서 빼기">✕</button>`)).join("");
+  }
+  async function plLoadLists(): Promise<void> {
+    type P = { id: string; title: string; count: number | null; mine: boolean };
+    const r = await api<{ playlists: P[] }>("GET", "/api/music/playlists");
+    const mine = r.playlists.filter((p) => p.mine);
+    plWhich.innerHTML = mine.map((p) => `<option value="${esc(p.id)}">${esc(p.title)}${p.count != null ? ` · ${p.count}곡` : ""}</option>`).join("");
+    const want = mCfg?.playlist_id;
+    if (want && mine.some((p) => p.id === want)) plWhich.value = want;
+    plListed = true;
+  }
+  async function plLoad(): Promise<void> {
+    if (!mStatus?.connected) { plMsg.innerHTML = `<span class="warn-text">먼저 🎵 음악 탭에서 Spotify 를 연결하세요.</span>`; return; }
+    plMsg.textContent = "읽는 중…";
+    try {
+      if (!plListed) await plLoadLists();
+      const r = await api<{ id: string; tracks: Track[] }>("GET", `/api/music/playlist?id=${encodeURIComponent(plWhich.value)}`);
+      if (!plWhich.value) plWhich.value = r.id;
+      plTracks = r.tracks;
+      plMsg.textContent = `${plTracks.length}곡`;
+      renderTracks();
+    } catch (e) { plMsg.innerHTML = `<span class="warn-text">${esc(String(e))}</span>`; }
+  }
+  async function plEdit(body: object, done: string): Promise<void> {
+    try {
+      const r = await api<{ tracks: Track[] }>("POST", "/api/music/playlist/edit", { id: plWhich.value, ...body });
+      plTracks = r.tracks;
+      plMsg.textContent = `${plTracks.length}곡`;
+      renderTracks();
+      ctx.msg(done);
+    } catch (e) { ctx.msg(`${e}`, true); }
+  }
+  async function plPlay(uri?: string): Promise<void> {
+    try {
+      await api("POST", "/api/music/play", uri ? { uri } : { playlist_id: plWhich.value });
+      ctx.msg(`${mCfg?.output === "tv" ? "TV" : "이 컴퓨터"}에서 틉니다`);
+    } catch (e) { ctx.msg(`${e}`, true); }
+  }
+  plRows.onclick = (ev) => {
+    const btn = (ev.target as HTMLElement).closest("button");
+    const row = (ev.target as HTMLElement).closest(".track") as HTMLElement | null;
+    if (!btn || !row) return;
+    const i = [...plRows.querySelectorAll(".track")].indexOf(row);
+    const t = plTracks[i];
+    if (btn.dataset.act === "play") void plPlay(t.uri);
+    if (btn.dataset.act === "del" && confirm(`"${t.title}" 을(를) 목록에서 뺄까요?`)) void plEdit({ action: "remove", uri: t.uri }, `"${t.title}" 뺐습니다`);
+    if (btn.dataset.act === "up") void plEdit({ action: "move", from: i, to: i - 1 }, "위로 옮겼습니다");
+    if (btn.dataset.act === "down") void plEdit({ action: "move", from: i, to: i + 1 }, "아래로 옮겼습니다");
+  };
+  plResults.onclick = (ev) => {
+    const btn = (ev.target as HTMLElement).closest("button");
+    const row = (ev.target as HTMLElement).closest(".track") as HTMLElement | null;
+    if (!btn || !row) return;
+    const uri = row.dataset.uri!;
+    const title = row.querySelector("b")?.textContent ?? "";
+    if (btn.dataset.act === "play") void plPlay(uri);
+    if (btn.dataset.act === "add") void plEdit({ action: "add", uri }, `"${title}" 넣었습니다`);
+  };
+  async function plSearch(): Promise<void> {
+    const q = plQuery.value.trim();
+    if (!q) return;
+    plResults.innerHTML = `<p class="hint">찾는 중…</p>`;
+    try {
+      const r = await api<{ tracks: Track[] }>("GET", `/api/music/search?q=${encodeURIComponent(q)}`);
+      plResults.innerHTML = r.tracks.length
+        ? r.tracks.map((t) => trackRow(t, null, `<button data-act="play" title="들어보기">▶</button><button data-act="add" class="primary">＋ 넣기</button>`)).join("")
+        : `<p class="hint">찾은 노래가 없습니다.</p>`;
+    } catch (e) { plResults.innerHTML = `<p class="hint warn-text">${esc(String(e))}</p>`; }
+  }
+  pq<HTMLButtonElement>("[data-act=search]").onclick = () => void plSearch();
+  plQuery.onkeydown = (ev) => { if (ev.key === "Enter") void plSearch(); };
+  plWhich.onchange = () => void plLoad();
+  pq<HTMLButtonElement>("[data-act=pl-reload]").onclick = () => { plListed = false; void plLoad(); };
+  pq<HTMLButtonElement>("[data-act=pl-play]").onclick = () => void plPlay();
+
   // ---- 마이크 (이 컴퓨터) ----
   const mic = ctx.mic;
   let micStale = false;          // 고르는 중이라 다시 그리기를 미뤘다
@@ -549,7 +665,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   ctx.socket.sendJson({ type: "devices.get" });
 
   // ---- 작은 탭 (마지막으로 본 것을 기억, 주소는 #settings/mic 처럼) ----
-  const SUBS = ["mic", "cam", "output", "llm", "music", "theme"];
+  const SUBS = ["mic", "cam", "output", "llm", "music", "playlist", "theme"];
   const SUB_KEY = "ribbon.admin.settings.sub";
   function show(sub?: string): void {
     let want = sub;
@@ -559,6 +675,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     }
     try { localStorage.setItem(SUB_KEY, want); } catch { /* 저장소 없음 */ }
     el.querySelectorAll<HTMLElement>("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== want; });
+    if (want === "playlist") void loadMusic().then(plLoad);        // 목록 탭을 열 때마다 새로 읽는다
     el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === want));
   }
   el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => { b.onclick = () => ctx.go(`settings/${b.dataset.sub}`); });

@@ -230,6 +230,12 @@ class SpotifyAccount:
             body["position"] = position
         await self.api("POST", f"/playlists/{playlist_id}/items", body=body)
 
+    async def move(self, playlist_id: str, frm: int, to: int) -> None:
+        """곡 한 개를 frm 자리에서 to 자리로 (0부터). 관리자 페이지의 위·아래 버튼"""
+        insert_before = to if to < frm else to + 1
+        await self.api("PUT", f"/playlists/{playlist_id}/items",
+                       body={"range_start": frm, "insert_before": insert_before, "range_length": 1})
+
     async def remove(self, playlist_id: str, uris: List[str]) -> None:
         await self.api("DELETE", f"/playlists/{playlist_id}/items", body={"items": [{"uri": u} for u in uris]})
 
