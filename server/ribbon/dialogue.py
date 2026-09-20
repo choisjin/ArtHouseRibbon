@@ -36,6 +36,7 @@ Broadcast = Callable[[dict], Awaitable[None]]
 _utt_ids = itertools.count(1)
 # 문장 끝(마침표·물음표·느낌표·줄바꿈)에서만 자른다. 한글 어미에서 자르면 문장 중간이 끊긴다.
 _SENTENCE_END = re.compile(r"(?<=[.!?。！？…])\s+|\n+")
+QUIZ_NEXT_DELAY_S = 2.0        # 포켓몬 맞추기: 정답을 보여 주고 다음 문제로 넘어가기 전 쉬는 시간
 
 
 class DialogueManager:
@@ -362,12 +363,20 @@ class DialogueManager:
     async def _quiz_reply(self, reply, kid: Optional[KidInfo], channel: Optional[int]) -> None:
         if channel is not None:
             self.queue.cancel(channel)                 # 게임은 줄(차례) 없이 한다
-        await self.broadcast({"type": "game", "view": self.quiz.view()})
         kid_id = kid.id if kid else None
-        for i, line in enumerate(reply.lines):
-            await self._say(line, kid_id, final=i == len(reply.lines) - 1)
-        if reply.new_round and self.quiz.mode == "describe" and not self.quiz.answer.get("look"):
-            self._spawn_bg(self._quiz_appearance(self.quiz.answer))   # 생김새 설명이 아직 없는 포켓몬: 그림을 보고 만든다
+        gen = self._stop_gen
+        while True:
+            await self.broadcast({"type": "game", "view": self.quiz.view()})
+            for i, line in enumerate(reply.lines):
+                await self._say(line, kid_id, final=i == len(reply.lines) - 1)
+            if reply.new_round and self.quiz.mode == "describe" and not self.quiz.answer.get("look"):
+                self._spawn_bg(self._quiz_appearance(self.quiz.answer))   # 생김새 설명이 아직 없는 포켓몬: 그림을 보고 만든다
+            if not (reply.auto_next and self.quiz.active):
+                break
+            await asyncio.sleep(QUIZ_NEXT_DELAY_S)     # 정답 그림을 잠깐 보여 주고 다음 문제로
+            if not self.quiz.active or gen != self._stop_gen:
+                break                                  # 그 사이 그만뒀다 (그만할래 · 관리자 중단)
+            reply = self.quiz.next_round()
         if self.quiz.active and not self._button_only():
             await self._set_ribbon("listening", None)  # 답을 기다린다 (버튼 방식이면 버튼을 눌러야 들으니 표시하지 않는다)
         elif self.quiz.active:

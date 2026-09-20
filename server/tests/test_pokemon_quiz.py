@@ -50,13 +50,31 @@ def test_image_hints_count_then_chosung_then_letters(tmp_path):
     assert [b["c"] for b in q.view()["board"]] == ["피", "ㅋ", "ㅊ"]
 
 
-def test_fuzzy_correct_answer_and_again(tmp_path):
+def test_fuzzy_correct_answer_goes_on_to_the_next_question(tmp_path):
     q = quiz(tmp_path)
     q.start("image")
     r = q.handle("피카추야")                         # 음성 인식이 조금 틀려도 정답
     assert r.lines[0] == "딩동댕! 정답은 피카츄야!" and q.view()["answer"] == "피카츄"
-    assert q.handle("응 또 할래").new_round
+    assert r.auto_next and "할래" not in " ".join(r.lines)   # 묻지 않고 (dialogue 가 잠깐 쉬고 다음 문제)
+    nxt = q.next_round()
+    assert nxt.new_round and nxt.lines[0].startswith("다음 문제!") and not q.view()["answer"]
     assert q.handle("그만할래").ended and not q.active
+
+
+def test_stop_while_showing_the_answer(tmp_path):
+    q = quiz(tmp_path)
+    q.start("image")
+    assert q.handle("피카츄").auto_next
+    assert q.phase == "revealed"
+    assert q.handle("이제 그만할래").ended and not q.active   # 정답 보여 주는 사이에도 그만할 수 있다
+
+
+def test_give_up_and_pass_also_continue(tmp_path):
+    q = quiz(tmp_path)
+    q.start("image")
+    assert q.handle("정답 알려줘").auto_next
+    q.next_round()
+    assert q.handle("다음 문제").auto_next
 
 
 def test_peek_reveals_scattered_tiles(tmp_path):
@@ -81,7 +99,9 @@ def test_particles():
     assert iya("리자몽") == "리자몽이야" and iya("피카츄") == "피카츄야"
 
 
-async def test_dialogue_plays_without_llm(tmp_path):
+async def test_dialogue_plays_without_llm(tmp_path, monkeypatch):
+    import ribbon.dialogue as dialogue_mod
+    monkeypatch.setattr(dialogue_mod, "QUIZ_NEXT_DELAY_S", 0.01)   # 다음 문제까지 쉬는 시간 (시험에서는 짧게)
     sent = []
 
     async def broadcast(m):
@@ -108,6 +128,10 @@ async def test_dialogue_plays_without_llm(tmp_path):
     await dm.on_utterance(1, "피카츄!")                  # 다른 아이가 맞혀도 된다
     speaks = [m["text"] for m in sent if m.get("type") == "speak"]
     assert "딩동댕! 정답은 피카츄야!" in speaks
+    # 묻지 않고 다음 문제로 (그만할 때까지). 정답 그림을 잠깐 보여 준 뒤에 낸다
+    assert dm.quiz.phase == "playing" and not dm.quiz.solved
+    speaks = [m["text"] for m in sent if m.get("type") == "speak"]
+    assert speaks[-1].startswith("다음 문제!")
     await dm.on_utterance(1, "그만")
     assert not dm.quiz.active
     assert any(m.get("type") == "game" and m["view"] is None for m in sent)   # TV 게임 화면을 닫는다

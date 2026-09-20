@@ -159,6 +159,7 @@ class Reply:
     ended: bool = False              # 게임이 끝났다
     new_round: bool = False          # 새 문제 (describe 면 생김새 힌트를 만들어 둔다)
     passthrough: bool = False        # 게임과 상관없는 말: 게임을 끝내고 보통 대화로
+    auto_next: bool = False          # 정답을 보여 준 뒤 다음 문제로 (dialogue 가 잠깐 쉬고 next_round 를 부른다)
 
 
 class PokemonQuiz:
@@ -166,7 +167,7 @@ class PokemonQuiz:
         self.dex = pokedex
         self.rng = rng or random.Random()
         self.active = False
-        self.phase = ""              # offer (할까?) | choosing (고르기 화면) | confirm (고른 것 확인) | playing | again
+        self.phase = ""              # offer (할까?) | choosing (고르기 화면) | confirm (고른 것 확인) | playing | revealed
         self.mode = ""
         self.answer: Optional[Dict] = None
         self.hints: List[str] = []   # 남은 힌트 종류
@@ -215,9 +216,13 @@ class PokemonQuiz:
         self.last_at = time.time()
         self.pending = ""
         self.mode = mode
-        r = self._new_round()
+        r = self._new_round(lead="자, 문제!")
         r.lines.insert(0, f"좋아, {MODE_NAME[mode]} 시작!")
         return r
+
+    def next_round(self) -> Reply:
+        """정답을 보여 준 뒤 이어지는 다음 문제 (그만할 때까지 계속, dialogue._quiz_reply 가 부른다)"""
+        return self._new_round(lead="다음 문제!")
 
     def stop(self) -> Reply:
         name = self.answer["name"] if self.answer and self.phase == "playing" and not self.solved else ""
@@ -245,7 +250,7 @@ class PokemonQuiz:
         fresh = [e for e in pool if e["id"] not in self.recent]
         return fresh or pool
 
-    def _new_round(self) -> Reply:
+    def _new_round(self, lead: str = "") -> Reply:
         self.answer = self.rng.choice(self._pool())
         self.recent = (self.recent + [self.answer["id"]])[-15:]
         self.phase = "playing"
@@ -259,7 +264,7 @@ class PokemonQuiz:
             e = self.answer
             look = list(e.get("look") or [])
             genus = e.get("genus") or ""
-            parts = [f"자, 문제! 이 포켓몬은 {_with_rang(e['types'])} 타입이고"
+            parts = [f"이 포켓몬은 {_with_rang(e['types'])} 타입이고"
                      + (f", {genus}{'이라고' if _batchim(genus) else '라고'} 불려." if genus else "이야.")]
             parts += look[:2]
             parts.append("누구일까?")
@@ -276,7 +281,7 @@ class PokemonQuiz:
             self._rest = cells[4:]
             self.hints = ["tiles", "tiles", "tiles", "cho", "tiles", "tiles", "letter", "tiles"] + ["letter"] * n
             first = "조금만 보여 줄게. 이 포켓몬은 누구일까?"
-        return Reply([first], new_round=True)
+        return Reply([f"{lead} {first}".strip()], new_round=True)
 
     # ---------- 아이 말 ----------
     def handle(self, text: str) -> Reply:
@@ -318,17 +323,11 @@ class PokemonQuiz:
             if mode == self.pending or _is_yes(text):
                 return self.start(self.pending)
             return Reply([f"{MODE_NAME[self.pending]} 할까? 좋으면 응 이라고 해 줘."])
-        if self.phase == "again":
-            if _is_no(text) or _has(text, "끝"):
+        if self.phase == "revealed":
+            # 정답을 보여 주고 다음 문제로 넘어가는 잠깐 사이. 그만하자는 말만 받는다
+            if _is_no(text) or _has(text, "그만", "끝", "안할래"):
                 return self.stop()
-            if _is_yes(text):
-                return self._new_round()
-            if detect_mode(text):
-                self.mode = detect_mode(text)
-                return self._new_round()
-            self.active = False
-            self.phase = ""
-            return Reply(ended=True, passthrough=True)            # 다른 이야기: 보통 대화로
+            return Reply()
         # playing
         if _has(text, "그만할래", "그만하자", "그만해", "게임끝", "이제그만", "안할래", "끝낼래") or _compact(text) in ("그만", "끝"):
             return self.stop()
@@ -337,9 +336,7 @@ class PokemonQuiz:
         if _has(text, "정답알려", "답알려", "정답뭐", "답이뭐", "포기", "항복"):
             return self._solved(first=f"정답은 {iya(self.answer['name'])}!")
         if _has(text, "다음문제", "다른거", "다른문제", "넘어가", "패스"):
-            r = self._solved(first=f"정답은 {ieosseo(self.answer['name'])}. 다음 문제!", ask_again=False)
-            nxt = self._new_round()
-            return Reply(r.lines + nxt.lines, new_round=True)
+            return self._solved(first=f"정답은 {ieosseo(self.answer['name'])}!")
         if _has(text, "힌트", "모르겠", "어려워", "몰라", "도와줘", "알려줘"):
             return self._hint(prefix="")
         # 틀리면 아니라고만 한다. 힌트는 아이가 달라고 할 때만 (2026-09-20 요청)
@@ -363,16 +360,15 @@ class PokemonQuiz:
                     return True
         return False
 
-    def _solved(self, first: str, ask_again: bool = True) -> Reply:
+    def _solved(self, first: str) -> Reply:
+        """정답을 보여 준다. 묻지 않고 다음 문제로 이어진다 (그만하자고 할 때까지, 2026-09-20 요청)"""
         self.solved = True
+        self.phase = "revealed"
         e = self.answer
         lines = [first]
         if e.get("genus"):
             lines.append(f"{e['genus']}이래.")
-        if ask_again:
-            lines.append("하나 더 할래?")
-            self.phase = "again"
-        return Reply(lines)
+        return Reply(lines, auto_next=True)
 
     # ---------- 힌트 ----------
     def _hint(self, prefix: str) -> Reply:
