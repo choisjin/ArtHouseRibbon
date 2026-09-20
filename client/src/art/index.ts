@@ -114,6 +114,52 @@ export async function startArt(): Promise<void> {
     if (JSON.stringify(arts) !== before) { dirty = true; await rebuild(); }
     drawList();
     msg("");
+    void watchPano();
+  }
+
+  /**
+   * 둘러보기 배경(360° 파노라마)이 아직 없으면 알려 주고, 블렌더 렌더가 끝나는 대로 바꿔 끼운다.
+   * 파노라마가 없는 동안은 방을 실시간 3D 로 그리기 때문에 렌더한 그림처럼 보이지 않는다 (서버를 새로 올린 직후가 그렇다)
+   */
+  let watching = false;
+  async function watchPano(): Promise<void> {
+    if (watching || renderNow(render)?.pano) return;
+    watching = true;
+    const started = Date.now();
+    const here = room;
+    try {
+      interface Status { render: { available: boolean; running: string | null; pending: string[];
+                                   last?: { room?: string; ok?: boolean } }; log?: string[] }
+      let st = await api<Status>("GET", "/api/world/render");
+      if (!st.render.available) {
+        msg("이 서버에서 블렌더를 찾지 못해 렌더 배경 없이 실시간 3D 로 보여 줍니다 (.env 의 RIBBON_BLENDER_EXE)", true);
+        return;
+      }
+      if (st.render.running !== "kidbase" && !st.render.pending.includes("kidbase")) {
+        await api("POST", "/api/world/render?room=kidbase");        // 아이 전시실이 같이 쓰는 배경
+      }
+      while (room === here) {
+        const secs = Math.round((Date.now() - started) / 1000);
+        msg(`둘러보기 배경을 블렌더로 렌더하는 중… ${secs}초 (끝날 때까지는 임시 3D 화면입니다)`);
+        await new Promise((ok) => setTimeout(ok, 6000));
+        const got = await api<{ render?: WorldRender | null }>("GET", `/api/world/view?room=${encodeURIComponent(here)}`)
+          .then((w) => w.render).catch(() => null);
+        if (room !== here) return;
+        if (renderNow(got)?.pano) {
+          render = got;
+          await rebuild();
+          msg("렌더한 배경으로 바꿨습니다");
+          return;
+        }
+        st = await api<Status>("GET", "/api/world/render");
+        const idle = !st.render.running && !st.render.pending.length;
+        if (idle && st.render.last?.room === "kidbase" && st.render.last.ok === false) {
+          msg(`배경 렌더에 실패했습니다: ${(st.log ?? []).slice(-1)[0] ?? "data/world/render/render.log 를 보세요"}`, true);
+          return;
+        }
+        if (idle && secs > 30) { msg("배경 렌더가 끝났는데 파노라마가 없습니다. 서버를 최신으로 올렸는지 확인하세요", true); return; }
+      }
+    } catch (e) { msg(String(e), true); } finally { watching = false; }
   }
 
   /** 3D 방을 다시 짓는다 (그림을 걸거나 크기를 바꾼 뒤) */
