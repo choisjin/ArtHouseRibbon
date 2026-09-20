@@ -39,6 +39,17 @@ export function mountCallButton(socket: RibbonSocket): void {
       call();
     }
   });
+  // 블루투스 마이크·리모컨·이어폰의 재생/정지 버튼도 호출로 받는다 (안드로이드는 미디어 키를 이 화면으로 보낸다).
+  // 소리를 한 번이라도 낸 뒤에야 미디어 세션이 살아 있어서, 리본이가 말하고 나면 잘 동작한다
+  if ("mediaSession" in navigator) {
+    const ms = navigator.mediaSession;
+    try {
+      ms.metadata = new MediaMetadata({ title: "리본이 부르기", artist: "리본" });
+    } catch { /* 옛 브라우저 */ }
+    for (const action of ["play", "pause", "stop", "nexttrack", "previoustrack"] as MediaSessionAction[]) {
+      try { ms.setActionHandler(action, () => call()); } catch { /* 이 브라우저가 모르는 동작 */ }
+    }
+  }
   // 말을 받는 동안 스위치 불이 켜진다 (오른쪽 위 마이크 표시와 같은 신호)
   socket.on((m: ServerMsg) => { if (m.type === "mic") btn.classList.toggle("listening", m.on); });
 }
