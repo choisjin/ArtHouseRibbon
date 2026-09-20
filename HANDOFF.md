@@ -158,6 +158,14 @@
   가 예전 설정을 한 번 옮긴다 (주인공/친구가 ribbon 이면 seoyul/빈 값으로, ribbon 프로필 삭제).
   **리본이 프로필에 손수 맞춰 둔 목소리·성격은 사라진다** (서율·올리 프로필을 쓴다). `sync_world.py --doll` 도 두 캐릭터만.
 
+- **Spotify 앱 기기에서 틀기 (Connect)** (2026-09-20, 폰으로 TV 를 띄우려고): 관리자 → 음악 → 재생할 곳에
+  **"Spotify 앱이 켜진 기기"** 추가 (`MusicConfig.output = "spotify"`, `device_id`/`device_name`).
+  `GET /api/music/devices` 가 `/me/player/devices` 목록을 준다. 폰·태블릿 브라우저는 Web Playback SDK 를 못 써서
+  (모바일 미지원) 그 기기의 **Spotify 앱**을 서버가 Connect 로 조종한다. 재생 상태는 브라우저가 알려 줄 수 없으므로
+  서버가 4초마다 `/me/player` 를 물어 `music.state` 로 방송한다 (`MusicControl.poll`, `dialogue.tick`).
+  리본이가 말하는 동안 음량 줄이기는 서버가 `/me/player/volume` 로 한다 (`MusicControl.duck`, `dialogue._set_ribbon`).
+  "소리 키워/줄여" 도 Connect 기기 음량을 바꾼다. 앱이 꺼지면 기기 목록에서 사라지니 앱을 켜 두어야 한다.
+
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**
   (아이가 물을 때만 답, 가끔 한 번만 되묻기), 화제 바꾸지 않기, 퀴즈·학습은 아이가 원할 때만.

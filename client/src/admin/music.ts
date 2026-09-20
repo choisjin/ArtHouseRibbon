@@ -43,9 +43,12 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       <div class="row">
         <label class="inline">🔊 음량 <input type="range" name="volume" min="10" max="100" step="5" /></label>
         <label class="inline">재생할 곳 <select name="output">
-          <option value="tv">TV 화면</option>
+          <option value="tv">TV 화면 (브라우저)</option>
           <option value="admin">이 컴퓨터 (관리자 페이지)</option>
+          <option value="spotify">Spotify 앱이 켜진 기기</option>
         </select></label>
+        <label class="inline" data-role="device-row" hidden>기기 <select name="device"></select>
+          <button data-act="devices">다시 찾기</button></label>
       </div>
       <p class="hint" data-role="where"></p>
     </section>
@@ -122,6 +125,8 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   const dlg = q<HTMLDialogElement>("[data-role=settings]");
   const volume = q<HTMLInputElement>("[name=volume]");
   const output = q<HTMLSelectElement>("[name=output]");
+  const deviceRow = q<HTMLElement>("[data-role=device-row]");
+  const deviceSel = q<HTMLSelectElement>("[name=device]");
   const which = q<HTMLSelectElement>("[name=which]");
   const plMsg = q<HTMLElement>("[data-role=pl-msg]");
   const rows = q<HTMLElement>("[data-role=tracks]");
@@ -142,6 +147,28 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       render();
       if (done) ctx.msg(done);
     } catch (e) { ctx.msg(`저장 실패: ${e}`, true); }
+  }
+
+  // ---------- Spotify 앱 기기 (Connect): 폰·사운드바처럼 브라우저가 스피커가 못 되는 곳에서 튼다 ----------
+  type Device = { id: string; name: string; type: string; active: boolean };
+  let devices: Device[] = [];
+  let devicesAt = 0;
+  async function loadDevices(force = false): Promise<void> {
+    if (!status?.connected) return;
+    if (!force && Date.now() - devicesAt < 10_000) return;
+    devicesAt = Date.now();
+    try {
+      devices = (await api<{ devices: Device[] }>("GET", "/api/music/devices")).devices;
+    } catch (e) { ctx.msg(`기기를 읽지 못했습니다: ${e}`, true); return; }
+    const saved = cfg?.device_id ?? "";
+    const known = devices.some((d) => d.id === saved);
+    deviceSel.innerHTML = devices.map((d) =>
+      `<option value="${esc(d.id)}" data-name="${esc(d.name)}">${esc(d.name)} (${esc(d.type)})${d.active ? " · 켜짐" : ""}</option>`).join("")
+      + (saved && !known ? `<option value="${esc(saved)}" data-name="${esc(cfg?.device_name ?? "")}">${esc(cfg?.device_name ?? "")} (지금 안 보임)</option>` : "")
+      + (devices.length ? "" : `<option value="">(켜진 Spotify 앱이 없습니다)</option>`);
+    if (saved) deviceSel.value = saved;
+    else if (devices.length) void save({ device_id: devices[0].id, device_name: devices[0].name });
+    render();
   }
 
   // ---------- 플레이어 ----------
@@ -165,16 +192,23 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       q<HTMLInputElement>("[name=enabled]").checked = cfg.enabled;
       q<HTMLSelectElement>("[name=market]").value = cfg.market ?? "KR";
     }
-    const where = cfg?.output === "admin" ? "관리자 화면을 연 컴퓨터" : "TV 화면";
-    const ready = !!cfg?.enabled && !!status?.devices.includes(cfg.output);
+    const spotifyDev = cfg?.output === "spotify";
+    deviceRow.hidden = !spotifyDev;
+    const where = spotifyDev ? (cfg?.device_name || "Spotify 기기")
+      : cfg?.output === "admin" ? "관리자 화면을 연 컴퓨터" : "TV 화면";
+    const ready = !!cfg?.enabled && (spotifyDev ? !!cfg.device_id : !!status?.devices.includes(cfg!.output));
     // 이 화면이 리모컨(폰)인데 재생할 곳이 "관리자 화면"이면 소리가 날 곳이 없다
     const remoteWarn = !ctx.host && cfg?.output === "admin"
       ? `<br><span class="warn-text">이 화면은 리모컨이라 여기서는 소리가 나지 않습니다. 재생할 곳을 <b>TV 화면</b>으로 두세요.</span>` : "";
     const err = status?.error || status?.last_error;
     q<HTMLElement>("[data-role=where]").innerHTML = !cfg?.enabled
       ? `음악이 꺼져 있습니다. <b>⚙ 계정 · 설정</b> 에서 켜세요.`
-      : (ready ? `<span class="ok-text">${where}이 Spotify 스피커로 준비됐습니다.</span>`
-        : `<span class="warn-text">${where}이 아직 준비되지 않았습니다. 그 화면을 Chrome 으로 열고 한 번 눌러 주세요.</span>`)
+      : (ready
+        ? `<span class="ok-text">${esc(where)}${spotifyDev ? " 에서 틉니다." : "이 Spotify 스피커로 준비됐습니다."}</span>`
+          + (spotifyDev ? ` 그 기기에서 Spotify 앱을 켜 두세요 (앱이 꺼져 있으면 목록에서 사라집니다).` : "")
+        : spotifyDev
+          ? `<span class="warn-text">틀 기기를 고르세요.</span> 그 기기에서 Spotify 앱을 한 번 켜면 목록에 나옵니다.`
+          : `<span class="warn-text">${where}이 아직 준비되지 않았습니다. 그 화면을 Chrome 으로 열고 한 번 눌러 주세요.</span>`)
         + remoteWarn + (err ? `<br><span class="warn-text">최근 문제: ${esc(err)}</span>` : "");
     renderNow();
   }
@@ -216,7 +250,13 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   };
   q<HTMLButtonElement>("[data-act=shuffle]").onclick = () => void control("shuffle", now?.shuffle ? "off" : "on");
   volume.onchange = () => void save({ volume: Number(volume.value) });
-  output.onchange = () => void save({ output: output.value as MusicConfig["output"] }, `재생할 곳: ${output.selectedOptions[0]?.textContent}`);
+  deviceSel.onchange = () => void save({ device_id: deviceSel.value, device_name: deviceSel.selectedOptions[0]?.dataset.name ?? "" },
+    `재생할 기기: ${deviceSel.selectedOptions[0]?.dataset.name ?? ""}`);
+  q<HTMLButtonElement>("[data-act=devices]").onclick = () => void loadDevices(true);
+  output.onchange = () => {
+    void save({ output: output.value as MusicConfig["output"] }, `재생할 곳: ${output.selectedOptions[0]?.textContent}`)
+      .then(() => { if (output.value === "spotify") void loadDevices(true); });
+  };
 
   // ---------- 목록 ----------
   function trackRow(t: Track, n: number | null, buttons: string): string {
@@ -393,6 +433,7 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
   async function refresh(): Promise<void> {
     status = await api<Status>("GET", "/api/music/status").catch(() => status);
     render();
+    if (cfg?.output === "spotify") void loadDevices();      // 폰 앱이 켜졌다 꺼졌다 하므로 가끔 다시 본다
   }
   ctx.socket.on((m: ServerMsg) => {
     if (m.type !== "music.state") return;

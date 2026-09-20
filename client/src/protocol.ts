@@ -100,8 +100,11 @@ export interface LLMConfig {
 export interface MusicConfig {
   /** 리본이에게 말로 음악을 부탁할 수 있다 */
   enabled: boolean;
-  /** 재생할 곳: tv = TV 화면 / admin = 관리자 페이지를 연 컴퓨터(맥미니) */
-  output: "tv" | "admin";
+  /** 재생할 곳: tv = TV 화면 / admin = 관리자 페이지를 연 컴퓨터 / spotify = Spotify 앱이 켜진 기기(Connect) */
+  output: "tv" | "admin" | "spotify";
+  /** output=spotify 일 때 틀 기기 */
+  device_id?: string;
+  device_name?: string;
   /** "내 목록 틀어줘" · 넣기 · 빼기 목록 (빈 값 = 내가 만든 첫 목록) */
   playlist_id: string;
   playlist_title: string;

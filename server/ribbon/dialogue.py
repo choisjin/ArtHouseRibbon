@@ -465,6 +465,10 @@ class DialogueManager:
             await self._set_ribbon("idle", None)
         if self.music is not None and self.music.tick():     # 오래 둔 번호 목록 내리기
             await self.broadcast({"type": "music.list", "view": self.music.list_view()})
+        if self.music is not None:
+            state = await self.music.poll()                  # Spotify 앱 기기에서 틀 때의 재생 상태
+            if state is not None:
+                await self.broadcast(state)
         for turn in self.queue.expire(now, self.settings.waiting_timeout_s):
             kid = self._kid_for_channel(turn.channel)
             await self._say(persona.expired_notice(call_name(kid)), kid.id, final=True)
@@ -767,6 +771,9 @@ class DialogueManager:
         self._last_spoken_at = time.time()
 
     async def _set_ribbon(self, state: RibbonState, target_kid: Optional[str]) -> None:
+        if self.music is not None:
+            # 리본이가 말하는 동안은 음악을 줄인다 (Spotify 앱 기기에서 틀 때. 브라우저 재생은 화면이 알아서 줄인다)
+            self._spawn_bg(self.music.duck(state == "speaking"))
         self.ribbon_state = state
         self.target_kid = target_kid
         await self.broadcast(RibbonStateMessage(state=state, target_kid=target_kid).model_dump())

@@ -30,6 +30,13 @@ class FakeSpotify:
     async def repeat(self, device_id, mode):
         self.calls.append(("repeat", device_id, mode))
 
+    async def set_volume(self, device_id, percent):
+        self.calls.append(("volume", device_id, percent))
+
+    async def playback(self):
+        return {"playing": True, "track": self.tracks[0], "position_ms": 1000, "repeat": "off",
+                "shuffle": False, "context_uri": "", "device": "지우 폰", "device_id": "phone-1"}
+
     async def shuffle(self, device_id, on):
         self.calls.append(("shuffle", device_id, on))
 
@@ -183,6 +190,31 @@ async def test_list_comes_down_after_a_while(tmp_path):
     assert not mc.tick()                                  # 아직 보여 준다
     mc.listing["at"] -= mc.LIST_TIMEOUT_S + 1
     assert mc.tick() and mc.list_view() is None           # 오래 두면 화면을 내린다
+
+
+async def test_spotify_app_device_plays_and_ducks(tmp_path):
+    """폰으로 TV 를 띄울 때: 브라우저 대신 Spotify 앱 기기(Connect)에서 튼다"""
+    mc, sp, store = control(tmp_path)
+    mc.devices.clear()                                   # 브라우저 스피커 없음
+    store.update_music({"output": "spotify", "device_id": "phone-1", "device_name": "지우 폰"})
+    assert await mc.handle("피카츄 노래 틀어줘") == ["피카츄 송, 틀어 줄게!"]
+    assert ("play", "phone-1", ("spotify:track:1",), "") in sp.calls
+
+    state = await mc.poll()                              # 폰 앱 상태를 물어와 TV 상태바로
+    assert state["playing"] and state["track"]["title"] == "피카츄 송"
+    assert await mc.poll() is None                       # 너무 자주 묻지 않는다
+
+    await mc.duck(True)                                  # 리본이가 말하는 동안 소리를 줄인다
+    assert ("volume", "phone-1", 15) in sp.calls
+    await mc.duck(False)
+    assert ("volume", "phone-1", 60) in sp.calls
+
+
+async def test_spotify_device_not_chosen(tmp_path):
+    mc, sp, store = control(tmp_path)
+    store.update_music({"output": "spotify"})
+    assert await mc.handle("피카츄 노래 틀어줘") == ["지금은 음악을 틀 수가 없어. 선생님께 말해 줘."]
+    assert "기기를 고르지 않았습니다" in mc.last_error
 
 
 async def test_dialogue_answers_music_without_llm(tmp_path):

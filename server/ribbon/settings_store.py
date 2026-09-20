@@ -96,7 +96,11 @@ class LLMConfig(BaseModel):
 class MusicConfig(BaseModel):
     """Spotify (관리자 '설정' 탭 → 음악). 앱 정보·토큰은 여기 두지 않는다 (data/spotify_auth.json, music.py)"""
     enabled: bool = False        # 리본이에게 말로 음악을 부탁할 수 있다 (music_intent.py)
-    output: str = "tv"           # 재생할 곳: tv = TV 화면 | admin = 관리자 페이지를 연 컴퓨터(맥미니)
+    # 재생할 곳: tv = TV 화면 | admin = 관리자 페이지를 연 컴퓨터 | spotify = Spotify 앱이 켜진 기기 (Connect)
+    # 폰·태블릿 브라우저는 Spotify 스피커가 될 수 없어서(Web Playback SDK 모바일 미지원) 폰으로 TV 를 띄울 때는 spotify 를 쓴다
+    output: str = "tv"
+    device_id: str = ""          # output=spotify 일 때 틀 기기 (Spotify Connect)
+    device_name: str = ""        # 화면 표시용
     playlist_id: str = ""        # "내 목록 틀어줘" · 넣기 · 빼기 목록 (비우면 내가 만든 첫 목록)
     playlist_title: str = ""     # 화면 표시용
     volume: int = 60             # 0 ~ 100. 리본이 목소리보다 작게
@@ -219,7 +223,7 @@ class ConfigStore:
     def update_music(self, data: Dict) -> MusicConfig:
         merged = self.config.music.model_dump()
         merged.update({k: v for k, v in data.items() if v is not None and k in MusicConfig.model_fields})
-        if merged["output"] not in ("tv", "admin"):
+        if merged["output"] not in ("tv", "admin", "spotify"):
             raise ValueError(f"재생할 곳이 잘못됐습니다: {merged['output']}")
         merged["volume"] = max(0, min(100, int(merged["volume"])))
         market = str(merged["market"]).strip().upper()

@@ -267,6 +267,28 @@ class SpotifyAccount:
         """off | context (목록 반복) | track (한 곡 반복)"""
         await self.api("PUT", "/me/player/repeat", {"state": mode, "device_id": device_id})
 
+    async def devices(self) -> List[Dict[str, Any]]:
+        """Spotify 앱이 켜져 있는 기기들 (폰 앱·사운드바·PC…). Connect 로 그 기기에서 틀 수 있다"""
+        r = await self.api("GET", "/me/player/devices")
+        return [{"id": d.get("id") or "", "name": d.get("name") or "", "type": d.get("type") or "",
+                 "active": bool(d.get("is_active")), "volume": d.get("volume_percent")}
+                for d in (r or {}).get("devices") or [] if d.get("id")]
+
+    async def set_volume(self, device_id: str, percent: int) -> None:
+        await self.api("PUT", "/me/player/volume", {"volume_percent": max(0, min(100, percent)),
+                                                    "device_id": device_id})
+
+    async def playback(self) -> Dict[str, Any]:
+        """지금 재생 상태 전부 (어느 기기·반복·섞기·위치). Connect 기기에서 틀 때 TV 상태바에 쓴다"""
+        r = await self.api("GET", "/me/player") or {}
+        item = r.get("item")
+        return {"playing": bool(r.get("is_playing")), "track": track_info(item) if item else None,
+                "position_ms": int(r.get("progress_ms") or 0),
+                "repeat": str(r.get("repeat_state") or "off"), "shuffle": bool(r.get("shuffle_state")),
+                "context_uri": ((r.get("context") or {}).get("uri") or ""),
+                "device": (r.get("device") or {}).get("name") or "",
+                "device_id": (r.get("device") or {}).get("id") or ""}
+
     async def current(self) -> Optional[Dict[str, Any]]:
         r = await self.api("GET", "/me/player/currently-playing")
         t = r.get("item") if r else None

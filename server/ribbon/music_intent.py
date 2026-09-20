@@ -119,6 +119,9 @@ class MusicControl:
         self.listing: Optional[Dict[str, Any]] = None   # TV 에 띄운 번호 목록 (보여 줘 -> 번호로 빼기 / 찾은 노래 -> 번호로 틀기)
         self._view_changed = False
         self._undo: Optional[Dict[str, Any]] = None     # 방금 뺀 노래 (되돌려)
+        self._polled_at = 0.0                           # Connect 기기 상태를 마지막으로 물어본 때
+        self._poll_key = ""
+        self._ducked = False
 
     # ---------- 재생 화면이 알려 오는 것 ----------
     def set_device(self, role: str, device_id: str) -> None:
@@ -142,12 +145,59 @@ class MusicControl:
         return bool(self.state.get("playing")) or time.time() - self.state_at < 180
 
     def device(self) -> str:
-        role = self.store.config.music.output
-        dev = self.devices.get(role)
+        cfg = self.store.config.music
+        if cfg.output == "spotify":
+            # Spotify 앱이 켜진 기기 (폰·사운드바…). 브라우저가 스피커가 못 되는 기기로 TV 를 띄울 때
+            if not cfg.device_id:
+                raise MusicError("틀 Spotify 기기를 고르지 않았습니다 (관리자 → 음악 → 재생할 곳)")
+            return cfg.device_id
+        dev = self.devices.get(cfg.output)
         if not dev:
-            where = "TV 화면" if role == "tv" else "관리자 화면"
+            where = "TV 화면" if cfg.output == "tv" else "관리자 화면"
             raise MusicError(f"음악을 틀 {where}이 준비되지 않았습니다 (화면을 열고 한 번 눌러 주세요)")
         return dev
+
+    # ---------- Spotify 앱 기기로 틀 때 (Connect): 상태를 물어보고, 리본이가 말하면 소리를 줄인다 ----------
+    POLL_S = 4.0                              # 이 간격으로 지금 재생 상태를 물어본다
+    DUCK_RATIO = 0.25                         # 리본이가 말하는 동안 음량 배율
+
+    async def poll(self) -> Optional[Dict[str, Any]]:
+        """Connect 기기의 재생 상태를 가져온다 (바뀌었으면 TV 에 보낼 music.state, 아니면 None)"""
+        cfg = self.store.config.music
+        if not (cfg.enabled and cfg.output == "spotify" and self.account.connected):
+            return None
+        now = time.time()
+        if now - self._polled_at < self.POLL_S:
+            return None
+        self._polled_at = now
+        try:
+            p = await self.account.playback()
+        except MusicError as e:
+            self.last_error = str(e)
+            return None
+        state = {"type": "music.state", "playing": p["playing"], "track": p["track"],
+                 "position_ms": p["position_ms"], "repeat": p["repeat"], "shuffle": p["shuffle"],
+                 "source": self.source_info(p["context_uri"])}
+        key = f"{(p['track'] or {}).get('uri')}|{p['playing']}|{p['repeat']}|{p['shuffle']}|{p['position_ms'] // 5000}"
+        self.set_state(state)
+        if key == self._poll_key:
+            return None
+        self._poll_key = key
+        return state
+
+    async def duck(self, on: bool) -> None:
+        """리본이가 말하는 동안 Spotify 기기 음량을 줄인다 (브라우저 재생은 화면 쪽에서 알아서 줄인다)"""
+        cfg = self.store.config.music
+        if not (cfg.enabled and cfg.output == "spotify" and cfg.device_id and self.account.connected):
+            return
+        if on == self._ducked:
+            return
+        self._ducked = on
+        want = int(cfg.volume * (self.DUCK_RATIO if on else 1))
+        try:
+            await self.account.set_volume(cfg.device_id, want)
+        except MusicError as e:
+            log.debug("음량 줄이기 실패: %s", e)
 
     # ---------- TV 에 띄우는 번호 목록 ----------
     PAGE = 6                                     # 한 번에 보여 주고 읽어 주는 곡 수
@@ -388,8 +438,12 @@ class MusicControl:
         return ["앞 노래!"]
 
     async def _volume(self, delta: int) -> int:
-        v = max(10, min(100, self.store.config.music.volume + delta))
+        cfg = self.store.config.music
+        v = max(10, min(100, cfg.volume + delta))
         self.store.update_music({"volume": v})
+        if cfg.output == "spotify" and cfg.device_id:
+            self._ducked = False
+            await self.account.set_volume(cfg.device_id, v)    # Connect 기기는 서버가 음량을 바꾼다
         if self.on_config:
             await self.on_config()               # 재생 화면이 새 음량을 받는다 (client/src/music/player.ts)
         return v

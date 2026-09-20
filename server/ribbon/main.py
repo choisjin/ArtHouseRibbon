@@ -665,6 +665,15 @@ async def api_music_play(data: dict = Body(...)):
     return JSONResponse({"ok": True})
 
 
+@app.get("/api/music/devices")
+async def api_music_devices():
+    """Spotify 앱이 켜진 기기들 (폰 앱·사운드바…). 재생할 곳을 'Spotify 기기'로 두면 여기서 고른다"""
+    try:
+        return JSONResponse({"devices": await spotify.devices()})
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+
+
 @app.post("/api/music/control")
 async def api_music_control(data: dict = Body(...)):
     """관리자 페이지 위쪽 플레이어: {action: pause|resume|next|prev|repeat|shuffle, value}"""
@@ -715,7 +724,8 @@ async def api_config_music(data: dict = Body(...)):
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
     spotify.market = cfg.market
-    log.info("음악 설정: 켜기=%s 재생할 곳=%s 목록=%s 음량=%s", cfg.enabled, cfg.output,
+    log.info("음악 설정: 켜기=%s 재생할 곳=%s%s 목록=%s 음량=%s", cfg.enabled, cfg.output,
+             f"({cfg.device_name})" if cfg.output == "spotify" else "",
              cfg.playlist_title or cfg.playlist_id or "(첫 목록)", cfg.volume)
     await dialogue.notify_config_changed()
     return JSONResponse(cfg.model_dump())
