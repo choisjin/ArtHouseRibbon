@@ -26,6 +26,7 @@ data/pokemon_looks_cache.json
 data/faces/
 data/recordings/
 data/artworks/
+data/models/
 mic_test.wav
 
 # OS/IDE

@@ -12,6 +12,7 @@ import type { ClientRole } from "./protocol";
  *   /?mode=editor    맵 편집기. 가구 배치와 벽에 거는 그림 (Character_Creator 배치 편집기)
  *   /?mode=art       아이 전시실 꾸미기. 작품 사진을 올리고(배경 지우기) 전시실 벽에 건다
  *   /?mode=snap      폰으로 작품 찍어 보내기. 관리자 설정 → 카메라 탭의 QR 로 연다 (서버로 사진만 보낸다)
+ *   /?mode=gallery   부모님께 보내는 전시실 (보기 전용, 로그인 없음). ?k=<열쇠> — 전시실 꾸미기의 🔗 공유에서 복사한다
  *   /?mode=home      화면 고르기 메뉴. 도메인(ribbon.arthouseribbon.com)으로 들어오면 mode 없이 여기로 온다
  */
 const params = new URLSearchParams(location.search);
@@ -26,6 +27,11 @@ const NEEDS_ADMIN: Record<string, string> = {
 };
 
 async function boot(): Promise<void> {
+  if (mode === "gallery") {               // 주소 속 열쇠로 들어온다: 로그인하지 않는다
+    const { startGallery } = await import("./gallery/index");
+    await startGallery();
+    return;
+  }
 
   const { requireLogin } = await import("./auth/index");
   await requireLogin({ need: NEEDS_ADMIN[mode] ? "admin" : "member", what: NEEDS_ADMIN[mode] });

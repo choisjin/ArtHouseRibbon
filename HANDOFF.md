@@ -255,6 +255,25 @@
   · **작품 목록과 사진 올리기는 모달**(🖼 작품). 이미 올린 사진도 '배경 지우기'로 다듬을 수 있다
     (새로 올리고 -> 걸린 그림을 갈아 끼운 뒤 저장 -> 옛 사진 삭제).
   · 서버에 `GET /api/world/view?room=` 추가 (TV 가 쓰는 배치 + 배경 렌더를 그대로 준다).
+- **전시실 2차 손질** (2026-09-21 요청 묶음):
+  · **높이 막대 삭제**, 크기만. 비율은 그대로이고 가장 큰 크기는 걸린 벽이 정한다 (`maxWidth`/`fit`, 벽의 96%).
+    끌다가 작은 벽으로 넘어가면 그 벽에 맞게 줄어든다.
+  · **조명 밝기** (💡 막대, 0.2~1.6): 실마다 `light` 로 저장 (`world_store.save_layout`). TV 도 같이 어두워진다
+    (`Stage.setLight`: 배경 그림은 `scene.backgroundIntensity`, 실시간으로 그리는 것은 노출).
+  · **전시실 1실·2실·3실…** (최대 9): 방 id 는 `kid-<id>`(1실), `kid-<id>@2`, `@3`… 실 수는 1실 파일의 `halls`.
+    `PUT /api/kids/<id>/halls {count}`, `GET /api/kids/<id>/gallery?hall=`, `POST /api/world/visit {kid_id, hall}`.
+    줄이면 뒤쪽 실의 걸린 목록은 지워진다 (사진은 남는다). "전시실 보여줘" 같은 말로 가는 곳은 아직 1실뿐.
+  · **부모님께 보내는 주소** (🔗 공유): `GET /api/kids/<id>/share` 가 열쇠(`data/world/shares.json`)를 만들고
+    `<공개 주소>/?mode=gallery&k=<열쇠>` 를 준다. 그 화면(`client/src/gallery/index.ts`)은 **로그인 없이 보기 전용**:
+    TV 와 같은 3D 방, 실 고르기, 작품을 누르면 올린 그대로의 크기로 크게 보기 + 내려받기.
+    `GET /api/share/<열쇠>` 만 공개다 (`auth.permitted`). Cloudflare Access 를 켰다면 Bypass 정책이 필요하다 (docs/REMOTE.md 3장).
+  · **배경 지우기를 AI 로** (`server/ribbon/cutout.py` + `client/src/art/crop.ts`): 색으로 지우던 방식은 품질이 나빴다.
+    서버가 BiRefNet lite(ONNX, onnxruntime 은 Supertonic 때문에 이미 있음 + **pillow 추가**)로 마스크를 만들고
+    (`POST /api/cutout`, 맥미니 CPU 로 한 장에 몇 초), 브라우저가 원본 크기로 자른다. 모델(약 220MB)은 처음 쓸 때
+    `data/models/birefnet-lite.onnx` 로 받는다 (받는 동안 202 + 진행률, `RIBBON_CUTOUT_MODEL_URL` 로 바꿀 수 있다).
+    다듬기 창은 세 가지: **▭ 네모로 펴기**(마스크에서 네 귀퉁이를 짐작 -> 점을 끌어 고침 -> 원근 변환으로 반듯하게,
+    종이 그림의 기본값) · **✂ 모양대로 오리기**(만들기 작품, 가장 큰 덩어리만 남김) · 원본 그대로.
+    서버에 모델을 못 쓰면 예전 색 방식으로 떨어진다 ('지우는 정도' 막대가 나온다). 올리는 크기는 긴 변 2000px.
 
 ### 처음 제안했던 방향
 - 프롬프트를 "놀이 상대"로 다시 쓰기: 아이 말에 반응·맞장구·짧게 거들기, 1~2문장, **기본은 질문하지 않기**

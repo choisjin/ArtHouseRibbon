@@ -7,6 +7,7 @@ WS:    /ws  (JSON 텍스트 프레임 + 오디오 바이너리 프레임)
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 import json
 import logging
@@ -27,6 +28,7 @@ from .audio.button import ButtonCall, DjiButton
 from .audio.stream import ChannelProcessor
 from .audio.wakeword import make_wakeword
 from .config import settings
+from .cutout import Cutout, CutoutError
 from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
@@ -107,6 +109,7 @@ spotify = SpotifyAccount(settings.music_auth_path())
 music = MusicControl(spotify, store)
 spotify.market = store.config.music.market   # 어느 나라 카탈로그로 찾을지 (제목 언어)
 world = WorldStore(settings.world_catalog_path(), settings.world_path(), settings.artworks_path())
+cutout = Cutout(settings.cutout_model_path(), settings.cutout_model_url)   # 작품 사진 배경 지우기
 # 대화 모델: 관리자 설정 탭에서 고른 값(settings.json)이 .env 보다 앞선다
 store.seed_llm(settings.llm_provider, settings.llm_base_url, settings.llm_model)
 llm_settings = llm_mod.resolve(settings, **store.config.llm.model_dump())
@@ -906,13 +909,50 @@ async def api_world_active(data: dict = Body(...)):
 
 
 @app.get("/api/kids/{kid_id}/gallery")
-async def api_kid_gallery(kid_id: str):
-    """아이 전시실: 걸린 그림이 든 배치 + 그 아이가 올린 그림 목록 + 벽 정보(카탈로그)"""
+async def api_kid_gallery(kid_id: str, hall: int = 1):
+    """아이 전시실(hall 실): 걸린 그림이 든 배치 + 그 아이가 올린 그림 목록 + 벽 정보(카탈로그)"""
     if not kids.get(kid_id):
         raise HTTPException(404, "없는 아이입니다")
-    room = world.kid_room(kid_id)
-    return JSONResponse({"room": room, "kid": kids.get(kid_id).model_dump(), "layout": world.layout(room),
+    hall = max(1, min(hall, world.halls(kid_id)))
+    room = world.kid_room(kid_id, hall)
+    return JSONResponse({"room": room, "hall": hall, "halls": world.halls(kid_id),
+                         "kid": kids.get(kid_id).model_dump(), "layout": world.layout(room),
                          "artworks": world.artworks(kid_id), "catalog": world.catalog})
+
+
+@app.put("/api/kids/{kid_id}/halls")
+async def api_kid_halls(kid_id: str, data: dict = Body(...)):
+    """전시실 수 바꾸기 {"count": 3}. 줄이면 뒤쪽 실에 걸어 둔 목록은 지워진다"""
+    if not kids.get(kid_id):
+        raise HTTPException(404, "없는 아이입니다")
+    try:
+        count = world.set_halls(kid_id, int(data.get("count", 1)))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "halls": count})
+
+
+@app.get("/api/kids/{kid_id}/share")
+async def api_kid_share(kid_id: str, request: Request):
+    """부모님께 보낼 전시실 주소 (로그인 없이 보기만 된다, /?mode=gallery&k=열쇠)"""
+    if not kids.get(kid_id):
+        raise HTTPException(404, "없는 아이입니다")
+    token = world.share_token(kid_id)
+    return JSONResponse({"token": token, "url": f"{_public_base(request)}/?mode=gallery&k={token}"})
+
+
+@app.get("/api/share/{token}")
+async def api_share(token: str):
+    """공유 주소로 들어온 사람에게: 아이 이름과 전시실들 (보기 전용. 로그인 없이 열린다, auth.permitted)"""
+    kid_id = world.shared_kid(token)
+    kid = kids.get(kid_id) if kid_id else None
+    if not kid:
+        raise HTTPException(404, "없는 주소입니다")
+    halls = [{"room": r, "layout": world.layout(r), "render": world.render_info(r)} for r in world.kid_rooms(kid.id)]
+    hung = {a.get("image") for h in halls for a in (h["layout"] or {}).get("arts", [])}
+    return JSONResponse({"name": kid.name, "halls": halls,
+                         "artworks": [a for a in world.artworks(kid.id) if a["file"] in hung]})
 
 
 @app.post("/api/world/visit")
@@ -920,7 +960,7 @@ async def api_world_visit(data: dict = Body(...)):
     """TV 가 잠깐 아이 전시실을 보러 간다. seconds 뒤에 원래 방(보통 교실)으로 돌아온다.
     seconds 가 0 이면 돌아오지 않는다 (계속 그 방)."""
     kid_id = str(data.get("kid_id") or "")
-    room = world.kid_room(kid_id) if kid_id else str(data.get("room") or "")
+    room = world.kid_room(kid_id, int(data.get("hall") or 1)) if kid_id else str(data.get("room") or "")
     seconds = float(data.get("seconds", 60))
     try:
         world.check_room(room)
@@ -983,6 +1023,25 @@ async def api_artwork_delete(data: dict = Body(...)):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/cutout")
+async def api_cutout(data: dict = Body(...)):
+    """작품 사진에서 작품만 골라낸 마스크 (ribbon/cutout.py). 모델이 아직 없으면 받기 시작하고 202 를 준다"""
+    st = cutout.status()
+    if st["state"] == "unavailable":
+        raise HTTPException(501, st["detail"])
+    if st["state"] != "ready":
+        cutout.start_download()
+        return JSONResponse({**cutout.status(), "ok": False}, status_code=202)
+    raw = str(data.get("data") or "")
+    if ";base64," not in raw:
+        raise HTTPException(400, "이미지 데이터 형식이 아닙니다")
+    try:
+        png = await asyncio.to_thread(cutout.mask_png, base64.b64decode(raw.split(";base64,", 1)[1]))
+    except (CutoutError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse({"ok": True, "mask": "data:image/png;base64," + base64.b64encode(png).decode()})
 
 
 @app.get("/api/tts/voices")

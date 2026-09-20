@@ -66,6 +66,39 @@ def test_artwork_upload_usage_and_delete(store):
         store.add_artwork({"data": "data:text/plain;base64,AAAA", "width": 1, "height": 1})
 
 
+def test_kid_gallery_halls_light_and_share(store):
+    """아이 전시실: 1실·2실… 로 늘리고, 실마다 조명을 따로 두고, 부모님께 보낼 열쇠를 만든다"""
+    store.kid_ids = lambda: ["k1"]
+    assert store.kid_room("k1") == "kid-k1" and store.kid_room("k1", 2) == "kid-k1@2"
+    assert store.kid_of("kid-k1@2") == "k1" and store.hall_of("kid-k1@2") == 2 and store.hall_of("kid-k1") == 1
+    assert store.kid_rooms("k1") == ["kid-k1"]
+    with pytest.raises(ValueError):
+        store.check_room("kid-k1@2")             # 아직 없는 실
+
+    assert store.set_halls("k1", 3) == 3
+    assert store.kid_rooms("k1") == ["kid-k1", "kid-k1@2", "kid-k1@3"]
+    art, _ = store.add_artwork({"name": "a", "data": "data:image/png;base64," + PNG_1PX, "width": 1, "height": 1, "kid_id": "k1"})
+    hung = {"id": "x", "image": art["file"], "width": 1, "aspect": 1, "mount": {"host": None, "id": "back"}}
+    store.save_layout("kid-k1@3", {"items": [], "arts": [hung], "light": 0.5})
+    store.save_layout("kid-k1", {"items": [], "arts": [], "light": 9})
+    lay = store.layout("kid-k1@3")
+    assert lay["light"] == 0.5 and lay["hall"] == 3 and lay["halls"] == 3 and lay["shell"] == "gallery"
+    assert store.layout("kid-k1")["light"] == 1.6           # 너무 밝은 값은 한계로
+    assert store.halls("k1") == 3                           # 1실을 저장해도 전시실 수는 그대로
+    assert store.art_usage(art["file"]) == ["kid-k1@3"]     # 2실·3실에 걸린 것도 센다
+
+    store.set_active("kid-k1@3")
+    assert store.set_halls("k1", 1) == 1                    # 줄이면 뒤쪽 실은 사라진다
+    assert not store.layout_path("kid-k1@3").exists() and store.active == "kid-k1"
+    assert store.art_usage(art["file"]) == []
+
+    token = store.share_token("k1")
+    assert token == store.share_token("k1") and len(token) >= 12
+    assert store.shared_kid(token) == "k1" and store.shared_kid("nope") is None
+    store.kid_ids = lambda: []
+    assert store.shared_kid(token) is None                  # 아이가 지워지면 주소도 죽는다
+
+
 def test_renderer_info_and_stale(store, tmp_path):
     import asyncio
 

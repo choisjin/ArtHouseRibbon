@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import shutil
 import threading
 from pathlib import Path
@@ -31,6 +32,9 @@ log = logging.getLogger("ribbon.world")
 ART_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 KID_ROOM = "kid-"          # 아이 전시실 방 id 접두어 (kid-<아이 id>)
 KID_BASE = "kidbase"       # 아이 전시실이 같이 쓰는 배경 (그림을 뺀 전시실)
+HALL_SEP = "@"             # 전시실 2실부터: kid-<아이 id>@2 (1실은 kid-<아이 id> 그대로)
+MAX_HALLS = 9
+LIGHT_MIN, LIGHT_MAX = 0.2, 1.6   # 전시실 조명 밝기 (1 = 렌더 그대로)
 KID_SHELL = "gallery"      # 아이 전시실의 방 모양·가구는 전시장 것을 쓴다
 MAX_UPLOAD = 60 * 1024 * 1024
 HISTORY_KEEP = 50
@@ -82,12 +86,42 @@ class WorldStore:
 
     # ---------- 아이 전시실 ----------
     @staticmethod
-    def kid_room(kid_id: str) -> str:
-        return f"{KID_ROOM}{kid_id}"
+    def kid_room(kid_id: str, hall: int = 1) -> str:
+        return f"{KID_ROOM}{kid_id}" if hall <= 1 else f"{KID_ROOM}{kid_id}{HALL_SEP}{hall}"
 
     @staticmethod
     def kid_of(room: str) -> Optional[str]:
-        return room[len(KID_ROOM):] if room.startswith(KID_ROOM) else None
+        return room[len(KID_ROOM):].split(HALL_SEP)[0] if room.startswith(KID_ROOM) else None
+
+    @staticmethod
+    def hall_of(room: str) -> int:
+        """몇 실인가 (1부터). 아이 전시실이 아니거나 숫자가 아니면 1"""
+        tail = room.split(HALL_SEP, 1)[1] if room.startswith(KID_ROOM) and HALL_SEP in room else ""
+        return int(tail) if tail.isdigit() and int(tail) >= 1 else 1
+
+    def halls(self, kid_id: str) -> int:
+        """그 아이 전시실이 몇 실까지 있나 (1실 파일에 적어 둔다)"""
+        n = (_read_json(self.layout_path(self.kid_room(kid_id)), {}) or {}).get("halls", 1)
+        return max(1, min(MAX_HALLS, int(n))) if isinstance(n, (int, float)) else 1
+
+    def kid_rooms(self, kid_id: str) -> List[str]:
+        return [self.kid_room(kid_id, h) for h in range(1, self.halls(kid_id) + 1)]
+
+    def set_halls(self, kid_id: str, count: int) -> int:
+        """전시실 수를 바꾼다. 줄이면 뒤쪽 실의 걸린 그림 목록은 지운다 (사진 파일은 남는다)"""
+        count = max(1, min(MAX_HALLS, int(count)))
+        with self._lock:
+            old = self.halls(kid_id)
+            first = self.layout_path(self.kid_room(kid_id))
+            data = _read_json(first, {}) or {"room": self.kid_room(kid_id), "kid_id": kid_id, "arts": []}
+            data["halls"] = count
+            _write_json(first, data)
+            for h in range(count + 1, old + 1):
+                self.layout_path(self.kid_room(kid_id, h)).unlink(missing_ok=True)
+        active = (_read_json(self.dir / "world.json", {}) or {}).get("active") or ""
+        if self.kid_of(active) == kid_id and self.hall_of(active) > count:
+            _write_json(self.dir / "world.json", {"active": self.kid_room(kid_id)})
+        return count
 
     def shell_room(self, room: str) -> str:
         """그 방의 모양·조명을 어디서 가져오는가 (블렌더 렌더가 쓴다)"""
@@ -97,11 +131,28 @@ class WorldStore:
 
     def forget_kid_room(self, room: str) -> None:
         """아이를 지울 때 그 아이 전시실 파일도 지운다 (그림 파일 자체는 artworks 에 남는다)"""
-        path = self.layout_path(room)
-        if path.exists():
-            path.unlink()
-        if (_read_json(self.dir / "world.json", {}) or {}).get("active") == room:
+        kid = self.kid_of(room) or ""
+        for h in range(1, MAX_HALLS + 1):       # 2실, 3실… 도 같이
+            self.layout_path(self.kid_room(kid, h)).unlink(missing_ok=True)
+        if self.kid_of((_read_json(self.dir / "world.json", {}) or {}).get("active") or "") == kid:
             _write_json(self.dir / "world.json", {"active": self.rooms()[0] if self.rooms() else "classroom"})
+
+    # ---------- 부모님께 보내는 전시실 주소 ----------
+    def share_token(self, kid_id: str) -> str:
+        """그 아이 전시실을 로그인 없이 볼 수 있는 주소의 열쇠 (없으면 만든다). data/world/shares.json"""
+        with self._lock:
+            shares = _read_json(self.dir / "shares.json", {}) or {}
+            for token, kid in shares.items():
+                if kid == kid_id:
+                    return token
+            token = secrets.token_urlsafe(12)
+            shares[token] = kid_id
+            _write_json(self.dir / "shares.json", shares)
+            return token
+
+    def shared_kid(self, token: str) -> Optional[str]:
+        kid = (_read_json(self.dir / "shares.json", {}) or {}).get(token)
+        return kid if kid in self.kid_ids() else None
 
     def render_rooms(self) -> List[str]:
         """배경을 렌더해 두어야 하는 방 (아이 전시실은 kidbase 한 장을 같이 쓴다)"""
@@ -112,6 +163,8 @@ class WorldStore:
         if kid is not None:
             if kid not in self.kid_ids():
                 raise ValueError(f"없는 아이입니다: {kid}")
+            if room != self.kid_room(kid, self.hall_of(room)) or self.hall_of(room) > self.halls(kid):
+                raise ValueError(f"없는 전시실입니다: {room}")
             return room
         if room == KID_BASE:
             return room
@@ -153,7 +206,8 @@ class WorldStore:
                 return None
             mine = _read_json(self.layout_path(room), {}) or {}
             # shell: 방 모양·벽(그림 거는 면)을 어디서 가져오는지 TV 에 알려 준다
-            return {**base, "room": room, "shell": KID_SHELL, "kid_id": kid, "arts": mine.get("arts", [])}
+            return {**base, "room": room, "shell": KID_SHELL, "kid_id": kid, "arts": mine.get("arts", []),
+                    "light": mine.get("light", 1.0), "hall": self.hall_of(room), "halls": self.halls(kid)}
         return _read_json(self.layout_path(room)) or self.default_layout(room)
 
     def has_layout(self, room: str) -> bool:
@@ -198,9 +252,13 @@ class WorldStore:
         self.check_room(room)
         kid = self.kid_of(room)
         if kid is not None:                     # 아이 전시실은 걸린 그림만 저장한다
+            light = data.get("light", 1.0)
             data = self.validate({**(self.layout(KID_SHELL) or {"items": []}), "arts": data.get("arts", [])})
-            saved = {"room": room, "kid_id": kid, "arts": data["arts"]}
+            saved = {"room": room, "kid_id": kid, "arts": data["arts"],
+                     "light": max(LIGHT_MIN, min(LIGHT_MAX, float(light)))}
             with self._lock:
+                if self.hall_of(room) == 1:     # 전시실 수는 1실 파일에 적혀 있다
+                    saved["halls"] = self.halls(kid)
                 _write_json(self.layout_path(room), saved)
             log.info("kid gallery saved: %s arts=%d", room, len(saved["arts"]))
             return self.layout(room) or saved
@@ -281,7 +339,7 @@ class WorldStore:
 
     def art_usage(self, rel: str) -> List[str]:
         used = []
-        for room in self.rooms() + [self.kid_room(k) for k in self.kid_ids()]:
+        for room in self.rooms() + [r for k in self.kid_ids() for r in self.kid_rooms(k)]:
             lay = _read_json(self.layout_path(room), {}) or {}
             if any(a.get("image") == rel for a in lay.get("arts", [])):
                 used.append(room)

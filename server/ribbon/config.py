@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     render_pct: int = 50                # 3840x2160 의 % (50 = 1920x1080)
     render_samples: int = 96
     client_dist: str = "../client/dist"
+    #: 작품 사진 배경 지우기 모델 (ribbon/cutout.py). 처음 쓸 때 이 주소에서 받아 둔다 (약 220MB)
+    cutout_model: str = "../data/models/birefnet-lite.onnx"
+    cutout_model_url: str = ("https://github.com/danielgatis/rembg/releases/download/v0.0.0/"
+                             "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx")
 
     def kids_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.kids_file).resolve()
@@ -117,6 +121,9 @@ class Settings(BaseSettings):
 
     def world_catalog_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.world_catalog).resolve()
+
+    def cutout_model_path(self) -> Path:
+        return (Path(__file__).resolve().parent.parent / self.cutout_model).resolve()
 
     def client_dist_path(self) -> Path:
         return (Path(__file__).resolve().parent.parent / self.client_dist).resolve()

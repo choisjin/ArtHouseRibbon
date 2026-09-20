@@ -6,6 +6,8 @@ pydantic-settings>=2.2
 numpy>=1.26
 httpx>=0.27
 python-multipart>=0.0.9
+# Artwork background removal reads photos with Pillow (ribbon/cutout.py, needs onnxruntime too)
+pillow>=10
 
 # Tests
 pytest>=8

@@ -137,7 +137,18 @@ export class Stage {
       if (this.room.room) this.fitCamera(this.room.room);
       this.resize();
     }
+    this.setLight(lay?.light ?? 1);
     return { changed: changed || modeChanged, roomChanged };
+  }
+
+  /**
+   * 전시실 조명 밝기 (1 = 그대로). 배경 그림은 톤매핑을 거치지 않으므로 따로 어둡게 하고,
+   * 실시간으로 그리는 것(걸린 그림·캐릭터)은 노출로 같이 맞춘다
+   */
+  setLight(level: number): void {
+    const v = Math.min(1.6, Math.max(0.2, level));
+    this.scene.backgroundIntensity = v;
+    this.renderer.toneMappingExposure = v;
   }
 
   private async loadBackground(url: string): Promise<THREE.Texture> {

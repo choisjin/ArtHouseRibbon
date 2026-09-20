@@ -81,6 +81,11 @@ export interface Layout {
   items: LayoutItem[];
   storage?: LayoutItem[];
   arts?: LayoutArt[];
+  /** 전시실 조명 밝기 (1 = 렌더 그대로, 아이 전시실만) */
+  light?: number;
+  /** 아이 전시실: 몇 실인지 / 모두 몇 실인지 */
+  hall?: number;
+  halls?: number;
 }
 
 /** 시간대(일출·아침·낮·일몰·밤) 하나의 배경 */

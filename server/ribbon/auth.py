@@ -39,10 +39,14 @@ def permitted(path: str, method: str, role: Optional[str]) -> bool:
     화면 파일(/api/ 가 아닌 것)과 로그인 API 는 누구나 — 화면이 스스로 로그인 창을 띄운다"""
     if not path.startswith("/api/") or path.startswith("/api/auth/") or path == "/api/call":
         return True     # /api/call 은 호출 토큰으로 확인한다 (폰 매크로 앱이 부른다, main.api_call)
+    if path.startswith("/api/share/") and method in ("GET", "HEAD"):
+        return True     # 부모님께 보낸 전시실 주소: 주소 속 열쇠로 확인한다 (main.api_share)
     if role is None:
         return False
     if role == "admin":
         return True
+    if path.endswith("/share"):
+        return False    # 공유 주소를 만들고 보는 것은 관리자만 (/api/kids/<id>/share)
     if method in ("GET", "HEAD"):
         return any(path.startswith(p) for p in MEMBER_GET)
     return method == "POST" and path in MEMBER_POST

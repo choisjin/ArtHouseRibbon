@@ -83,6 +83,12 @@ Cloudflare 대시보드 → Zero Trust → Access → Applications → Add an ap
 
 무료 요금제로 50명까지 된다. 켜지 않아도 서버 로그인이 막아 주지만, 켜 두면 로그인 화면조차 밖에 보이지 않는다.
 
+**부모님께 보내는 전시실 주소를 쓰려면** (`/?mode=gallery&k=<열쇠>`, 전시실 꾸미기의 🔗 공유): Access 를 켜 두면 부모님도
+Access 로그인에 막힌다. 같은 Application 에 **Bypass 정책**을 하나 더 두어 아래 경로만 열어 준다
+(Access → Applications → 그 앱 → Policies → Add a policy → Action **Bypass**, Include **Everyone**, 그리고 앱을 경로별로
+나눠 등록: `ribbon.arthouseribbon.com/api/share/*`, `/artworks/*`, `/world/*`, `/world-render/*`, `/assets/*`, 그리고 첫 화면 `/`).
+번거로우면 Access 없이 서버 로그인만으로 써도 된다 — 공유 주소는 열쇠를 아는 사람만 열 수 있고 보기 전용이다.
+
 ## 4. 리본 서버 쪽 설정
 
 `server/.env` 에 한 줄 추가하고 서버를 다시 켠다:

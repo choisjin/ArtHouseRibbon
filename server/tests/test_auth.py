@@ -98,6 +98,11 @@ def test_public_hides_password(tmp_path):
     ("/api/config/ribbon", "PUT", "member", False),
     ("/api/music/status", "GET", "member", False),
     ("/api/auth/users", "GET", "member", True),      # 관리자 확인은 엔드포인트 안에서 한 번 더
+    # 부모님께 보낸 전시실 주소: 보기는 누구나(주소 속 열쇠로 확인), 주소를 만드는 것은 관리자만
+    ("/api/share/abc123", "GET", None, True),
+    ("/api/share/abc123", "POST", None, False),
+    ("/api/kids/abc/share", "GET", "member", False),
+    ("/api/kids/abc/share", "GET", "admin", True),
     # admin: 전부
     ("/api/config/ribbon", "PUT", "admin", True),
     ("/api/kids/abc", "DELETE", "admin", True),
