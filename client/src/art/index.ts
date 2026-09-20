@@ -28,6 +28,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
 interface Kid { id: string; name: string }
 
+type Tab = "size" | "fx" | "glow";
+const TABS: [Tab, string][] = [["size", "📐 크기"], ["fx", "🎨 필터"], ["glow", "✨ 하이라이트"]];
 const GALLERY = "room:gallery";           // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
@@ -90,6 +92,7 @@ export async function startArt(): Promise<void> {
   let mounts: WallMount[] = [];
   let picked: string | null = null;
   let dirty = false;
+  let tab: Tab = "size";                           // 고른 작품 설정에서 보고 있는 탭 (그림을 바꿔도 그대로)
   const lightIn = $<HTMLInputElement>("#light");
 
   if (new URLSearchParams(location.search).has("debug")) (window as unknown as { stage?: Stage }).stage = stage;
@@ -435,17 +438,43 @@ export async function startArt(): Promise<void> {
     if (!a) { box.hidden = true; box.innerHTML = ""; return; }
     const w = wallOf(a);
     const maxW = maxWidth(a, w);
+    const fx = fxOf(a.fx);
     const name = mine.find((x) => x.file === a.image)?.name ?? "작품";
     box.hidden = false;
     box.innerHTML = `
-      <b class="who">${esc(name)}</b>
-      <label class="grow">크기 <button data-step="-0.05">−</button>
-        <input id="w" type="range" min="${MIN_W}" max="${maxW.toFixed(2)}" step="0.01" value="${a.width}">
-        <button data-step="0.05">＋</button> <b id="w-num"></b></label>
-      <label>액자 <select id="frame">${FRAME_STYLES.map((f) =>
-        `<option value="${f.id}" ${(a.frame ?? "canvas") === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></label>
-      <button id="down" class="ghost">벽에서 내리기</button>
-      ${fxHtml(fxOf(a.fx))}`;
+      <div class="p-head">
+        <b class="who">${esc(name)}</b>
+        <span class="grow"></span>
+        <button id="down" class="ghost">벽에서 내리기</button>
+        <button id="close-picked" class="ghost" title="설정 닫기">✕</button>
+      </div>
+      <div class="p-tabs">${TABS.map(([id, label]) =>
+        `<button data-tab="${id}" class="${id === tab ? "on" : ""}">${label}</button>`).join("")}</div>
+      <div class="p-body" data-tab="size" ${tab === "size" ? "" : "hidden"}>
+        <label class="grow">크기 <button data-step="-0.05">−</button>
+          <input id="w" type="range" min="${MIN_W}" max="${maxW.toFixed(2)}" step="0.01" value="${a.width}">
+          <button data-step="0.05">＋</button> <b id="w-num"></b></label>
+        <label>액자 <select id="frame">${FRAME_STYLES.map((f) =>
+          `<option value="${f.id}" ${(a.frame ?? "canvas") === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select></label>
+      </div>
+      <div class="p-body warm" data-tab="fx" ${tab === "fx" ? "" : "hidden"}>
+        <label>골라 쓰기 <select id="preset"><option value="">직접 맞춤</option>${FX_PRESETS.map((x) =>
+          `<option value="${x.id}" ${x.id === presetOf(fx) ? "selected" : ""}>${x.name}</option>`).join("")}</select></label>
+        ${fxRow("b", "밝기", fx)}${fxRow("c", "대비", fx)}${fxRow("s", "채도", fx)}${fxRow("w", "색온도", fx)}${fxRow("sepia", "세피아", fx)}
+      </div>
+      <div class="p-body warm" data-tab="glow" ${tab === "glow" ? "" : "hidden"}>
+        ${fxRow("glow", "세기", fx)}${fxRow("glowSize", "번짐", fx)}${fxRow("glowTone", "빛 색", fx)}
+        <span class="hint">작품만 환하게 비춰 줍니다 (방 밝기를 낮춰도 이 작품은 그대로).</span>
+      </div>`;
+    box.querySelectorAll<HTMLButtonElement>(".p-tabs button").forEach((b) => {
+      b.onclick = () => {
+        tab = b.dataset.tab as Tab;
+        box.querySelectorAll<HTMLElement>(".p-tabs button").forEach((t) => t.classList.toggle("on", t.dataset.tab === tab));
+        box.querySelectorAll<HTMLElement>(".p-body").forEach((t) => { t.hidden = t.dataset.tab !== tab; });
+      };
+    });
+
+    // ---- 크기 ----
     const wIn = box.querySelector<HTMLInputElement>("#w")!;
     const base = a.width;
     const g = findArt(a.id);
@@ -478,20 +507,19 @@ export async function startArt(): Promise<void> {
       dirty = true;
       void rebuild();
     };
-    // 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다)
+
+    // ---- 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
     const fxIns = [...box.querySelectorAll<HTMLInputElement>("[data-fx]")];
-    const showFx = (fx: ArtFx): void => {
+    const setFx = (patch: Partial<ArtFx>, wall: boolean): void => {
+      const now = { ...fxOf(a.fx), ...patch };
+      a.fx = now;
+      stage.room.setArtFx(a.id, now);
       fxIns.forEach((el) => {
         const key = el.dataset.fx as keyof ArtFx;
-        el.value = String(fx[key]);
-        el.parentElement!.querySelector("b")!.textContent = fxText(key, fx[key]);
+        el.value = String(now[key]);
+        el.parentElement!.querySelector("b")!.textContent = fxText(key, now[key]);
       });
-    };
-    const setFx = (patch: Partial<ArtFx>, wall: boolean): void => {
-      const fx = { ...fxOf(a.fx), ...patch };
-      a.fx = fx;
-      stage.room.setArtFx(a.id, fx);
-      showFx(fx);
+      box.querySelector<HTMLSelectElement>("#preset")!.value = presetOf(now);
       dirty = true;
       if (wall) later();
     };
@@ -499,13 +527,14 @@ export async function startArt(): Promise<void> {
       el.oninput = () => {
         const key = el.dataset.fx as keyof ArtFx;
         setFx({ [key]: Number(el.value) }, key.startsWith("glow"));
-        if (!key.startsWith("glow")) box.querySelector<HTMLSelectElement>("#preset")!.value = "";
       };
     });
     box.querySelector<HTMLSelectElement>("#preset")!.onchange = (e) => {
       const preset = FX_PRESETS.find((x) => x.id === (e.target as HTMLSelectElement).value);
       if (preset) setFx(preset.fx, false);
     };
+
+    box.querySelector<HTMLButtonElement>("#close-picked")!.onclick = () => { picked = null; markPicked(); };
     box.querySelector<HTMLButtonElement>("#down")!.onclick = () => {
       arts = arts.filter((x) => x.id !== a.id);
       picked = null;
@@ -516,27 +545,18 @@ export async function startArt(): Promise<void> {
   }
 
   const fxText = (key: keyof ArtFx, v: number): string =>
-    key === "s" || key === "glowSize" ? `${Math.round(v * 100)}%`
+    key === "s" || key === "glowSize" || key === "sepia" ? `${Math.round(v * 100)}%`
       : key === "glow" ? (v <= 0 ? "끔" : `${Math.round(v * 100)}%`)
         : key === "glowTone" ? (v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게")
           : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`;
 
-  function fxHtml(fx: ArtFx): string {
-    const row = (key: keyof ArtFx, label: string): string =>
-      `<label class="grow">${label} <input data-fx="${key}" type="range" min="${FX_LIMIT[key][0]}" max="${FX_LIMIT[key][1]}"
-        step="0.01" value="${fx[key]}"> <b>${fxText(key, fx[key])}</b></label>`;
-    const same = (p: Partial<ArtFx>): boolean => (Object.keys(p) as (keyof ArtFx)[]).every((k) => Math.abs((p[k] ?? 0) - fx[k]) < 0.005);
-    const cur = FX_PRESETS.find((x) => same(x.fx))?.id ?? "";
-    return `<div class="fx-row">
-      <label>🎨 필터 <select id="preset"><option value="">직접 맞춤</option>${FX_PRESETS.map((x) =>
-        `<option value="${x.id}" ${x.id === cur ? "selected" : ""}>${x.name}</option>`).join("")}</select></label>
-      ${row("b", "밝기")}${row("c", "대비")}${row("s", "채도")}${row("w", "색온도")}
-    </div>
-    <div class="fx-row">
-      <label>✨ 하이라이트</label>
-      ${row("glow", "세기")}${row("glowSize", "번짐")}${row("glowTone", "빛 색")}
-    </div>`;
-  }
+  const fxRow = (key: keyof ArtFx, label: string, fx: ArtFx): string =>
+    `<label class="grow">${label} <input data-fx="${key}" type="range" min="${FX_LIMIT[key][0]}" max="${FX_LIMIT[key][1]}"
+      step="0.01" value="${fx[key]}"> <b>${fxText(key, fx[key])}</b></label>`;
+
+  /** 지금 값과 똑같은 '골라 쓰기' 가 있으면 그 id (없으면 직접 맞춤) */
+  const presetOf = (fx: ArtFx): string =>
+    FX_PRESETS.find((x) => (Object.keys(x.fx) as (keyof ArtFx)[]).every((k) => Math.abs((x.fx[k] ?? 0) - fx[k]) < 0.005))?.id ?? "";
 
   // ---------- TV 에 나오는 화면 보기 ----------
   $("#view-tv").onclick = () => {
@@ -679,14 +699,24 @@ const PAGE = `
   header h1 { font-size:16px; margin:0 4px 0 0 }
   header a { color:#c9b7bd }
   #msg { margin-left:auto; font-size:14px; color:#e6ded6 }
-  #picked { position:fixed; z-index:3; left:12px; right:12px; bottom:12px; display:flex; gap:14px; align-items:center;
-            flex-wrap:wrap; padding:10px 14px; border-radius:14px; background:#1b1724ee; border:1px solid #3a3346 }
+  /* 고른 작품 설정: 크기 · 필터 · 하이라이트 세 탭. 바꾸는 대로 벽에서 바로 보이도록 아래쪽에 둔다 */
+  #picked { position:fixed; z-index:3; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px;
+            padding:10px 14px 12px; border-radius:14px; background:#1b1724f2; border:1px solid #3a3346;
+            box-shadow:0 10px 30px rgba(0,0,0,.45) }
   #picked[hidden] { display:none }
   #picked label { display:flex; gap:6px; align-items:center; white-space:nowrap }
-  #picked .grow { flex:1 1 220px }
-  #picked input[type=range] { flex:1; min-width:110px; accent-color:#e9557d }
+  #picked .grow { flex:1 1 200px }
+  #picked input[type=range] { flex:1; min-width:96px; accent-color:#e9557d }
   #picked .who { color:#f0b9c8 }
   #picked button[data-step] { padding:2px 10px }
+  #picked .p-head { display:flex; gap:10px; align-items:center }
+  #picked .p-tabs { display:flex; gap:6px; flex-wrap:wrap }
+  #picked .p-tabs button { padding:6px 14px }
+  #picked .p-body { display:flex; gap:16px; align-items:center; flex-wrap:wrap; min-height:34px }
+  #picked .p-body[hidden] { display:none }
+  #picked .p-body.warm input[type=range] { accent-color:#ffd166 }
+  #picked .p-body b { min-width:3.4em }
+  #picked .p-body .hint { color:#9d94a8 }
   .modal { display:none; position:fixed; inset:0; z-index:5; background:rgba(10,8,16,.66);
            align-items:center; justify-content:center; padding:16px }
   .modal.open { display:flex }
@@ -705,11 +735,6 @@ const PAGE = `
   .card-body small { color:#8b8279 }
   #halls { display:flex; gap:4px }
   #halls button { padding:6px 10px }
-  #picked .fx-row { flex:1 1 100%; display:flex; gap:14px; align-items:center; flex-wrap:wrap;
-                    border-top:1px solid #3a3346; padding-top:8px }
-  #picked .fx-row .grow { flex:1 1 140px }
-  #picked .fx-row input[type=range] { min-width:64px; accent-color:#ffd166 }
-  #picked .fx-row b { min-width:3.2em }
   details.group { border:1px solid #e3ded8; border-radius:10px; padding:6px 8px; margin-bottom:8px; background:#fff }
   details.group summary { cursor:pointer; padding:4px 2px }
   details.group summary small { color:#8b8279 }
