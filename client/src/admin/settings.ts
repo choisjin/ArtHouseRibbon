@@ -390,9 +390,12 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
         </select></label>
         <div class="actions">
           <button data-act="beep">🔊 삐 소리 시험</button>
-          <button data-act="labels" title="TV 컴퓨터에서 마이크 권한을 물어볼 수 있습니다">장치 이름 보기</button>
+          ${o.mobile ? "" : `<button data-act="labels" title="TV 컴퓨터에서 마이크 권한을 물어볼 수 있습니다">장치 이름 보기</button>`}
         </div>
-        ${o.supported ? "" : `<p class="hint warn-text">이 TV 브라우저는 출력 장치 선택을 지원하지 않습니다 (Chrome 110 이상)</p>`}
+        ${o.mobile
+          ? `<p class="hint">이 TV 화면은 <b>폰·태블릿</b>입니다. 출력 장치는 고를 수 없고 소리는 그 기기 설정(스피커·HDMI·블루투스)을 따릅니다.
+             삐 소리는 <b>그 기기에서 TV 화면이 앞에 떠 있고</b> 화면을 한 번 누른 뒤에만 납니다.</p>`
+          : o.supported ? "" : `<p class="hint warn-text">이 TV 브라우저는 출력 장치 선택을 지원하지 않습니다 (Chrome 110 이상)</p>`}
         ${o.msg ? `<p class="hint warn-text">${esc(o.msg)}</p>` : ""}
       </div>`).join("");
     outputs.querySelectorAll<HTMLElement>(".agent").forEach((box) => {
@@ -400,7 +403,8 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
       const sel = box.querySelector("select") as HTMLSelectElement;
       sel.onchange = () => { send({ agent, kind: "output", action: "set", deviceId: sel.value }); ctx.msg(`TV 소리 → ${sel.selectedOptions[0]?.textContent}`); };
       (box.querySelector("[data-act=beep]") as HTMLButtonElement).onclick = () => send({ agent, kind: "output", action: "beep" });
-      (box.querySelector("[data-act=labels]") as HTMLButtonElement).onclick = () => {
+      const labels = box.querySelector("[data-act=labels]") as HTMLButtonElement | null;
+      if (labels) labels.onclick = () => {
         send({ agent, kind: "output", action: "labels" });
         ctx.msg("TV 컴퓨터에서 마이크 권한을 허용하면 장치 이름이 보입니다");
       };

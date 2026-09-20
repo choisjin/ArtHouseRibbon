@@ -229,6 +229,8 @@ export interface OutputStatus {
   /** 장치를 가진 화면 하나 ("브라우저 id/역할") */
   agent: string; role: string; host: string;
   supported: boolean;   // AudioContext.setSinkId (Chrome 110+)
+  /** 폰·태블릿인가 (출력 장치를 고를 수 없다) */
+  mobile?: boolean;
   locked: boolean;      // TV 화면을 한 번 클릭해야 소리가 남
   current: string;      // "" = 시스템 기본 출력
   devices: DeviceRef[];
