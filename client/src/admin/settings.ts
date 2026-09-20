@@ -120,6 +120,10 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
           </select></label>
           <p class="hint" data-role="device"></p>
           <label>내 목록 <select name="playlist"></select></label>
+          <div class="actions">
+            <button data-act="new-list">＋ 새 목록 만들기</button>
+            <button data-act="reload-lists">목록 다시 읽기</button>
+          </div>
           <p class="hint">"내 목록 틀어줘" 로 틀고, "이 노래 넣어줘 / 빼줘" 가 이 목록을 고칩니다. 내가 만든 목록만 고칠 수 있습니다.</p>
           <label>음량 <input name="volume" type="range" min="10" max="100" step="5" /></label>
           <p class="hint">리본이가 말하거나 아이 말을 듣는 동안은 음악 소리를 줄입니다.</p>
@@ -291,6 +295,21 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   mOutput.onchange = () => void saveMusic({ output: mOutput.value as MusicConfig["output"] }, `재생할 곳: ${mOutput.selectedOptions[0]?.textContent}`);
   mList.onchange = () => void saveMusic({ playlist_id: mList.value, playlist_title: mList.selectedOptions[0]?.dataset.title ?? "" }, "내 목록 저장");
   mVolume.onchange = () => void saveMusic({ volume: Number(mVolume.value) }, `음량 ${mVolume.value}`);
+  mq<HTMLButtonElement>("[data-act=new-list]").onclick = async () => {
+    const name = prompt("새 재생목록 이름", "리본이와 듣는 노래");
+    if (!name?.trim()) return;
+    try {
+      const r = await api<{ playlist: { title: string } }>("POST", "/api/music/playlists", { name: name.trim() });
+      listsLoaded = false;                                   // 새 목록까지 다시 읽고, 서버가 이 목록을 '내 목록'으로 정한다
+      await loadMusic();
+      ctx.msg(`"${r.playlist.title}" 목록을 만들고 내 목록으로 정했습니다`);
+    } catch (e) { ctx.msg(`${e}`, true); }
+  };
+  mq<HTMLButtonElement>("[data-act=reload-lists]").onclick = async () => {
+    listsLoaded = false;
+    await loadMusic();
+    ctx.msg("재생목록을 다시 읽었습니다");
+  };
   mq<HTMLButtonElement>("[data-act=copy]").onclick = () => {
     navigator.clipboard?.writeText(mStatus?.redirect_uri ?? "")
       .then(() => ctx.msg("복사했습니다"), () => ctx.msg("복사하지 못했습니다. 직접 골라 복사하세요", true));

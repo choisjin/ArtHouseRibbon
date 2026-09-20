@@ -432,6 +432,19 @@ async def api_music_playlists():
         raise _music_fail(e)
 
 
+@app.post("/api/music/playlists")
+async def api_music_playlist_create(data: dict = Body(...)):
+    """새 재생목록 만들기 (비공개). 만들면 리본이가 쓰는 '내 목록'으로 삼는다"""
+    try:
+        pl = await spotify.create_playlist(str(data.get("name") or ""))
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+    store.update_music({"playlist_id": pl["id"], "playlist_title": pl["title"]})
+    log.info("재생목록 만듦: %s", pl["title"])
+    await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "playlist": pl})
+
+
 @app.get("/api/music/token")
 async def api_music_token():
     """재생 화면(Web Playback SDK)이 쓰는 접근 토큰 (1시간짜리, 필요할 때마다 다시 받는다)"""

@@ -198,6 +198,16 @@ class SpotifyAccount:
                         "mine": (p.get("owner") or {}).get("id") == (self.data.get("account") or {}).get("id")})
         return out
 
+    async def create_playlist(self, name: str, description: str = "") -> Dict[str, Any]:
+        """내 재생목록 만들기 (비공개). 2026-03 부터 /users/{id}/playlists 대신 /me/playlists"""
+        name = name.strip()
+        if not name:
+            raise MusicError("목록 이름을 넣으세요")
+        p = await self.api("POST", "/me/playlists", body={"name": name, "public": False,
+                                                          "description": description or "리본이와 듣는 노래"})
+        return {"id": p.get("id") or "", "uri": p.get("uri") or "", "title": p.get("name") or name,
+                "count": 0, "image": "", "mine": True}
+
     async def playlist_tracks(self, playlist_id: str, max_items: int = 500) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         offset = 0
