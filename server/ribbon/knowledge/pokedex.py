@@ -39,6 +39,56 @@ def jamo(s: str) -> str:
     return "".join(out)
 
 
+# ---------- 음성 인식이 이름을 다르게 적었을 때 맞춰 보기 (2026-09-21) ----------
+#: 된소리·거센소리를 예사소리로, 비슷한 모음은 하나로. 아이 발음과 Whisper 표기가 갈리는 자리다
+#: ("뚜벅쵸"->"두벅초", "쁘사이저"->"부사이저", "ㅐ/ㅔ")
+_SOFT = {"ㄲ": "ㄱ", "ㅋ": "ㄱ", "ㄸ": "ㄷ", "ㅌ": "ㄷ", "ㅃ": "ㅂ", "ㅍ": "ㅂ", "ㅆ": "ㅅ", "ㅉ": "ㅈ", "ㅊ": "ㅈ",
+         "ㅐ": "ㅔ", "ㅒ": "ㅔ", "ㅖ": "ㅔ", "ㅙ": "ㅚ", "ㅞ": "ㅚ", "ㅘ": "ㅗ", "ㅝ": "ㅜ", "ㅢ": "ㅣ",
+         # 반모음(y)도 묶는다: "뚜벅쵸" 를 "두벅초" 로 적는 일이 많다
+         "ㅑ": "ㅏ", "ㅕ": "ㅓ", "ㅛ": "ㅗ", "ㅠ": "ㅜ"}
+#: 숫자로 적힌 것을 한글 소리로 ("3343" -> "삼삼사삼", "삼삼드래" 를 이렇게 적는 일이 있다)
+_DIGIT = {"0": "영", "1": "일", "2": "이", "3": "삼", "4": "사", "5": "오", "6": "육", "7": "칠", "8": "팔", "9": "구"}
+_ROM_CHO = ["g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"]
+_ROM_JUNG = ["a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi",
+             "yu", "eu", "ui", "i"]
+_ROM_JONG = ["", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "p", "t", "t", "p", "t", "m", "p", "p", "t", "t",
+             "ng", "t", "t", "k", "t", "p", "t"]
+
+
+def soft(s: str) -> str:
+    """자모로 풀고 비슷한 소리끼리 묶는다. 쌍자음·거센소리를 다르게 들어도 같은 이름으로 본다"""
+    return "".join(_SOFT.get(c, c) for c in jamo(s))
+
+
+def digits_to_korean(text: str) -> str:
+    """숫자를 한글 소리로 바꾼 말 (인식기가 '삼'을 '3'으로 적는 경우)"""
+    return "".join(_DIGIT.get(ch, ch) for ch in text)
+
+
+#: 로마자도 거센소리·된소리를 예사소리로 묶는다 ("ddubeokcho" = "ttubeokchyo")
+_SOFT_ROM = [("kk", "g"), ("tt", "d"), ("pp", "b"), ("jj", "j"), ("ss", "s"), ("ch", "j"),
+             ("k", "g"), ("t", "d"), ("p", "b"), ("r", "l"), ("y", ""), ("w", "")]
+
+
+def soft_rom(latin: str) -> str:
+    out = latin.lower()
+    for a, b in _SOFT_ROM:
+        out = out.replace(a, b)
+    return out
+
+
+def romanize(name: str) -> str:
+    """대충 로마자로 (인식기가 한글 대신 영어로 적었을 때 견주어 보려고)"""
+    out = []
+    for ch in name:
+        c = ord(ch) - 0xAC00
+        if 0 <= c < 11172:
+            out += [_ROM_CHO[c // 588], _ROM_JUNG[(c % 588) // 28], _ROM_JONG[c % 28]]
+        elif ch.isalnum():
+            out.append(ch.lower())
+    return "".join(out)
+
+
 # 생김새 설명: 공식 그림을 그림 보는 대화 모델에게 보여 주고 받는다 (tools/make_pokemon_looks.py 와 게임 중 즉석).
 # 저장소에 넣어 둔 1세대 설명 + 게임 중에 새로 만든 설명(data/pokemon_looks_cache.json)
 LOOKS_FILE = Path(__file__).with_name("pokemon_looks.json")

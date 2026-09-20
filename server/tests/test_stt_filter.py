@@ -70,8 +70,11 @@ async def test_dialogue_prompt_has_names_not_answer(tmp_path):
     kids = KidRegistry([KidInfo(id="a", name="김준호", nickname="준이", mic_channel=0)])
     dm = DialogueManager(Settings(), kids, None, BrowserTTS(), bc, pokedex=Pokedex(p))
     assert "준이" in dm.stt_prompt() and "김준호" in dm.stt_prompt()
+    assert "피카츄" not in dm.stt_prompt()                                # 게임 중이 아니면 포켓몬 이름은 넣지 않는다
     dm.quiz.start("image")
-    assert "힌트" in dm.stt_prompt() and "피카츄" not in dm.stt_prompt()   # 정답은 넣지 않는다
+    # 게임 중에는 포켓몬 이름을 알려 준다 (2026-09-21): 안 알려 주면 "삼삼드래" 를 "3343" 으로 적는다
+    assert "힌트" in dm.stt_prompt() and "피카츄" in dm.stt_prompt()
+    assert len(dm.stt_prompt()) <= 500
 
 
 def test_mlx_repo_names():

@@ -2,6 +2,8 @@
 import json
 import random
 
+import pytest
+
 from ribbon.config import Settings
 from ribbon.dialogue import DialogueManager
 from ribbon.games.pokemon_quiz import PokemonQuiz, detect_start, iya
@@ -75,6 +77,43 @@ def test_give_up_and_pass_also_continue(tmp_path):
     assert q.handle("정답 알려줘").auto_next
     q.next_round()
     assert q.handle("다음 문제").auto_next
+
+
+MANY = MINI + [
+    {"id": 635, "name": "삼삼드래", "genus": "난폭포켓몬", "types": ["악"], "height_m": 1.8, "weight_kg": 160.0},
+    {"id": 43, "name": "뚜벅쵸", "genus": "잡초포켓몬", "types": ["풀"], "height_m": 0.5, "weight_kg": 5.4},
+    {"id": 6, "name": "리자몽", "genus": "화염포켓몬", "types": ["불꽃"], "height_m": 1.7, "weight_kg": 90.5},
+]
+
+
+@pytest.mark.parametrize("answer,heard,ok", [
+    ("삼삼드래", "삼삼드래", True),
+    ("삼삼드래", "33드래", True),          # 숫자로 적힌 경우
+    ("삼삼드래", "삼삼드레", True),
+    ("삼삼드래", "samsamdrae", True),      # 영어로 적힌 경우
+    ("삼삼드래", "리자몽", False),
+    ("뚜벅쵸", "두벅초", True),            # 쌍자음·거센소리를 못 들은 경우
+    ("뚜벅쵸", "ddubeokcho", True),
+    ("뚜벅쵸", "리자몽", False),
+    ("피카츄", "피가츄", True),
+    ("피카츄", "pikachu", True),
+    ("피카츄", "핑구", False),
+])
+def test_misheard_names_still_count(tmp_path, answer, heard, ok):
+    q = quiz(tmp_path, MANY)
+    q.start("image")
+    q.answer = next(e for e in MANY if e["name"] == answer)
+    assert q.is_correct(heard) is ok
+
+
+def test_stt_words_include_the_answer_among_others(tmp_path):
+    """음성 인식에 포켓몬 이름을 미리 알려 준다 (정답 하나만 넣으면 그 이름을 지어낼 수 있어 섞어서)"""
+    q = quiz(tmp_path, MANY)
+    assert q.stt_words() == []                     # 게임 중이 아니면 없다
+    q.start("image")
+    words = q.stt_words(3)
+    assert q.answer["name"] in words and len(words) == 3
+    assert len(set(words)) == 3
 
 
 def test_peek_reveals_scattered_tiles(tmp_path):

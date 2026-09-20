@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional
 
-from ..knowledge.pokedex import Pokedex, jamo
+from ..knowledge.pokedex import Pokedex, digits_to_korean, jamo, romanize, soft, soft_rom
 
 MODES = ("describe", "image", "peek")
 MODE_NAME = {"describe": "설명 듣고 맞추기", "image": "그림 보고 맞추기", "peek": "조금 보고 맞추기"}
@@ -345,20 +345,44 @@ class PokemonQuiz:
         return Reply([self.rng.choice([f"{wrong} 다시 생각해 봐.", f"{wrong} 또 말해 봐.", wrong])])
 
     def is_correct(self, text: str) -> bool:
+        """음성 인식이 이름을 다르게 적어도 맞는 것으로 본다 (2026-09-21):
+        숫자로 적힌 말("3343" -> 삼삼사삼), 쌍자음·거센소리 차이("두벅초" = 뚜벅쵸), 영어로 적힌 말까지 본다"""
         name = self.answer["name"]
+        return any(self._sounds_like(t, name) for t in {text, digits_to_korean(text)})
+
+    def _sounds_like(self, text: str, name: str) -> bool:
         c = _compact(text)
         if name in c:
             return True
         if any(e["id"] == self.answer["id"] for e in self.dex.find(text)):
             return True
-        aj = jamo(name)
+        aj, sj = jamo(name), soft(name)
         for w in re.findall(r"[가-힣]+", text):
             for cut in range(0, 3):                                   # 조사 떼 보기 ("피카추야")
                 part = w[:len(w) - cut] if cut else w
-                if len(part) >= 2 and abs(len(part) - len(name)) <= 1 and \
-                        SequenceMatcher(None, jamo(part), aj).ratio() >= 0.78:
+                if len(part) < 2 or abs(len(part) - len(name)) > 1:
+                    continue
+                if SequenceMatcher(None, jamo(part), aj).ratio() >= 0.78:
                     return True
+                # 쌍자음·거센소리·비슷한 모음을 묶어 한 번 더 (그만큼 더 닮아야 인정한다)
+                if SequenceMatcher(None, soft(part), sj).ratio() >= 0.88:
+                    return True
+        rn, sr = romanize(name), soft_rom(romanize(name))             # 영어로 적힌 경우 ("samsamdrae")
+        for w in re.findall(r"[a-zA-Z]{3,}", text):
+            if SequenceMatcher(None, w.lower(), rn).ratio() >= 0.8                     or SequenceMatcher(None, soft_rom(w), sr).ratio() >= 0.85:
+                return True
         return False
+
+    def stt_words(self, count: int = 24) -> List[str]:
+        """음성 인식에 미리 알려 줄 포켓몬 이름들 (정답 + 같은 범위에서 고른 다른 이름들).
+        이름을 알려 주면 "삼삼드래" 를 "3343" 으로 적는 일이 줄어든다. 힌트를 통째로 읊는 것은
+        providers/stt._echoes_prompt 가 막는다 (12자 넘게 힌트 그대로면 버린다)"""
+        if not self.active or not self.answer or self.phase != "playing":
+            return []
+        pool = [e["name"] for e in self._pool() if e["id"] != self.answer["id"]]
+        names = [self.answer["name"]] + self.rng.sample(pool, min(count - 1, len(pool)))
+        self.rng.shuffle(names)
+        return names
 
     def _solved(self, first: str) -> Reply:
         """정답을 보여 준다. 묻지 않고 다음 문제로 이어진다 (그만하자고 할 때까지, 2026-09-20 요청)"""
