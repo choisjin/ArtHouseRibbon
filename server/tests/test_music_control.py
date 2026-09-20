@@ -210,6 +210,15 @@ async def test_spotify_app_device_plays_and_ducks(tmp_path):
     assert ("volume", "phone-1", 60) in sp.calls
 
 
+async def test_pause_tries_even_when_our_state_is_stale(tmp_path):
+    """Spotify 앱 기기는 상태가 몇 초 늦는다: 안 나오는 것 같아도 한 번 멈춰 본다"""
+    mc, sp, store = control(tmp_path)
+    mc.devices.clear()
+    store.update_music({"output": "spotify", "device_id": "phone-1"})
+    assert await mc.handle("스포티파이 종료") == ["노래 멈췄어."]
+    assert ("pause", "phone-1") in sp.calls
+
+
 async def test_spotify_device_not_chosen(tmp_path):
     mc, sp, store = control(tmp_path)
     store.update_music({"output": "spotify"})

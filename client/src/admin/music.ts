@@ -83,7 +83,7 @@ export function mountMusic(el: HTMLElement, ctx: AdminCtx): { show(): void } {
       <h3>🎵 음악 계정 · 설정</h3>
       <label class="inline"><input type="checkbox" name="enabled" /> 리본이에게 말로 음악 부탁하기</label>
       <p class="hint">"피카츄 노래 틀어줘", "내 목록 틀어줘", "플레이리스트 보여줘", "노래 꺼줘", "다음 노래", "소리 줄여줘",
-        "이 노래 넣어줘 / 빼줘", "이 노래 뭐야", "반복해줘", "섞어줘"</p>
+        "노래 멈춰 / 스포티파이 종료", "이 노래 넣어줘 / 빼줘", "이 노래 뭐야", "반복해줘", "섞어줘"</p>
       <label class="inline">나라 (카탈로그) <select name="market">
         <option value="KR">한국 (KR)</option>
         <option value="US">미국 (US)</option>

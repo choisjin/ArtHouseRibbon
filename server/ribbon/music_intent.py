@@ -78,7 +78,7 @@ def parse(text: str, name: str = "리본") -> Optional[Intent]:
     if re.search(r"(섞어|섞자|셔플|랜덤|무작위|섞지|순서대로)", c):
         off = re.search(r"(섞지마|섞지말|끄|해제|안섞|순서대로)", c)
         return Intent("shuffle", "off" if off else "on")
-    if re.search(_MUSIC + r".*(꺼|끄|멈춰|멈추|정지|그만)|그만틀|(음악|노래)?일시정지", c):
+    if re.search(_MUSIC + r".*(꺼|끄|멈춰|멈추|정지|중지|그만|종료|끝내|끝나|닫아|닫자|스톱|stop)|그만틀|(음악|노래)?일시정지", c):
         return Intent("pause")
     if re.search(r"(다시|계속|이어서)(틀|켜|재생|들려)", c):
         return Intent("resume")
@@ -416,9 +416,18 @@ class MusicControl:
         return {"kind": "track", "title": ""}
 
     async def _do_pause(self, it: Intent) -> List[str]:
-        if not (self.state or {}).get("playing"):
-            return ["지금 나오는 노래가 없어."]
-        await self.account.pause(self.device())
+        playing = bool((self.state or {}).get("playing"))
+        if not playing and self.store.config.music.output != "spotify":
+            return ["지금 나오는 노래가 없어."]     # 브라우저 재생은 우리가 상태를 정확히 안다
+        try:
+            # Spotify 앱 기기는 우리 상태가 몇 초 늦을 수 있어서, 안 나오는 것 같아도 한 번 멈춰 본다
+            await self.account.pause(self.device())
+        except MusicError as e:
+            text = str(e)
+            if "Restriction" in text or "active device" in text.lower() or "찾지 못" in text:
+                return ["지금 나오는 노래가 없어."]
+            raise
+        self.state = {**(self.state or {}), "playing": False}
         return ["노래 멈췄어."]
 
     async def _do_resume(self, it: Intent) -> List[str]:
