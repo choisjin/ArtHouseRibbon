@@ -505,6 +505,31 @@ async def api_music_play(data: dict = Body(...)):
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/music/control")
+async def api_music_control(data: dict = Body(...)):
+    """관리자 페이지 위쪽 플레이어: {action: pause|resume|next|prev|repeat|shuffle, value}"""
+    action, value = str(data.get("action") or ""), str(data.get("value") or "")
+    try:
+        dev = music.device()
+        if action == "pause":
+            await spotify.pause(dev)
+        elif action == "resume":
+            await spotify.resume(dev)
+        elif action == "next":
+            await spotify.next(dev)
+        elif action == "prev":
+            await spotify.previous(dev)
+        elif action == "repeat":
+            await spotify.repeat(dev, value if value in ("off", "context", "track") else "off")
+        elif action == "shuffle":
+            await spotify.shuffle(dev, value == "on")
+        else:
+            raise HTTPException(400, f"모르는 동작입니다: {action}")
+    except Exception as e:  # noqa: BLE001
+        raise _music_fail(e)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/music/token")
 async def api_music_token():
     """재생 화면(Web Playback SDK)이 쓰는 접근 토큰 (1시간짜리, 필요할 때마다 다시 받는다)"""

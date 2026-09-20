@@ -1,5 +1,6 @@
 import type { MicChoice } from "../audio/mic";
-import type { DevicesMsg, LLMConfig, MusicConfig, ServerMsg } from "../protocol";
+import type { DevicesMsg, LLMConfig, ServerMsg } from "../protocol";
+import { mountMusic } from "./music";
 import { type AdminCtx, api, esc } from "./shared";
 
 /**
@@ -12,7 +13,7 @@ import { type AdminCtx, api, esc } from "./shared";
  *                 여기서 고르면 서버가 그 TV 로 전달한다 (device.control)
  *   대화 모델    : 리본이가 답할 때 쓰는 LLM (맥미니 mlx-serve / Ollama …). 저장하면 서버를 다시 켜지 않아도 다음 답부터 바뀐다.
  *                 .env 의 RIBBON_LLM_* 는 처음 한 번 이 칸을 채우는 데만 쓴다
- *   음악        : Spotify 앱·계정 연결, 리본이에게 말로 음악 부탁하기, 재생할 곳(TV 화면 / 이 관리자 페이지), 목록, 음량
+ *   음악        : Spotify (admin/music.ts): 플레이어 · 내 목록 관리 · 노래 검색 · 계정 설정 모달
  *                 (서버 music.py · music_intent.py, 재생 화면 music/player.ts)
  *   화면 스타일  : 라이트 · 다크 · 기기 설정 따르기 (이 기기에만 저장)
  */
@@ -44,7 +45,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   ];
   el.innerHTML = `
     <div class="subtabs seg many">
-      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="playlist">📃 목록</button><button data-sub="theme">🎨 화면</button>
+      <button data-sub="mic">🎙 마이크</button><button data-sub="cam">📷 카메라</button><button data-sub="output">🔈 TV 소리</button><button data-sub="llm">🧠 대화 모델</button><button data-sub="music">🎵 음악</button><button data-sub="theme">🎨 화면</button>
     </div>
     <div class="settings">
       <section class="card" data-subpanel="mic" hidden>
@@ -87,68 +88,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
         </div>
         <p class="hint">저장하면 서버를 다시 켜지 않아도 리본이의 다음 대답부터 바뀝니다. 맥미니에서는 MLX 를 씁니다.</p>
       </section>
-      <section class="card" data-subpanel="music" hidden>
-        <h2>🎵 음악 <small class="hint">Spotify · 리본이에게 말로 부탁하기</small></h2>
-        <div id="music" class="agent">
-          <div class="row"><b>계정</b><span class="grow"></span><span data-role="account" class="pill">확인 중…</span></div>
-          <details data-role="app"><summary class="hint">Spotify 앱 (처음 한 번)</summary>
-            <ol class="hint">
-              <li><a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> 에서
-                앱 만들기 (Web API, Web Playback SDK 체크). 앱 주인이 Premium 이어야 합니다.</li>
-              <li>Redirect URI 에 이 주소를 그대로 넣기: <code data-role="redirect"></code> <button data-act="copy">복사</button></li>
-              <li>User Management 에 쓸 Spotify 계정 이메일 넣기 (개발 모드는 5명까지)</li>
-              <li>Client ID 와 Client Secret 을 아래에 넣고 저장</li>
-            </ol>
-            <label>Client ID <input name="client_id" spellcheck="false" autocomplete="off" /></label>
-            <label>Client Secret <input name="client_secret" type="password" spellcheck="false" autocomplete="off" /></label>
-            <div class="actions"><button data-act="app">앱 정보 저장</button></div>
-          </details>
-          <div class="actions">
-            <button data-act="login" class="primary">Spotify 로그인</button>
-            <button data-act="logout">연결 끊기</button>
-          </div>
-          <details><summary class="hint">맥미니가 아닌 컴퓨터에서 로그인했다면</summary>
-            <p class="hint">로그인 뒤 "연결할 수 없음" 창이 뜨면 그 창의 주소 전체를 복사해 여기에 붙여 넣으세요.</p>
-            <label>주소 <input name="callback_url" spellcheck="false" placeholder="http://127.0.0.1:8765/api/music/callback?code=…" /></label>
-            <div class="actions"><button data-act="callback">연결</button></div>
-          </details>
-          <label class="inline"><input type="checkbox" name="enabled" /> 리본이에게 말로 음악 부탁하기</label>
-          <p class="hint">"피카츄 노래 틀어줘", "내 목록 틀어줘", "노래 꺼줘", "다음 노래", "소리 줄여줘", "이 노래 목록에 넣어줘 / 빼줘", "이 노래 뭐야"</p>
-          <label>재생할 곳 <select name="output">
-            <option value="tv">TV 화면</option>
-            <option value="admin">관리자 페이지를 연 컴퓨터 (맥미니)</option>
-          </select></label>
-          <p class="hint" data-role="device"></p>
-          <label>내 목록 <select name="playlist"></select></label>
-          <div class="actions">
-            <button data-act="new-list">＋ 새 목록 만들기</button>
-            <button data-act="reload-lists">목록 다시 읽기</button>
-          </div>
-          <p class="hint">"내 목록 틀어줘" 로 틀고, "이 노래 넣어줘 / 빼줘" 가 이 목록을 고칩니다. 내가 만든 목록만 고칠 수 있습니다.</p>
-          <label>음량 <input name="volume" type="range" min="10" max="100" step="5" /></label>
-          <p class="hint">리본이가 말하거나 아이 말을 듣는 동안은 음악 소리를 줄입니다.</p>
-          <p class="hint" data-role="now"></p>
-          <label>시험 <input name="try" placeholder="피카츄 노래 틀어줘" spellcheck="false" /></label>
-          <div class="actions"><button data-act="try">리본이에게 말하듯 보내기</button></div>
-          <p class="hint" data-role="result"></p>
-        </div>
-      </section>
-      <section class="card" data-subpanel="playlist" hidden>
-        <h2>📃 목록 <small class="hint">곡 넣기·빼기·순서, 검색해서 추가</small></h2>
-        <div id="playlist" class="agent">
-          <div class="row"><label class="grow">목록 <select name="which"></select></label>
-            <button data-act="pl-play" title="설정의 '재생할 곳'에서 틉니다">▶ 목록 틀기</button>
-            <button data-act="pl-reload">다시 읽기</button></div>
-          <p class="hint" data-role="pl-msg"></p>
-          <div class="tracks" data-role="tracks"></div>
-          <hr />
-          <h3>🔎 노래 찾아서 넣기</h3>
-          <div class="row"><input name="q" placeholder="노래 제목이나 가수 (예: 상어가족)" spellcheck="false" class="grow" />
-            <button data-act="search" class="primary">검색</button></div>
-          <p class="hint">Spotify 는 한 번에 10곡까지 찾아 줍니다.</p>
-          <div class="tracks" data-role="results"></div>
-        </div>
-      </section>
+      <div class="music-tab" data-subpanel="music" hidden></div>
       <section class="card" data-subpanel="theme" hidden>
         <h2>🎨 화면 스타일</h2>
         <div class="theme-options">
@@ -242,258 +182,8 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     if (first) void loadModels();
   });
 
-  // ---- 음악 (Spotify) ----
-  const musicBox = el.querySelector("#music") as HTMLElement;
-  const mq = <T extends Element>(s: string) => musicBox.querySelector(s) as T;
-  const mAccount = mq<HTMLElement>("[data-role=account]");
-  const mDevice = mq<HTMLElement>("[data-role=device]");
-  const mNow = mq<HTMLElement>("[data-role=now]");
-  const mResult = mq<HTMLElement>("[data-role=result]");
-  const mEnabled = mq<HTMLInputElement>("[name=enabled]");
-  const mOutput = mq<HTMLSelectElement>("[name=output]");
-  const mList = mq<HTMLSelectElement>("[name=playlist]");
-  const mVolume = mq<HTMLInputElement>("[name=volume]");
-  const mClientId = mq<HTMLInputElement>("[name=client_id]");
-  const mSecret = mq<HTMLInputElement>("[name=client_secret]");
-  type MusicStatus = { has_app: boolean; client_id: string; connected: boolean; account: { name?: string };
-    error: string; redirect_uri: string; devices: string[]; last_error: string };
-  let mStatus: MusicStatus | null = null;
-  let mCfg: MusicConfig | null = null;
-  let listsLoaded = false;
-  function renderMusic(): void {
-    const s = mStatus;
-    if (s) {
-      mAccount.className = `pill${s.connected && !s.error ? " ok" : ""}`;
-      mAccount.textContent = s.connected ? `연결됨: ${s.account.name ?? ""}${s.error ? " (문제 있음)" : ""}`
-        : s.has_app ? "로그인 전" : "앱 정보 없음";
-      mq<HTMLElement>("[data-role=redirect]").textContent = s.redirect_uri;
-      if (document.activeElement !== mClientId) mClientId.value = s.client_id;
-      mSecret.placeholder = s.has_app ? "저장됨 (바꿀 때만 넣기)" : "";
-      if (!s.has_app) mq<HTMLDetailsElement>("[data-role=app]").open = true;
-      const out = mCfg?.output ?? "tv";
-      const where = out === "tv" ? "TV 화면" : "관리자 페이지";
-      mDevice.innerHTML = !mCfg?.enabled ? "음악이 꺼져 있습니다."
-        : s.devices.includes(out) ? `<span class="ok-text">${where}이 Spotify 스피커로 준비됐습니다.</span>`
-        : `<span class="warn-text">${where}이 아직 준비되지 않았습니다. 그 화면을 Chrome 으로 열고 한 번 눌러 주세요.</span>`;
-      const err = s.error || s.last_error;
-      if (err) mDevice.innerHTML += `<br><span class="warn-text">최근 문제: ${esc(err)}</span>`;
-    }
-    if (mCfg && !musicBox.contains(document.activeElement)) {
-      mEnabled.checked = mCfg.enabled;
-      mOutput.value = mCfg.output;
-      mVolume.value = String(mCfg.volume);
-      if (!listsLoaded) mList.innerHTML = `<option value="${esc(mCfg.playlist_id)}">${esc(mCfg.playlist_title || "(내가 만든 첫 목록)")}</option>`;
-      else mList.value = mCfg.playlist_id;
-    }
-  }
-  async function loadMusic(): Promise<void> {
-    mStatus = await api<MusicStatus>("GET", "/api/music/status").catch(() => mStatus);
-    if (mStatus?.connected && !listsLoaded) {
-      type P = { id: string; title: string; count: number | null; mine: boolean };
-      const r = await api<{ playlists: P[] }>("GET", "/api/music/playlists")
-        .catch((e) => { ctx.msg(`목록을 읽지 못했습니다: ${e}`, true); return null; });
-      if (r) {
-        listsLoaded = true;
-        mList.innerHTML = `<option value="">(내가 만든 첫 목록)</option>` + r.playlists.map((p) =>
-          `<option value="${esc(p.id)}" data-title="${esc(p.title)}">${esc(p.title)}${p.count != null ? ` · ${p.count}곡` : ""}${p.mine ? "" : " (남의 목록: 고칠 수 없음)"}</option>`).join("");
-      }
-    }
-    renderMusic();
-  }
-  async function saveMusic(patch: Partial<MusicConfig>, done: string): Promise<void> {
-    try {
-      mCfg = await api<MusicConfig>("PUT", "/api/config/music", patch);
-      renderMusic();
-      if (done) ctx.msg(done);
-    } catch (e) { ctx.msg(`저장 실패: ${e}`, true); }
-  }
-  mEnabled.onchange = () => void saveMusic({ enabled: mEnabled.checked }, mEnabled.checked ? "음악 켬" : "음악 끔");
-  mOutput.onchange = () => void saveMusic({ output: mOutput.value as MusicConfig["output"] }, `재생할 곳: ${mOutput.selectedOptions[0]?.textContent}`);
-  mList.onchange = () => void saveMusic({ playlist_id: mList.value, playlist_title: mList.selectedOptions[0]?.dataset.title ?? "" }, "내 목록 저장");
-  mVolume.onchange = () => void saveMusic({ volume: Number(mVolume.value) }, `음량 ${mVolume.value}`);
-  mq<HTMLButtonElement>("[data-act=new-list]").onclick = async () => {
-    const name = prompt("새 재생목록 이름", "리본이와 듣는 노래");
-    if (!name?.trim()) return;
-    try {
-      const r = await api<{ playlist: { title: string } }>("POST", "/api/music/playlists", { name: name.trim() });
-      listsLoaded = false;                                   // 새 목록까지 다시 읽고, 서버가 이 목록을 '내 목록'으로 정한다
-      await loadMusic();
-      ctx.msg(`"${r.playlist.title}" 목록을 만들고 내 목록으로 정했습니다`);
-    } catch (e) { ctx.msg(`${e}`, true); }
-  };
-  mq<HTMLButtonElement>("[data-act=reload-lists]").onclick = async () => {
-    listsLoaded = false;
-    await loadMusic();
-    ctx.msg("재생목록을 다시 읽었습니다");
-  };
-  mq<HTMLButtonElement>("[data-act=copy]").onclick = () => {
-    navigator.clipboard?.writeText(mStatus?.redirect_uri ?? "")
-      .then(() => ctx.msg("복사했습니다"), () => ctx.msg("복사하지 못했습니다. 직접 골라 복사하세요", true));
-  };
-  mq<HTMLButtonElement>("[data-act=app]").onclick = async () => {
-    try {
-      await api("PUT", "/api/music/app", { client_id: mClientId.value, client_secret: mSecret.value });
-      mSecret.value = "";
-      ctx.msg("앱 정보 저장. 이제 Spotify 로그인을 누르세요");
-      await loadMusic();
-    } catch (e) { ctx.msg(`${e}`, true); }
-  };
-  let polling = 0;
-  mq<HTMLButtonElement>("[data-act=login]").onclick = () => {
-    if (!mStatus?.has_app) { ctx.msg("먼저 Spotify 앱 정보를 저장하세요", true); return; }
-    window.open("/api/music/login", "_blank");
-    if (!["localhost", "127.0.0.1"].includes(location.hostname)) ctx.msg("로그인 뒤 연결할 수 없다고 나오면 그 창의 주소를 아래 칸에 붙여 넣으세요");
-    // 로그인 창에서 돌아올 때까지 연결 상태를 본다 (3분)
-    clearInterval(polling);
-    const until = Date.now() + 180_000;
-    polling = window.setInterval(async () => {
-      await loadMusic();
-      if (mStatus?.connected || Date.now() > until) {
-        clearInterval(polling);
-        if (mStatus?.connected) ctx.msg("Spotify 연결됨");
-      }
-    }, 2000);
-  };
-  mq<HTMLButtonElement>("[data-act=logout]").onclick = async () => {
-    if (!confirm("Spotify 연결을 끊을까요? (앱 정보는 남습니다)")) return;
-    await api("DELETE", "/api/music/auth").catch((e) => ctx.msg(`${e}`, true));
-    listsLoaded = false;
-    await loadMusic();
-  };
-  mq<HTMLButtonElement>("[data-act=callback]").onclick = async () => {
-    const input = mq<HTMLInputElement>("[name=callback_url]");
-    try {
-      await api("POST", "/api/music/callback_url", { url: input.value });
-      input.value = "";
-      ctx.msg("Spotify 연결됨");
-      await loadMusic();
-    } catch (e) { ctx.msg(`${e}`, true); }
-  };
-  mq<HTMLButtonElement>("[data-act=try]").onclick = async () => {
-    const text = mq<HTMLInputElement>("[name=try]").value.trim() || "피카츄 노래 틀어줘";
-    mResult.textContent = "보내는 중…";
-    type R = { understood: boolean; lines: string[]; error: string };
-    const r = await api<R>("POST", "/api/music/command", { text })
-      .catch((e) => ({ understood: true, lines: [], error: String(e) }) as R);
-    mResult.innerHTML = !r.understood ? "음악 부탁으로 알아듣지 못했습니다 (음악이 꺼져 있거나, 보통 대화로 넘어갈 말)"
-      : `리본: <b>${esc(r.lines.join(" "))}</b>${r.error ? `<br><span class="warn-text">${esc(r.error)}</span>` : ""}`;
-    void loadMusic();
-  };
-  ctx.socket.on((m: ServerMsg) => {
-    if (m.type !== "music.state") return;
-    mNow.textContent = m.track ? `${m.playing ? "▶ 지금" : "❚❚ 멈춤"}: ${m.track.title} · ${m.track.artists}` : "";
-  });
-  let musicKey = "";
-  ctx.onState((st) => {
-    const c = st.config?.music;
-    if (!c || JSON.stringify(c) === musicKey) return;
-    const first = !musicKey;
-    musicKey = JSON.stringify(c);
-    mCfg = c;
-    if (first) void loadMusic(); else renderMusic();
-  });
-  // 음악 항목을 보는 동안만 장치 준비·계정 상태를 새로 본다
-  setInterval(() => { if (musicBox.offsetParent !== null) void loadMusic(); }, 5000);
-
-  // ---- 목록 관리 (Spotify): 곡 빼기·순서·검색해서 넣기 ----
-  const plBox = el.querySelector("#playlist") as HTMLElement;
-  const pq = <T extends Element>(s: string) => plBox.querySelector(s) as T;
-  const plWhich = pq<HTMLSelectElement>("[name=which]");
-  const plMsg = pq<HTMLElement>("[data-role=pl-msg]");
-  const plRows = pq<HTMLElement>("[data-role=tracks]");
-  const plResults = pq<HTMLElement>("[data-role=results]");
-  const plQuery = pq<HTMLInputElement>("[name=q]");
-  type Track = { uri: string; title: string; artists: string; album_art: string };
-  let plTracks: Track[] = [];
-  let plListed = false;
-
-  function trackRow(t: Track, n: number | null, buttons: string): string {
-    return `<div class="track" data-uri="${esc(t.uri)}">
-      ${n === null ? "" : `<b class="t-n">${n}</b>`}
-      ${t.album_art ? `<img src="${esc(t.album_art)}" alt="" />` : `<div class="t-art"></div>`}
-      <div class="t-text"><b>${esc(t.title)}</b><span>${esc(t.artists)}</span></div>
-      <div class="t-btns">${buttons}</div></div>`;
-  }
-  function renderTracks(): void {
-    plRows.innerHTML = !plTracks.length ? `<p class="hint">이 목록에는 아직 노래가 없습니다. 아래에서 찾아 넣어 보세요.</p>`
-      : plTracks.map((t, i) => trackRow(t, i + 1,
-        `<button data-act="play" title="들어보기">▶</button>
-         <button data-act="up" ${i === 0 ? "disabled" : ""} title="위로">▲</button>
-         <button data-act="down" ${i === plTracks.length - 1 ? "disabled" : ""} title="아래로">▼</button>
-         <button data-act="del" title="목록에서 빼기">✕</button>`)).join("");
-  }
-  async function plLoadLists(): Promise<void> {
-    type P = { id: string; title: string; count: number | null; mine: boolean };
-    const r = await api<{ playlists: P[] }>("GET", "/api/music/playlists");
-    const mine = r.playlists.filter((p) => p.mine);
-    plWhich.innerHTML = mine.map((p) => `<option value="${esc(p.id)}">${esc(p.title)}${p.count != null ? ` · ${p.count}곡` : ""}</option>`).join("");
-    const want = mCfg?.playlist_id;
-    if (want && mine.some((p) => p.id === want)) plWhich.value = want;
-    plListed = true;
-  }
-  async function plLoad(): Promise<void> {
-    if (!mStatus?.connected) { plMsg.innerHTML = `<span class="warn-text">먼저 🎵 음악 탭에서 Spotify 를 연결하세요.</span>`; return; }
-    plMsg.textContent = "읽는 중…";
-    try {
-      if (!plListed) await plLoadLists();
-      const r = await api<{ id: string; tracks: Track[] }>("GET", `/api/music/playlist?id=${encodeURIComponent(plWhich.value)}`);
-      if (!plWhich.value) plWhich.value = r.id;
-      plTracks = r.tracks;
-      plMsg.textContent = `${plTracks.length}곡`;
-      renderTracks();
-    } catch (e) { plMsg.innerHTML = `<span class="warn-text">${esc(String(e))}</span>`; }
-  }
-  async function plEdit(body: object, done: string): Promise<void> {
-    try {
-      const r = await api<{ tracks: Track[] }>("POST", "/api/music/playlist/edit", { id: plWhich.value, ...body });
-      plTracks = r.tracks;
-      plMsg.textContent = `${plTracks.length}곡`;
-      renderTracks();
-      ctx.msg(done);
-    } catch (e) { ctx.msg(`${e}`, true); }
-  }
-  async function plPlay(uri?: string): Promise<void> {
-    try {
-      await api("POST", "/api/music/play", uri ? { uri } : { playlist_id: plWhich.value });
-      ctx.msg(`${mCfg?.output === "tv" ? "TV" : "이 컴퓨터"}에서 틉니다`);
-    } catch (e) { ctx.msg(`${e}`, true); }
-  }
-  plRows.onclick = (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button");
-    const row = (ev.target as HTMLElement).closest(".track") as HTMLElement | null;
-    if (!btn || !row) return;
-    const i = [...plRows.querySelectorAll(".track")].indexOf(row);
-    const t = plTracks[i];
-    if (btn.dataset.act === "play") void plPlay(t.uri);
-    if (btn.dataset.act === "del" && confirm(`"${t.title}" 을(를) 목록에서 뺄까요?`)) void plEdit({ action: "remove", uri: t.uri }, `"${t.title}" 뺐습니다`);
-    if (btn.dataset.act === "up") void plEdit({ action: "move", from: i, to: i - 1 }, "위로 옮겼습니다");
-    if (btn.dataset.act === "down") void plEdit({ action: "move", from: i, to: i + 1 }, "아래로 옮겼습니다");
-  };
-  plResults.onclick = (ev) => {
-    const btn = (ev.target as HTMLElement).closest("button");
-    const row = (ev.target as HTMLElement).closest(".track") as HTMLElement | null;
-    if (!btn || !row) return;
-    const uri = row.dataset.uri!;
-    const title = row.querySelector("b")?.textContent ?? "";
-    if (btn.dataset.act === "play") void plPlay(uri);
-    if (btn.dataset.act === "add") void plEdit({ action: "add", uri }, `"${title}" 넣었습니다`);
-  };
-  async function plSearch(): Promise<void> {
-    const q = plQuery.value.trim();
-    if (!q) return;
-    plResults.innerHTML = `<p class="hint">찾는 중…</p>`;
-    try {
-      const r = await api<{ tracks: Track[] }>("GET", `/api/music/search?q=${encodeURIComponent(q)}`);
-      plResults.innerHTML = r.tracks.length
-        ? r.tracks.map((t) => trackRow(t, null, `<button data-act="play" title="들어보기">▶</button><button data-act="add" class="primary">＋ 넣기</button>`)).join("")
-        : `<p class="hint">찾은 노래가 없습니다.</p>`;
-    } catch (e) { plResults.innerHTML = `<p class="hint warn-text">${esc(String(e))}</p>`; }
-  }
-  pq<HTMLButtonElement>("[data-act=search]").onclick = () => void plSearch();
-  plQuery.onkeydown = (ev) => { if (ev.key === "Enter") void plSearch(); };
-  plWhich.onchange = () => void plLoad();
-  pq<HTMLButtonElement>("[data-act=pl-reload]").onclick = () => { plListed = false; void plLoad(); };
-  pq<HTMLButtonElement>("[data-act=pl-play]").onclick = () => void plPlay();
+  // ---- 음악 (Spotify): 플레이어·목록·검색·계정 모달은 admin/music.ts 가 전부 그린다 ----
+  const music = mountMusic(el.querySelector('[data-subpanel=music]') as HTMLElement, ctx);
 
   // ---- 마이크 (이 컴퓨터) ----
   const mic = ctx.mic;
@@ -665,7 +355,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
   ctx.socket.sendJson({ type: "devices.get" });
 
   // ---- 작은 탭 (마지막으로 본 것을 기억, 주소는 #settings/mic 처럼) ----
-  const SUBS = ["mic", "cam", "output", "llm", "music", "playlist", "theme"];
+  const SUBS = ["mic", "cam", "output", "llm", "music", "theme"];
   const SUB_KEY = "ribbon.admin.settings.sub";
   function show(sub?: string): void {
     let want = sub;
@@ -675,7 +365,7 @@ export function mountSettings(el: HTMLElement, ctx: AdminCtx): { show(sub?: stri
     }
     try { localStorage.setItem(SUB_KEY, want); } catch { /* 저장소 없음 */ }
     el.querySelectorAll<HTMLElement>("[data-subpanel]").forEach((p) => { p.hidden = p.dataset.subpanel !== want; });
-    if (want === "playlist") void loadMusic().then(plLoad);        // 목록 탭을 열 때마다 새로 읽는다
+    if (want === "music") music.show();               // 음악 탭을 열 때마다 새로 읽는다
     el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => b.classList.toggle("on", b.dataset.sub === want));
   }
   el.querySelectorAll<HTMLButtonElement>("[data-sub]").forEach((b) => { b.onclick = () => ctx.go(`settings/${b.dataset.sub}`); });
