@@ -27,6 +27,17 @@ cloudflared tunnel create ribbon  # ~/.cloudflared/<터널ID>.json 이 생긴다
 cloudflared tunnel list           # 터널 ID 확인
 ```
 
+## 1-1. 한 번에 하기 (스크립트)
+
+1~2 단계(로그인·터널 만들기·설정 파일·DNS 연결)를 대신 해 준다:
+
+```bash
+cd ~/ArtHouseRibbon
+bash tools/setup_tunnel.sh
+```
+
+직접 하고 싶으면 아래 2번을 보면 된다.
+
 ## 2. 설정 파일
 
 `~/.cloudflared/config.yml` 을 만든다 (`<터널ID>` 와 `<사용자>` 는 위에서 확인한 값):
