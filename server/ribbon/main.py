@@ -49,6 +49,9 @@ from .world_render import WorldRenderer
 from .world_store import WorldStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx 는 바깥에 보내는 요청을 줄마다 INFO 로 적는다. Spotify 상태 물어보기처럼 계속 도는 것이 있어 로그가 묻힌다
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("ribbon.main")
 
 

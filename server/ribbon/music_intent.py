@@ -120,6 +120,7 @@ class MusicControl:
         self._view_changed = False
         self._undo: Optional[Dict[str, Any]] = None     # 방금 뺀 노래 (되돌려)
         self._polled_at = 0.0                           # Connect 기기 상태를 마지막으로 물어본 때
+        self._poll_gap = 0.0                            # 지금의 물어보는 간격 (아무것도 안 틀면 늘어난다)
         self._poll_key = ""
         self._ducked = False
 
@@ -158,7 +159,8 @@ class MusicControl:
         return dev
 
     # ---------- Spotify 앱 기기로 틀 때 (Connect): 상태를 물어보고, 리본이가 말하면 소리를 줄인다 ----------
-    POLL_S = 4.0                              # 이 간격으로 지금 재생 상태를 물어본다
+    POLL_S = 4.0                              # 노래가 나오는 동안 이 간격으로 재생 상태를 물어본다
+    POLL_IDLE_S = 60.0                        # 아무것도 안 틀고 있으면 여기까지 간격을 늘린다 (로그·요청 아끼기)
     DUCK_RATIO = 0.25                         # 리본이가 말하는 동안 음량 배율
 
     async def poll(self) -> Optional[Dict[str, Any]]:
@@ -167,7 +169,7 @@ class MusicControl:
         if not (cfg.enabled and cfg.output == "spotify" and self.account.connected):
             return None
         now = time.time()
-        if now - self._polled_at < self.POLL_S:
+        if now - self._polled_at < (self._poll_gap or self.POLL_S):
             return None
         self._polled_at = now
         try:
@@ -175,6 +177,8 @@ class MusicControl:
         except MusicError as e:
             self.last_error = str(e)
             return None
+        # 노래가 나오면 촘촘히, 아무것도 안 틀면 간격을 두 배씩 늘린다 (틀라고 하면 wake 가 다시 촘촘하게)
+        self._poll_gap = self.POLL_S if p["playing"] else min(self.POLL_IDLE_S, (self._poll_gap or self.POLL_S) * 2)
         state = {"type": "music.state", "playing": p["playing"], "track": p["track"],
                  "position_ms": p["position_ms"], "repeat": p["repeat"], "shuffle": p["shuffle"],
                  "source": self.source_info(p["context_uri"])}
@@ -184,6 +188,11 @@ class MusicControl:
             return None
         self._poll_key = key
         return state
+
+    def wake_poll(self) -> None:
+        """다시 촘촘히 물어본다 (누가 틀거나 멈춘 직후)"""
+        self._poll_gap = self.POLL_S
+        self._polled_at = 0.0
 
     async def duck(self, on: bool) -> None:
         """리본이가 말하는 동안 Spotify 기기 음량을 줄인다 (브라우저 재생은 화면 쪽에서 알아서 줄인다)"""
@@ -350,6 +359,7 @@ class MusicControl:
         if not self.account.connected:
             return ["음악 계정이 아직 연결되지 않았어. 선생님께 부탁해 줘."]
         log.info("음악 부탁: %s %s", intent.kind, intent.query)
+        self.wake_poll()                         # 방금 무언가 시켰으니 상태를 곧 다시 물어본다
         try:
             return await getattr(self, f"_do_{intent.kind}")(intent)
         except MusicError as e:

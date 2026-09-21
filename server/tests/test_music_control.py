@@ -13,6 +13,7 @@ class FakeSpotify:
         self.calls = []
         self.tracks = [{"uri": "spotify:track:1", "title": "피카츄 송", "artists": "지우", "album_art": "", "duration_ms": 1000}]
         self.list_tracks = []
+        self.playing = True
 
     async def search(self, q, limit=5):
         self.calls.append(("search", q))
@@ -34,7 +35,8 @@ class FakeSpotify:
         self.calls.append(("volume", device_id, percent))
 
     async def playback(self):
-        return {"playing": True, "track": self.tracks[0], "position_ms": 1000, "repeat": "off",
+        self.calls.append(("playback",))
+        return {"playing": self.playing, "track": self.tracks[0], "position_ms": 1000, "repeat": "off",
                 "shuffle": False, "context_uri": "", "device": "지우 폰", "device_id": "phone-1"}
 
     async def shuffle(self, device_id, on):
@@ -208,6 +210,30 @@ async def test_spotify_app_device_plays_and_ducks(tmp_path):
     assert ("volume", "phone-1", 15) in sp.calls
     await mc.duck(False)
     assert ("volume", "phone-1", 60) in sp.calls
+
+
+async def test_poll_slows_down_while_nothing_plays(tmp_path):
+    """아무것도 안 트는 동안에는 뜸하게 물어본다 (Spotify 요청과 로그를 아낀다)"""
+    mc, sp, store = control(tmp_path)
+    store.update_music({"output": "spotify", "device_id": "phone-1"})
+    sp.playing = False
+
+    asked = lambda: sp.calls.count(("playback",))       # noqa: E731
+    await mc.poll()
+    assert asked() == 1
+    mc._polled_at -= mc.POLL_S + 1                      # 4초가 지났다
+    await mc.poll()
+    assert asked() == 1                                 # 아직 안 묻는다 (간격이 늘었다)
+    mc._polled_at -= mc.POLL_IDLE_S
+    await mc.poll()
+    assert asked() == 2
+
+    sp.playing = True                                   # 노래가 나오면 다시 촘촘하게
+    mc._polled_at -= mc.POLL_IDLE_S
+    await mc.poll()
+    mc._polled_at -= mc.POLL_S + 1
+    await mc.poll()
+    assert asked() == 4
 
 
 async def test_pause_tries_even_when_our_state_is_stale(tmp_path):
