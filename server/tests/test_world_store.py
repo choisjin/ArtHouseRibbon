@@ -87,9 +87,19 @@ def test_kid_gallery_halls_light_and_share(store):
     assert store.halls("k1") == 3                           # 1실을 저장해도 전시실 수는 그대로
     assert store.art_usage(art["file"]) == ["kid-k1@3"]     # 2실·3실에 걸린 것도 센다
 
-    store.set_active("kid-k1@3")
+    # 가운데 실 하나만 없애면 뒤 실이 한 칸씩 당겨진다
+    store.save_layout("kid-k1@2", {"items": [], "arts": [], "light": 0.8})
+    assert store.remove_hall("k1", 2) == 2
+    assert store.halls("k1") == 2 and store.layout("kid-k1@2")["arts"][0]["id"] == "x"   # 3실이 2실로
+    assert store.art_usage(art["file"]) == ["kid-k1@2"]
+    with pytest.raises(ValueError):
+        store.remove_hall("k1", 5)
+
+    store.set_active("kid-k1@2")
     assert store.set_halls("k1", 1) == 1                    # 줄이면 뒤쪽 실은 사라진다
-    assert not store.layout_path("kid-k1@3").exists() and store.active == "kid-k1"
+    assert not store.layout_path("kid-k1@2").exists() and store.active == "kid-k1"
+    with pytest.raises(ValueError):
+        store.remove_hall("k1", 1)                          # 하나 남은 전시실은 못 없앤다
     assert store.art_usage(art["file"]) == []
 
     token = store.share_token("k1")

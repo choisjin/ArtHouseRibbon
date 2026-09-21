@@ -451,9 +451,9 @@ export const CROP_HTML = `
       <label class="row four"><input id="pad-link" type="checkbox" checked> 네 쪽 같이</label>
       ${SIDES.map((n, i) => `<label class="row">
         <span class="p-name">${n}</span>
-        <button data-pad="${i}" data-padstep="-1">−</button>
+        <button data-pad="${i}" data-padstep="-1" class="step">−</button>
         <input data-pad="${i}" type="range" min="0" max="${MAX_PAD * 100}" step="1" value="0">
-        <button data-pad="${i}" data-padstep="1">＋</button>
+        <button data-pad="${i}" data-padstep="1" class="step">＋</button>
         <b>0%</b></label>`).join("")}
     </div>
     <div class="c-body row wrap" data-tab="bg" hidden>
@@ -495,7 +495,8 @@ export const CROP_CSS = `
   #crop .pads { display:flex; flex-direction:column; gap:6px }
   #crop .pads .p-name { min-width:3em }
   #crop .pads input[type=range] { flex:1; min-width:80px }
-  #crop .pads button { padding:1px 10px }
+  #crop .c-tabs button, #crop .box button { height:30px }
+  #crop .step { width:30px; padding:0; text-align:center }
   #crop .pads b { min-width:3em; text-align:right }
   #crop .notes { display:flex; flex-direction:column; gap:8px }
   #crop .notes textarea { resize:vertical; min-height:64px }

@@ -15,7 +15,7 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 아래 설정 창은 네 탭: **작품**(슬라이드로 고르기·크기·액자·올리기) · **필터** · **하이라이트** · **조명**(방 밝기)
  *   - 그림은 비율 그대로 크기만 바꾸고, 벽을 넘는 크기로는 못 키운다. 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색 · 지우기)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
- *   - 한 작품은 한 전시실에 하나만 걸린다. 이미 걸린 작품을 누르면 그것을 고른다
+ *   - 한 작품은 한 전시실에 하나만 걸린다. 썸네일을 누르면 걸리고, 걸린 것을 다시 누르면 내려온다
  *   - 액자·여백·배경색·설명은 **작품에 붙는다** (편집 창에서 고치면 걸려 있는 곳이 모두 따라 바뀐다). 필터·하이라이트는 걸린 그림마다
  *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 슬라이드는 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
@@ -331,8 +331,10 @@ export async function startArt(): Promise<void> {
   /** 올린 작품들을 옆으로 넘겨 보는 띠. 누르면 지금 보고 있는 벽에 걸린다 */
   function drawSlides(): void {
     const box = $("#slides");
+    const add = `<button id="up-btn" class="slide add" title="작품 사진 올리기">＋<span>사진 올리기</span></button>`;
     if (!mine.length) {
-      box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 오른쪽 '작품 올리기' 로 사진을 올려 보세요.</p>`;
+      box.innerHTML = add;
+      bindSlides();
       return;
     }
     const list = [...mine];
@@ -348,12 +350,17 @@ export async function startArt(): Promise<void> {
       return `${head}<div class="slide${hung ? " hung" : ""}" data-file="${esc(a.file)}" title="${esc(a.name)}">
         <img src="/${esc(a.file)}" alt="" loading="lazy" style="background:${bgOf(a)}">
         <div class="s-btns">
-          ${hung ? `<button data-act="down">내리기</button>` : ""}
           <button data-act="cut">편집</button>
           <button data-act="del" class="ghost">삭제</button>
         </div>
       </div>`;
-    }).join("");
+    }).join("") + add;
+    bindSlides();
+  }
+
+  function bindSlides(): void {
+    const box = $("#slides");
+    $("#up-btn").onclick = () => $<HTMLInputElement>("#file").click();
     box.querySelectorAll<HTMLElement>("[data-file]").forEach((el) => {
       const a = mine.find((x) => x.file === el.dataset.file);
       if (!a) return;
@@ -361,7 +368,7 @@ export async function startArt(): Promise<void> {
         const act = (ev.target as HTMLElement).dataset.act;
         if (act === "cut") void edit(a);
         else if (act === "del") void removeArtwork(a);
-        else if (act === "down") takeDown(a.file);
+        else if (arts.some((x) => x.image === a.file)) takeDown(a.file);   // 걸린 것을 다시 누르면 내린다
         else void hang(a);
       };
     });
@@ -375,23 +382,17 @@ export async function startArt(): Promise<void> {
     return [...room].sort((p, q) => p.normal.dot(ahead) - q.normal.dot(ahead))[0] ?? mounts[0];
   }
 
-  /** 벽에서 내린다 (슬라이드의 '내리기'와 설정 창의 '벽에서 내리기') */
+  /** 벽에서 내린다 (걸린 썸네일을 다시 누를 때) */
   function takeDown(file: string): void {
     arts = arts.filter((x) => x.image !== file);
     picked = null;
     dirty = true;
     void rebuild();
     drawSlides();
+    msg("내렸습니다");
   }
 
   async function hang(a: Artwork): Promise<void> {
-    const already = arts.find((x) => x.image === a.file);
-    if (already) {                              // 한 전시실에 하나만: 이미 걸린 것은 고르기만 한다
-      picked = already.id;
-      markPicked();
-      msg("이 전시실에 이미 걸려 있습니다");
-      return;
-    }
     const w = facingWall();
     if (!w) { msg("걸 수 있는 벽이 없습니다", true); return; }
     const art: LayoutArt = {
@@ -405,7 +406,7 @@ export async function startArt(): Promise<void> {
     dirty = true;
     await rebuild();
     drawSlides();
-    msg("걸었습니다. 끌어서 옮기고 아래에서 크기를 바꾸세요");
+    msg("걸었습니다. 끌어서 옮기고 아래 막대로 크기를 바꾸세요");
   }
 
   async function edit(a: Artwork): Promise<void> {
@@ -451,10 +452,6 @@ export async function startArt(): Promise<void> {
   /** 고른 그림에 맞춰 설정 창을 맞춘다 (고른 것이 없으면 작품·조명만 쓸 수 있다) */
   function syncPanel(): void {
     const a = cur();
-    const name = a ? mine.find((x) => x.file === a.image)?.name ?? "작품" : "";
-    $(".who").textContent = name;
-    $(".p-head").hidden = !a;                   // 고른 것이 없으면 머리줄은 자리만 차지한다
-    $("#down").hidden = !a;
     panel.querySelectorAll<HTMLElement>(".pick-first").forEach((el) => { el.hidden = !!a; });
     [wIn, presetIn, ...fxIns].forEach((el) => { el.disabled = !a; });
     if (a) {
@@ -463,14 +460,9 @@ export async function startArt(): Promise<void> {
       wIn.value = String(a.width);
       showFx(fxOf(a.fx));
     }
-    showSize();
   }
 
   // ---- 작품 탭: 크기 · 액자 ----
-  const showSize = (): void => {
-    const a = cur();
-    $("#w-num").textContent = a ? `${a.width.toFixed(2)}×${(a.width * a.aspect).toFixed(2)}m` : "";
-  };
   let timer = 0;
   const later = (): void => { clearTimeout(timer); timer = window.setTimeout(() => void rebuild(), 150); };
   const sized = (width: number): void => {
@@ -484,7 +476,6 @@ export async function startArt(): Promise<void> {
     if (g && built) g.scale.setScalar(a.width / built);
     placeLive(a);                               // (updateMatrix 까지 한다)
     wIn.value = String(a.width);
-    showSize();
     dirty = true;
   };
   wIn.oninput = () => sized(Number(wIn.value));
@@ -492,8 +483,6 @@ export async function startArt(): Promise<void> {
   panel.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((b) => {
     b.onclick = () => { sized((cur()?.width ?? 0) + Number(b.dataset.step)); later(); };
   });
-  $("#up-btn").onclick = () => $<HTMLInputElement>("#file").click();
-  $("#down").onclick = () => { const a = cur(); if (a) takeDown(a.image); };
 
   // ---- 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
   function showFx(fx: ArtFx): void {
@@ -539,11 +528,15 @@ export async function startArt(): Promise<void> {
   function drawHalls(): void {
     const box = $("#halls");
     box.innerHTML = Array.from({ length: halls }, (_, i) =>
-      `<button data-hall="${i + 1}" class="${i + 1 === hall ? "on" : ""}">${i + 1}실</button>`).join("")
-      + `<button data-act="add" title="전시실 늘리기">＋</button>`
-      + (halls > 1 ? `<button data-act="del" class="ghost" title="마지막 실 없애기">−</button>` : "");
+      `<button data-hall="${i + 1}" class="${i + 1 === hall ? "on" : ""}">${i + 1}실${
+        i + 1 === hall && halls > 1 ? `<span class="x" data-act="del" title="이 전시실 없애기">✕</span>` : ""}</button>`).join("")
+      + `<button data-act="add" class="step" title="전시실 늘리기">＋</button>`;
     box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-      b.onclick = () => void (b.dataset.hall ? goHall(Number(b.dataset.hall)) : setHalls(b.dataset.act === "add" ? halls + 1 : halls - 1));
+      b.onclick = (ev) => {
+        if (b.dataset.act === "add") { void setHalls(halls + 1); return; }
+        if ((ev.target as HTMLElement).dataset.act === "del") { void dropHall(Number(b.dataset.hall)); return; }
+        void goHall(Number(b.dataset.hall));
+      };
     });
   }
 
@@ -557,15 +550,25 @@ export async function startArt(): Promise<void> {
   }
 
   async function setHalls(count: number): Promise<void> {
-    if (count < halls && !confirm(`${halls}실을 없앨까요? 그 방에 걸어 둔 그림은 벽에서 내려집니다 (사진은 남아요).`)) return;
     try {
       if (dirty) await save();
       const r = await api<{ halls: number }>("PUT", `/api/kids/${encodeURIComponent(kidSel.value)}/halls`, { count });
-      if (count > halls && r.halls === halls) { msg("전시실은 더 늘릴 수 없습니다", true); return; }
-      const grew = count > halls;
-      hall = grew ? r.halls : Math.min(hall, r.halls);   // 늘렸으면 새 방으로 간다
+      if (r.halls === halls) { msg("전시실은 더 늘릴 수 없습니다", true); return; }
+      hall = r.halls;                           // 새로 만든 방으로 간다
       await loadKid();
-      msg(grew ? `${r.halls}실을 만들었습니다` : "없앴습니다");
+      msg(`${r.halls}실을 만들었습니다`);
+    } catch (e) { msg(String(e), true); }
+  }
+
+  /** 고른 실 하나를 없앤다 (뒤 실들이 한 칸씩 당겨진다) */
+  async function dropHall(n: number): Promise<void> {
+    if (!confirm(`${n}실을 없앨까요? 그 방에 걸어 둔 그림은 벽에서 내려집니다 (사진은 남아요).`)) return;
+    try {
+      if (dirty) await save();
+      const r = await api<{ halls: number }>("DELETE", `/api/kids/${encodeURIComponent(kidSel.value)}/halls/${n}`);
+      hall = Math.min(hall, r.halls);
+      await loadKid();
+      msg("없앴습니다");
     } catch (e) { msg(String(e), true); }
   }
 
@@ -645,47 +648,53 @@ const PAGE = `
   body { font:15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; color:#f3efe9 }
   #view { position:fixed; inset:0; z-index:0 }
   [hidden] { display:none !important }
-  select, input, button { font:inherit }
-  select, input[type=number] { padding:5px 7px; border:1px solid #4a4356; border-radius:7px; background:#241f2b; color:#f3efe9 }
-  button { padding:6px 12px; border:1px solid #4a4356; border-radius:8px; background:#241f2b; color:#f3efe9; cursor:pointer }
+  /* 단추·드롭박스 높이를 맞추고 빈틈을 줄인다 */
+  select, input, button { font:inherit; font-size:14px }
+  select, button { height:30px; padding:0 10px; border:1px solid #4a4356; border-radius:8px;
+                   background:#241f2b; color:#f3efe9; box-sizing:border-box }
+  button { cursor:pointer }
+  .step { width:30px; padding:0; text-align:center }
   button.on { background:#e9557d; border-color:#e9557d; color:#fff }
   button.ghost { color:#c9b7bd }
   button:hover { border-color:#e9557d }
-  header { position:fixed; z-index:3; top:0; left:0; right:0; display:flex; flex-direction:column; gap:8px;
-           padding:10px 14px 16px; background:linear-gradient(#0e0b16ee,#0e0b1600) }
-  header .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap }
-  header h1 { font-size:16px; margin:0 4px 0 0 }
+  header { position:fixed; z-index:3; top:0; left:0; right:0; display:flex; flex-direction:column; gap:6px;
+           padding:8px 12px 14px; background:linear-gradient(#0e0b16ee,#0e0b1600) }
+  header .bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap }
+  header h1 { font-size:15px; margin:0 4px 0 0 }
   #msg { font-size:14px; color:#e6ded6 }
   /* 아래 설정 창: 작품 · 필터 · 하이라이트 · 조명. 바꾸는 대로 벽에서 바로 보이도록 낮게 둔다 */
-  #panel { position:fixed; z-index:3; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:8px;
-           padding:10px 14px 12px; border-radius:14px; background:#1b1724f2; border:1px solid #3a3346;
+  #panel { position:fixed; z-index:3; left:12px; right:12px; bottom:12px; display:flex; flex-direction:column; gap:6px;
+           padding:8px 12px 10px; border-radius:14px; background:#1b1724f2; border:1px solid #3a3346;
            box-shadow:0 10px 30px rgba(0,0,0,.45) }
   #panel label { display:flex; gap:6px; align-items:center; white-space:nowrap }
   #panel .grow { flex:1 1 200px }
   #panel input[type=range] { flex:1; min-width:96px; accent-color:#e9557d }
   #panel input:disabled, #panel select:disabled { opacity:.4 }
-  #panel .who { color:#f0b9c8 }
-  #panel button[data-step] { padding:2px 10px }
-  #panel .p-head { display:flex; gap:10px; align-items:center; min-height:26px }
-  #panel .p-tabs { display:flex; gap:6px; flex-wrap:wrap }
-  #panel .p-tabs button { padding:6px 16px }
-  #panel .p-body { display:flex; gap:16px; align-items:center; flex-wrap:wrap; min-height:34px }
-  #panel .p-body.col { flex-direction:column; align-items:stretch; gap:8px }
+  #panel .p-tabs { display:flex; gap:4px; flex-wrap:wrap }
+  #panel .p-tabs button { padding:0 16px }
+  #panel .p-body { display:flex; gap:14px; align-items:center; flex-wrap:wrap; min-height:30px }
+  #panel .p-body.col { flex-direction:column; align-items:stretch; gap:6px }
   #panel .p-body[hidden] { display:none }
   #panel .p-body.warm input[type=range] { accent-color:#ffd166 }
   #panel .p-body b { min-width:3.4em }
   #panel .p-body .hint { color:#9d94a8; margin:0 }
   /* 작품 슬라이드: 옆으로 넘겨 고른다 (누르면 보고 있는 벽에 걸린다) */
-  #slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; min-height:104px; align-items:stretch }
-  #slides .hint { align-self:center }
-  .slide { position:relative; flex:0 0 auto; width:118px; padding:4px; border:1px solid #3a3346; border-radius:10px;
-           background:#241f2b; cursor:pointer }
+  #slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; align-items:stretch }
+  /* 썸네일(누르면 걸고, 걸린 것을 다시 누르면 내린다)과 아래 단추를 줄로 나눠 둔다 */
+  .slide { position:relative; flex:0 0 auto; width:112px; padding:0; overflow:hidden; border:1px solid #3a3346;
+           border-radius:10px; background:#241f2b; cursor:pointer }
   .slide:hover { border-color:#e9557d }
-  .slide.hung { border-color:#e9557d }
-  .slide img { width:100%; height:64px; object-fit:contain; border-radius:6px; display:block }
-  .slide .s-btns { display:flex; gap:3px; margin-top:4px }
-  .slide .s-btns button { flex:1; padding:2px 0; font-size:11px }
-  .slide-kid { flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 6px; font-size:12px;
+  .slide.hung { border-color:#e9557d; box-shadow:inset 0 0 0 2px #e9557d55 }
+  .slide img { width:100%; height:66px; object-fit:contain; display:block; background:#fff }
+  .slide .s-btns { display:flex; border-top:1px solid #3a3346 }
+  .slide .s-btns button { flex:1; height:24px; padding:0; border:0; border-radius:0; font-size:11px; background:#1b1724 }
+  .slide .s-btns button + button { border-left:1px solid #3a3346 }
+  .slide .s-btns button:hover { background:#2f2838; color:#ffb3c8 }
+  .slide.add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:84px;
+               height:auto; align-self:stretch; border-style:dashed; color:#c9bfd0; font-size:18px; line-height:1 }
+  .slide.add span { font-size:11px }
+  .slide.add:hover { color:#ffb3c8 }
+  .slide-kid { flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 4px; font-size:12px;
                color:#f0b9c8; border-left:1px solid #3a3346; writing-mode:vertical-rl }
   .modal { display:none; position:fixed; inset:0; z-index:5; background:rgba(10,8,16,.66);
            align-items:center; justify-content:center; padding:16px }
@@ -704,7 +713,10 @@ const PAGE = `
   .card-body { display:flex; flex-direction:column; gap:4px; min-width:0 }
   .card-body small { color:#8b8279 }
   #halls { display:flex; gap:4px }
-  #halls button { padding:6px 10px }
+  #halls button { display:flex; align-items:center; gap:6px }
+  #halls .x { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; margin-right:-4px;
+              border-radius:50%; background:#ffffff2e; font-size:11px }
+  #halls .x:hover { background:#fff; color:#e9557d }
   details.group { border:1px solid #e3ded8; border-radius:10px; padding:6px 8px; margin-bottom:8px; background:#fff }
   details.group summary { cursor:pointer; padding:4px 2px }
   details.group summary small { color:#8b8279 }
@@ -728,7 +740,6 @@ ${CROP_CSS}
 </header>
 <input id="file" type="file" accept="image/*" capture="environment" style="display:none">
 <div id="panel">
-  <div class="p-head" hidden><b class="who"></b><span class="grow"></span><button id="down" class="ghost" hidden>벽에서 내리기</button></div>
   <div class="p-tabs">
     <button data-tab="art" class="on">작품</button>
     <button data-tab="fx">필터</button>
@@ -738,10 +749,9 @@ ${CROP_CSS}
   <div class="p-body col" data-tab="art">
     <div id="slides"></div>
     <div class="row wrap">
-      <label class="grow">크기 <button data-step="-0.05">−</button>
+      <label class="grow"><button data-step="-0.05" class="step">−</button>
         <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
-        <button data-step="0.05">＋</button> <b id="w-num"></b></label>
-      <button id="up-btn" class="on">작품 올리기</button>
+        <button data-step="0.05" class="step">＋</button></label>
       <label id="up-who" hidden>올릴 아이 <select id="up-kid"></select></label>
     </div>
   </div>

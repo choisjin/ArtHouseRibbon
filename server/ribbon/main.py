@@ -933,6 +933,19 @@ async def api_kid_halls(kid_id: str, data: dict = Body(...)):
     return JSONResponse({"ok": True, "halls": count})
 
 
+@app.delete("/api/kids/{kid_id}/halls/{hall}")
+async def api_kid_hall_delete(kid_id: str, hall: int):
+    """고른 전시실 하나 없애기 (뒤 실들이 한 칸씩 당겨진다). 그 방에 걸어 둔 그림은 내려진다"""
+    if not kids.get(kid_id):
+        raise HTTPException(404, "없는 아이입니다")
+    try:
+        left = world.remove_hall(kid_id, hall)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    await dialogue.notify_config_changed()
+    return JSONResponse({"ok": True, "halls": left})
+
+
 @app.get("/api/kids/{kid_id}/share")
 async def api_kid_share(kid_id: str, request: Request):
     """부모님께 보낼 전시실 주소 (로그인 없이 보기만 된다, /?mode=gallery&k=열쇠)"""

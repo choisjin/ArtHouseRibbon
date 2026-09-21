@@ -143,6 +143,29 @@ class WorldStore:
     def kid_rooms(self, kid_id: str) -> List[str]:
         return [self.kid_room(kid_id, h) for h in range(1, self.halls(kid_id) + 1)]
 
+    def remove_hall(self, kid_id: str, hall: int) -> int:
+        """고른 전시실 하나를 없애고 뒤 실들을 한 칸씩 당긴다 (3실 중 2실을 없애면 3실이 2실이 된다). 남은 실 수"""
+        count = self.halls(kid_id)
+        if count <= 1:
+            raise ValueError("전시실이 하나뿐입니다")
+        if not 1 <= hall <= count:
+            raise ValueError(f"없는 전시실입니다: {hall}실")
+        with self._lock:
+            kept = [_read_json(self.layout_path(self.kid_room(kid_id, h)), {}) or {}
+                    for h in range(1, count + 1) if h != hall]
+            for i, saved in enumerate(kept, 1):
+                room = self.kid_room(kid_id, i)
+                out = {"room": room, "kid_id": kid_id, "arts": saved.get("arts", []),
+                       "light": saved.get("light", 1.0)}
+                if i == 1:
+                    out["halls"] = len(kept)
+                _write_json(self.layout_path(room), out)
+            self.layout_path(self.kid_room(kid_id, count)).unlink(missing_ok=True)
+        active = (_read_json(self.dir / "world.json", {}) or {}).get("active") or ""
+        if self.kid_of(active) == kid_id and self.hall_of(active) > len(kept):
+            _write_json(self.dir / "world.json", {"active": self.kid_room(kid_id)})
+        return len(kept)
+
     def set_halls(self, kid_id: str, count: int) -> int:
         """전시실 수를 바꾼다. 줄이면 뒤쪽 실의 걸린 그림 목록은 지운다 (사진 파일은 남는다)"""
         count = max(1, min(MAX_HALLS, int(count)))
