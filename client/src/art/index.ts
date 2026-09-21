@@ -21,7 +21,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 액자·여백·배경색·설명은 **작품에 붙는다** (편집 창에서 고치면 걸려 있는 곳이 모두 따라 바뀐다). 필터·하이라이트는 걸린 그림마다
  *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 슬라이드는 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
- *   - 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
+ *   - 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts).
+ *     같은 창의 **내보내기**는 전시실을 .html 한 장으로 받는다 (서버 없이 폰에서 열린다 — server/ribbon/gallery_export.py)
  * 저장하면 그 아이 전시실(kid-<아이 id>)의 arts 만 바뀐다. 배경은 모든 아이가 같은 렌더(kidbase)를 쓰므로
  * 다시 렌더할 필요가 없고, TV 가 그 배경 위에 그림만 실시간으로 그린다.
  */
@@ -642,6 +643,24 @@ export async function startArt(): Promise<void> {
       $("#share-note").textContent = "주소를 길게 눌러 복사하세요.";   // http 로 열었거나 권한이 없을 때
     }
   };
+  $("#share-export").onclick = async () => {
+    const btn = $<HTMLButtonElement>("#share-export");
+    btn.disabled = true;
+    $("#export-note").textContent = "전시실을 파일로 묶는 중…";
+    try {
+      const res = await fetch(`/api/kids/${encodeURIComponent(kidSel.value)}/export`);
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${kidName(kidSel.value)}_전시실.html`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      $("#export-note").textContent = `받았습니다 (${(blob.size / 1024 / 1024).toFixed(1)}MB)`;
+    } catch (e) {
+      $("#export-note").textContent = String(e);
+    } finally { btn.disabled = false; }
+  };
   $("#share-close").onclick = () => shareBox.classList.remove("open");
   shareBox.onclick = (ev) => { if (ev.target === shareBox) shareBox.classList.remove("open"); };
 
@@ -776,6 +795,7 @@ const PAGE = `
   details.group .card { margin:8px 0 0 }
   .lamp { display:flex; gap:6px; align-items:center }
   .lamp input { width:110px; accent-color:#ffd166 }
+  .modal hr { width:100%; border:0; border-top:1px solid #e3ded8; margin:2px 0 }
   #share-url { width:100%; box-sizing:border-box; padding:8px; border:1px solid #cdc6bd; border-radius:8px; background:#fff; color:#241f2b }
 ${CROP_CSS}
 </style>
@@ -833,6 +853,11 @@ ${CROP_CSS}
     <p class="hint">이 주소로 들어오면 로그인 없이 전시실을 볼 수 있습니다. 꾸미기는 안 되고, 작품을 누르면 크게 보고 내려받을 수 있어요.</p>
     <p class="hint">사진을 올리면 AI 가 배경을 지워 줍니다. 여백과 배경색은 작품의 '편집' 에서 언제든 바꿀 수 있어요.</p>
     <div class="row"><span class="hint" id="share-note"></span><span class="grow"></span><button id="share-copy" class="on">주소 복사</button></div>
+    <hr>
+    <h2>파일로 주기</h2>
+    <p class="hint">전시실을 <b>.html 파일 한 장</b>으로 받습니다. 인터넷이나 서버 없이 폰·컴퓨터에서 바로 열리고,
+      걸린 작품과 아직 걸지 않은 작품까지 모두 들어갑니다. 학원을 그만두는 아이에게 통째로 주기 좋아요 (그림 수에 따라 몇 MB ~ 수십 MB).</p>
+    <div class="row"><span class="hint" id="export-note"></span><span class="grow"></span><button id="share-export">내보내기</button></div>
   </div>
 </div>
 ${CROP_HTML}`;

@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import logging
 import mimetypes
+from urllib.parse import quote
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Set
 
@@ -29,6 +30,7 @@ from .audio.stream import ChannelProcessor
 from .audio.wakeword import make_wakeword
 from .config import settings
 from .cutout import Cutout, CutoutError
+from . import gallery_export
 from .devices import DeviceBoard
 from .dialogue import DialogueManager
 from .kids.registry import KidRegistry
@@ -944,6 +946,23 @@ async def api_kid_hall_delete(kid_id: str, hall: int):
         raise HTTPException(400, str(e))
     await dialogue.notify_config_changed()
     return JSONResponse({"ok": True, "halls": left})
+
+
+@app.get("/api/kids/{kid_id}/export")
+async def api_kid_export(kid_id: str):
+    """전시실을 .html 한 장으로 (서버 없이 폰에서 열린다). 전시실 꾸미기 → 공유 → 내보내기"""
+    kid = kids.get(kid_id)
+    if not kid:
+        raise HTTPException(404, "없는 아이입니다")
+    viewer = settings.client_dist_path().parent / "dist-export" / "viewer.js"
+    if not viewer.is_file():
+        raise HTTPException(500, "내보내기 화면이 없습니다. client 에서 npm run build 를 다시 하세요")
+    name, html = await asyncio.to_thread(gallery_export.build, world, kid, viewer.read_text(encoding="utf-8"),
+                                         renderer.dir)
+    log.info("전시실 내보내기: %s (%.1fMB)", kid.name, len(html.encode()) / 1024 / 1024)
+    return Response(html, media_type="text/html; charset=utf-8", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+    })
 
 
 @app.get("/api/kids/{kid_id}/share")
