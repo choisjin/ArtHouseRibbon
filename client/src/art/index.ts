@@ -63,6 +63,11 @@ export async function startArt(): Promise<void> {
   let curKid = kidSel.value;
   const inGallery = (): boolean => kidSel.value === GALLERY;
   const kidName = (id: string | null | undefined): string => kids.find((k) => k.id === id)?.name ?? "아이 없음";
+  // 사진 올리기: 슬라이드 왼쪽에 붙박이로 둔다 (넘겨 봐도 늘 보이게). 폰에서 '신규' 는 카메라, '갤러리' 는 사진첩
+  const fileIn = $<HTMLInputElement>("#file");
+  $("#up-new").onclick = () => { fileIn.setAttribute("capture", "environment"); fileIn.click(); };
+  $("#up-pick").onclick = () => { fileIn.removeAttribute("capture"); fileIn.click(); };
+
   const upKid = $<HTMLSelectElement>("#up-kid");   // 전시장에서 사진을 올릴 때: 누구 작품인가
   upKid.innerHTML = [...kids].sort((a, b) => a.name.localeCompare(b.name, "ko"))
     .map((k) => `<option value="${esc(k.id)}">${esc(k.name)}</option>`).join("");
@@ -331,10 +336,8 @@ export async function startArt(): Promise<void> {
   /** 올린 작품들을 옆으로 넘겨 보는 띠. 누르면 지금 보고 있는 벽에 걸린다 */
   function drawSlides(): void {
     const box = $("#slides");
-    const add = `<button id="up-btn" class="slide add" title="작품 사진 올리기">＋<span>사진 올리기</span></button>`;
     if (!mine.length) {
-      box.innerHTML = add;
-      bindSlides();
+      box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 왼쪽 '신규' 로 찍거나 '갤러리' 에서 고르세요.</p>`;
       return;
     }
     const list = [...mine];
@@ -354,13 +357,12 @@ export async function startArt(): Promise<void> {
           <button data-act="del" class="ghost">삭제</button>
         </div>
       </div>`;
-    }).join("") + add;
+    }).join("");
     bindSlides();
   }
 
   function bindSlides(): void {
     const box = $("#slides");
-    $("#up-btn").onclick = () => $<HTMLInputElement>("#file").click();
     box.querySelectorAll<HTMLElement>("[data-file]").forEach((el) => {
       const a = mine.find((x) => x.file === el.dataset.file);
       if (!a) return;
@@ -673,13 +675,18 @@ const PAGE = `
   #panel .p-tabs { display:flex; gap:4px; flex-wrap:wrap }
   #panel .p-tabs button { padding:0 16px }
   #panel .p-body { display:flex; gap:14px; align-items:center; flex-wrap:wrap; min-height:30px }
-  #panel .p-body.col { flex-direction:column; align-items:stretch; gap:6px }
+  #panel .p-body.col { flex-direction:column; align-items:stretch; flex-wrap:nowrap; gap:6px }
   #panel .p-body[hidden] { display:none }
   #panel .p-body.warm input[type=range] { accent-color:#ffd166 }
   #panel .p-body b { min-width:3.4em }
   #panel .p-body .hint { color:#9d94a8; margin:0 }
   /* 작품 슬라이드: 옆으로 넘겨 고른다 (누르면 보고 있는 벽에 걸린다) */
-  #slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; align-items:stretch }
+  /* 사진 올리기는 왼쪽에 붙박이, 작품만 옆으로 넘어간다 */
+  .slide-row { display:flex; gap:8px; align-items:stretch; min-width:0; min-height:93px }   /* 안쪽 띠만 넘어가게 */
+  .up-box { flex:0 0 auto; display:flex; flex-direction:column; gap:4px; width:84px }
+  .up-box button { flex:1; height:auto; padding:0 6px }
+  .up-box button:first-child { background:#e9557d; border-color:#e9557d; color:#fff }
+  #slides { flex:1; min-width:0; display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; align-items:stretch }
   /* 썸네일(누르면 걸고, 걸린 것을 다시 누르면 내린다)과 아래 단추를 줄로 나눠 둔다 */
   .slide { position:relative; flex:0 0 auto; width:112px; padding:0; overflow:hidden; border:1px solid #3a3346;
            border-radius:10px; background:#241f2b; cursor:pointer }
@@ -690,10 +697,6 @@ const PAGE = `
   .slide .s-btns button { flex:1; height:24px; padding:0; border:0; border-radius:0; font-size:11px; background:#1b1724 }
   .slide .s-btns button + button { border-left:1px solid #3a3346 }
   .slide .s-btns button:hover { background:#2f2838; color:#ffb3c8 }
-  .slide.add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; width:84px;
-               height:auto; align-self:stretch; border-style:dashed; color:#c9bfd0; font-size:18px; line-height:1 }
-  .slide.add span { font-size:11px }
-  .slide.add:hover { color:#ffb3c8 }
   .slide-kid { flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 4px; font-size:12px;
                color:#f0b9c8; border-left:1px solid #3a3346; writing-mode:vertical-rl }
   .modal { display:none; position:fixed; inset:0; z-index:5; background:rgba(10,8,16,.66);
@@ -747,7 +750,13 @@ ${CROP_CSS}
     <button data-tab="light">조명</button>
   </div>
   <div class="p-body col" data-tab="art">
-    <div id="slides"></div>
+    <div class="slide-row">
+      <div class="up-box">
+        <button id="up-new">신규</button>
+        <button id="up-pick">갤러리</button>
+      </div>
+      <div id="slides"></div>
+    </div>
     <div class="row wrap">
       <label class="grow"><button data-step="-0.05" class="step">−</button>
         <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
