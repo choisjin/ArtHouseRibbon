@@ -13,8 +13,12 @@ import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../wor
  * 고개가 돌아간다 (world/lookaround.ts, 배경은 360° 파노라마 렌더). 두 손가락·휠로 당겨 본다.
  * 작품을 누르면(방 안의 그림이든 아래 작은 그림이든) 올린 그대로의 크기로 크게 보고 내려받을 수 있다.
  * 내려받기는 두 가지: **배경 없는 원본**(올린 파일 그대로) / **배경색을 골라서**(여백까지 합친 그림, world/artimage.ts).
+ * 크게 보면 작품 이야기(이름·완성일·설명)도 같이 본다: 세로 화면은 작품 아래, 가로 화면은 작품 오른쪽.
  */
-interface Artwork { file: string; name: string; width: number; height: number; bg?: string; pad?: number[] }
+interface Artwork {
+  file: string; name: string; width: number; height: number;
+  bg?: string; pad?: number[]; made?: string; note?: string;
+}
 interface Hall { room: string; layout: Layout | null; render: WorldRender | null }
 interface Shared { name: string; halls: Hall[]; artworks: Artwork[] }
 
@@ -113,6 +117,10 @@ export async function startGallery(): Promise<void> {
       bgIn.value = bgOf(art);
       paint();
       $("#big-name").textContent = art?.name ?? "";
+      $("#note-name").textContent = art?.name ?? "";
+      $("#note-made").textContent = art?.made ? `${art.made.replace(/-/g, ". ")} 완성` : "";
+      $("#note-text").textContent = art?.note ?? "";
+      $("#note-text").hidden = !art?.note;
       const raw = $<HTMLAnchorElement>("#big-raw");
       raw.href = `/${file}`;
       raw.download = `${safe(data.name)}_${safe(art?.name ?? "작품")}_원본.${file.split(".").pop() ?? "png"}`;
@@ -163,7 +171,17 @@ const PAGE = `
                cursor:zoom-in; border:1px solid #ffffff22 }
   #big { display:none; position:fixed; inset:0; z-index:5; background:rgba(8,6,12,.92); flex-direction:column }
   #big.open { display:flex }
+  #big .show { flex:1; min-height:0; display:flex; flex-direction:column }
   #big .pic { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:12px; overflow:auto }
+  /* 작품 이야기: 세로 화면은 작품 아래, 가로 화면은 작품 오른쪽 */
+  #big .note { flex:0 0 auto; max-height:34%; overflow:auto; padding:12px 16px; border-top:1px solid #2c2636; background:#12101a }
+  #big .note h2 { font-size:17px; margin:0 0 2px }
+  #big .note .when { font-size:13px; color:#c9bfd0 }
+  #big .note p { margin:8px 0 0; white-space:pre-wrap; line-height:1.55 }
+  @media (orientation:landscape) {
+    #big .show { flex-direction:row }
+    #big .note { max-height:none; width:min(34%,360px); border-top:none; border-left:1px solid #2c2636 }
+  }
   #big canvas { max-width:100%; max-height:100%; object-fit:contain; box-shadow:0 2px 18px rgba(0,0,0,.5) }
   #big .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px 14px calc(12px + env(safe-area-inset-bottom)) }
   #big .bar b { flex:1; min-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
@@ -178,8 +196,15 @@ const PAGE = `
 </header>
 <div id="strip"></div>
 <div id="big">
-  <div class="pic"><canvas id="big-cv"></canvas></div>
-  <div class="bar"><b id="big-name"></b>
+  <div class="show">
+    <div class="pic"><canvas id="big-cv"></canvas></div>
+    <div class="note">
+      <h2 id="note-name"></h2>
+      <div class="when" id="note-made"></div>
+      <p id="note-text"></p>
+    </div>
+  </div>
+  <div class="bar"><b id="big-name" hidden></b>
     <label>배경색 <input id="big-bg" type="color" value="#ffffff"></label>
     <button id="big-save" class="on">이 배경으로 받기</button>
     <a id="big-raw" class="btn" download>배경 없는 원본</a>

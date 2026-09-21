@@ -3,7 +3,6 @@ import { Stage, fetchCatalog } from "../tv/stage";
 import type { WallMount } from "../world/room";
 import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 import { bgOf, lookSize, padOf } from "../world/artimage";
-import { FRAME_STYLES } from "../world/frames";
 import { FX_PRESETS, fxOf, type ArtFx } from "../world/artfx";
 import { LookAround } from "../world/lookaround";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
@@ -16,7 +15,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 아래 설정 창은 네 탭: **작품**(슬라이드로 고르기·크기·액자·올리기) · **필터** · **하이라이트** · **조명**(방 밝기)
  *   - 그림은 비율 그대로 크기만 바꾸고, 벽을 넘는 크기로는 못 키운다. 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색 · 지우기)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
- *   - 액자는 world/frames.ts, 작품마다 거는 이미지 필터와 하이라이트는 world/artfx.ts
+ *   - 한 작품은 한 전시실에 하나만 걸린다. 이미 걸린 작품을 누르면 그것을 고른다
+ *   - 액자·여백·배경색·설명은 **작품에 붙는다** (편집 창에서 고치면 걸려 있는 곳이 모두 따라 바뀐다). 필터·하이라이트는 걸린 그림마다
  *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 슬라이드는 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
  *   - 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts)
@@ -344,19 +344,24 @@ export async function startArt(): Promise<void> {
       const who = a.kid_id ?? "";
       const head = inGallery() && who !== last ? `<span class="slide-kid">${esc(kidName(a.kid_id))}</span>` : "";
       last = who;
-      const hung = arts.filter((x) => x.image === a.file).length;
-      return `${head}<div class="slide" data-file="${esc(a.file)}" title="${esc(a.name)}">
+      const hung = arts.find((x) => x.image === a.file);          // 한 전시실에 하나만 건다
+      return `${head}<div class="slide${hung ? " hung" : ""}" data-file="${esc(a.file)}" title="${esc(a.name)}">
         <img src="/${esc(a.file)}" alt="" loading="lazy" style="background:${bgOf(a)}">
-        <span class="s-name">${esc(a.name)}</span>
-        ${hung ? `<span class="s-badge">${hung}</span>` : ""}
-        <button class="s-edit" data-act="cut">편집</button>
+        <div class="s-btns">
+          ${hung ? `<button data-act="down">내리기</button>` : ""}
+          <button data-act="cut">편집</button>
+          <button data-act="del" class="ghost">삭제</button>
+        </div>
       </div>`;
     }).join("");
     box.querySelectorAll<HTMLElement>("[data-file]").forEach((el) => {
       const a = mine.find((x) => x.file === el.dataset.file);
       if (!a) return;
       el.onclick = (ev) => {
-        if ((ev.target as HTMLElement).dataset.act === "cut") void edit(a);
+        const act = (ev.target as HTMLElement).dataset.act;
+        if (act === "cut") void edit(a);
+        else if (act === "del") void removeArtwork(a);
+        else if (act === "down") takeDown(a.file);
         else void hang(a);
       };
     });
@@ -370,12 +375,28 @@ export async function startArt(): Promise<void> {
     return [...room].sort((p, q) => p.normal.dot(ahead) - q.normal.dot(ahead))[0] ?? mounts[0];
   }
 
+  /** 벽에서 내린다 (슬라이드의 '내리기'와 설정 창의 '벽에서 내리기') */
+  function takeDown(file: string): void {
+    arts = arts.filter((x) => x.image !== file);
+    picked = null;
+    dirty = true;
+    void rebuild();
+    drawSlides();
+  }
+
   async function hang(a: Artwork): Promise<void> {
+    const already = arts.find((x) => x.image === a.file);
+    if (already) {                              // 한 전시실에 하나만: 이미 걸린 것은 고르기만 한다
+      picked = already.id;
+      markPicked();
+      msg("이 전시실에 이미 걸려 있습니다");
+      return;
+    }
     const w = facingWall();
     if (!w) { msg("걸 수 있는 벽이 없습니다", true); return; }
     const art: LayoutArt = {
       id: `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-      image: a.file, width: w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: "white",
+      image: a.file, width: w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: a.frame ?? "white",
       mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a),
     };
     fit(art, w);
@@ -411,11 +432,9 @@ export async function startArt(): Promise<void> {
   // 높이 막대는 없다: 자리는 끌어서 정하고, 크기는 비율 그대로 벽 안에서만 바뀐다
   const panel = $("#panel");
   const wIn = $<HTMLInputElement>("#w");
-  const frameIn = $<HTMLSelectElement>("#frame");
   const presetIn = $<HTMLSelectElement>("#preset");
   const fxIns = [...panel.querySelectorAll<HTMLInputElement>("[data-fx]")];
   const cur = (): LayoutArt | undefined => arts.find((x) => x.id === picked);
-  frameIn.innerHTML = FRAME_STYLES.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("");
   presetIn.innerHTML = `<option value="">직접 맞춤</option>`
     + FX_PRESETS.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
 
@@ -437,12 +456,11 @@ export async function startArt(): Promise<void> {
     $(".p-head").hidden = !a;                   // 고른 것이 없으면 머리줄은 자리만 차지한다
     $("#down").hidden = !a;
     panel.querySelectorAll<HTMLElement>(".pick-first").forEach((el) => { el.hidden = !!a; });
-    [wIn, frameIn, presetIn, ...fxIns].forEach((el) => { el.disabled = !a; });
+    [wIn, presetIn, ...fxIns].forEach((el) => { el.disabled = !a; });
     if (a) {
       wIn.min = String(MIN_W);
       wIn.max = maxWidth(a, wallOf(a)).toFixed(2);
       wIn.value = String(a.width);
-      frameIn.value = a.frame ?? "canvas";
       showFx(fxOf(a.fx));
     }
     showSize();
@@ -474,23 +492,8 @@ export async function startArt(): Promise<void> {
   panel.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((b) => {
     b.onclick = () => { sized((cur()?.width ?? 0) + Number(b.dataset.step)); later(); };
   });
-  frameIn.onchange = () => {
-    const a = cur();
-    if (!a) return;
-    a.frame = frameIn.value;
-    dirty = true;
-    void rebuild();
-  };
   $("#up-btn").onclick = () => $<HTMLInputElement>("#file").click();
-  $("#down").onclick = () => {
-    const a = cur();
-    if (!a) return;
-    arts = arts.filter((x) => x.id !== a.id);
-    picked = null;
-    dirty = true;
-    void rebuild();
-    drawSlides();
-  };
+  $("#down").onclick = () => { const a = cur(); if (a) takeDown(a.image); };
 
   // ---- 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
   function showFx(fx: ArtFx): void {
@@ -621,7 +624,7 @@ export async function startArt(): Promise<void> {
     else mine = [entry, ...mine.filter((a) => a.file !== entry.file)];
     drawSlides();
     msg(`"${entry.name}" ${replaced ? "편집했습니다" : "올렸습니다"}`);
-  }, msg, removeArtwork);
+  }, msg);
 
   await loadKid();
 }
@@ -675,13 +678,13 @@ const PAGE = `
   /* 작품 슬라이드: 옆으로 넘겨 고른다 (누르면 보고 있는 벽에 걸린다) */
   #slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; min-height:104px; align-items:stretch }
   #slides .hint { align-self:center }
-  .slide { position:relative; flex:0 0 auto; width:102px; padding:4px; border:1px solid #3a3346; border-radius:10px;
+  .slide { position:relative; flex:0 0 auto; width:118px; padding:4px; border:1px solid #3a3346; border-radius:10px;
            background:#241f2b; cursor:pointer }
   .slide:hover { border-color:#e9557d }
-  .slide img { width:100%; height:62px; object-fit:contain; border-radius:6px; display:block }
-  .slide .s-name { display:block; margin-top:3px; font-size:11px; color:#c9bfd0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .slide .s-badge { position:absolute; top:3px; left:3px; padding:0 6px; border-radius:8px; background:#e9557d; color:#fff; font-size:10px }
-  .slide .s-edit { position:absolute; top:3px; right:3px; padding:1px 6px; font-size:11px; background:#1b1724dd }
+  .slide.hung { border-color:#e9557d }
+  .slide img { width:100%; height:64px; object-fit:contain; border-radius:6px; display:block }
+  .slide .s-btns { display:flex; gap:3px; margin-top:4px }
+  .slide .s-btns button { flex:1; padding:2px 0; font-size:11px }
   .slide-kid { flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 6px; font-size:12px;
                color:#f0b9c8; border-left:1px solid #3a3346; writing-mode:vertical-rl }
   .modal { display:none; position:fixed; inset:0; z-index:5; background:rgba(10,8,16,.66);
@@ -738,7 +741,6 @@ ${CROP_CSS}
       <label class="grow">크기 <button data-step="-0.05">−</button>
         <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
         <button data-step="0.05">＋</button> <b id="w-num"></b></label>
-      <label>액자 <select id="frame"></select></label>
       <button id="up-btn" class="on">작품 올리기</button>
       <label id="up-who" hidden>올릴 아이 <select id="up-kid"></select></label>
     </div>

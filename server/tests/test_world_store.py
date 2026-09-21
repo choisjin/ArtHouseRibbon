@@ -105,15 +105,20 @@ def test_artwork_look_is_synced_to_hung_arts(store):
     store.set_halls("k1", 2)
     up = {"name": "a", "data": "data:image/png;base64," + PNG_1PX, "width": 200, "height": 100, "kid_id": "k1"}
     art, _ = store.add_artwork(up)
-    assert art["bg"] == "#ffffff" and art["pad"] == [0, 0, 0, 0]          # 정하지 않으면 흰 배경
+    assert art["bg"] == "#ffffff" and art["pad"] == [0, 0, 0, 0] and art["frame"] == "white"   # 정하지 않으면 흰 배경·흰 액자
+    assert art["made"] == "" and art["note"] == ""
     hung = {"id": "x", "image": art["file"], "width": 1, "aspect": 0.5, "mount": {"host": None, "id": "back"}}
     store.save_layout("kid-k1", {"items": [], "arts": [hung]})
     store.save_layout("kid-k1@2", {"items": [], "arts": [{**hung, "id": "y"}]})
 
-    entry, rooms = store.update_artwork(art["file"], {"bg": "#FBDCE4", "pad": [0.1, 0.2, 0.1, 9]})
+    entry, rooms = store.update_artwork(art["file"], {"bg": "#FBDCE4", "pad": [0.1, 0.2, 0.1, 9], "frame": "gold",
+                                                     "name": " 봄 소풍 ", "made": "2026-09-14", "note": "벚꽃을 그렸어요"})
     assert entry["bg"] == "#fbdce4" and entry["pad"] == [0.1, 0.2, 0.1, 0.4] and rooms == ["kid-k1", "kid-k1@2"]
+    assert entry["frame"] == "gold" and entry["name"] == "봄 소풍" and entry["made"] == "2026-09-14"
+    assert store.update_artwork(art["file"], {"made": "어제", "frame": "없는액자"})[0] == {**entry, "made": "", "frame": "white"}
+    store.update_artwork(art["file"], {"frame": "gold", "made": "2026-09-14"})
     got = store.layout("kid-k1@2")["arts"][0]
-    assert got["bg"] == "#fbdce4" and got["pad"] == [0.1, 0.2, 0.1, 0.4]
+    assert got["bg"] == "#fbdce4" and got["pad"] == [0.1, 0.2, 0.1, 0.4] and got["frame"] == "gold"
     assert got["aspect"] == pytest.approx((100 + 0.6 * 200) / (200 + 0.2 * 200), rel=1e-4)
     assert store.update_artwork(art["file"], {"bg": "red"})[0]["bg"] == "#ffffff"   # 이상한 색은 흰색으로
     with pytest.raises(ValueError):

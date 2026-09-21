@@ -1018,7 +1018,7 @@ async def api_artwork_upload(data: dict = Body(...)):
 
 @app.put("/api/artworks/meta")
 async def api_artwork_meta(data: dict = Body(...)):
-    """작품의 배경색·여백(·이름) 바꾸기 {"file", "bg", "pad": [왼,위,오,아래]}. 걸려 있는 곳도 같이 바뀐다"""
+    """작품의 모습·적어 둔 것 바꾸기 {"file", "bg", "pad", "frame", "name", "made", "note"}. 걸려 있는 곳도 같이 바뀐다"""
     try:
         entry, rooms = world.update_artwork(str(data.get("file", "")), data)
     except (ValueError, TypeError) as e:

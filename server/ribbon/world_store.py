@@ -37,16 +37,32 @@ HALL_SEP = "@"             # 전시실 2실부터: kid-<아이 id>@2 (1실은 ki
 MAX_HALLS = 9
 LIGHT_MIN, LIGHT_MAX = 0.2, 1.6   # 전시실 조명 밝기 (1 = 렌더 그대로)
 MAX_PAD = 0.4              # 작품 여백: 그림 긴 변에 대한 비율 (client world/artimage.ts 와 같다)
+MAX_NOTE = 600             # 작품 설명 글자 수
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+#: 액자 종류 (client world/frames.ts 의 FRAME_STYLES id 와 같아야 한다)
+FRAMES = ("canvas", "white", "black", "wood", "walnut", "gold", "silver", "brass",
+          "white_mat", "black_mat", "wood_mat", "gold_mat", "float", "float_wood")
 
 
 def art_look(body: Dict[str, Any]) -> Dict[str, Any]:
-    """작품 뒤에 까는 배경색과 여백 [왼,위,오,아래]. 값이 없거나 이상하면 흰색·여백 없음"""
+    """작품에 붙는 모습: 배경색 · 여백 [왼,위,오,아래] · 액자. 값이 없거나 이상하면 흰 배경 · 여백 없음 · 흰 액자"""
     bg = str(body.get("bg") or "")
     pad = body.get("pad")
     ok = isinstance(pad, list) and len(pad) == 4 and all(isinstance(v, (int, float)) for v in pad)
+    frame = str(body.get("frame") or "")
     return {"bg": bg.lower() if _COLOR.match(bg) else "#ffffff",
-            "pad": [round(max(0.0, min(MAX_PAD, float(v))), 4) for v in pad] if ok else [0, 0, 0, 0]}
+            "pad": [round(max(0.0, min(MAX_PAD, float(v))), 4) for v in pad] if ok else [0, 0, 0, 0],
+            "frame": frame if frame in FRAMES else "white"}
+
+
+def art_text(body: Dict[str, Any], old: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """작품에 적어 두는 것: 이름 · 완성일(YYYY-MM-DD) · 설명. 부모님 전시실에서 작품과 같이 보여 준다"""
+    old = old or {}
+    name = str(body.get("name") if body.get("name") is not None else old.get("name", ""))
+    made = str(body.get("made") if body.get("made") is not None else old.get("made", "") or "")
+    note = str(body.get("note") if body.get("note") is not None else old.get("note", "") or "")
+    return {"name": name.strip()[:80], "made": made if _DAY.match(made) else "", "note": note.strip()[:MAX_NOTE]}
 
 
 def look_aspect(entry: Dict[str, Any]) -> float:
@@ -365,8 +381,9 @@ class WorldStore:
             items = self.artworks()
             found = next((a for a in items if a["file"] == rel), None)
             self.art_dir.mkdir(parents=True, exist_ok=True)
-            if found and ("bg" in body or "pad" in body):   # 같은 그림을 다시 올렸다: 배경색·여백만 새로
+            if found and ("bg" in body or "pad" in body or "frame" in body):   # 같은 그림을 다시 올렸다: 모습만 새로
                 found.update(art_look(body))
+                found.update(art_text(body, found))
                 _write_json(self.art_dir / "index.json", items)
             if found and (self.art_dir / fname).exists():
                 return found, False
@@ -374,9 +391,10 @@ class WorldStore:
             if found:
                 return found, True
             name = os.path.splitext(os.path.basename(str(body.get("name") or fname)))[0][:80]
-            entry = {"file": rel, "name": name, "width": w, "height": h,
+            entry = {"file": rel, "width": w, "height": h,
                      "kid_id": str(body["kid_id"]) if body.get("kid_id") else None,
-                     "added": datetime.datetime.now().isoformat(timespec="seconds"), **art_look(body)}
+                     "added": datetime.datetime.now().isoformat(timespec="seconds"),
+                     **art_look(body), **art_text({**body, "name": name})}
             items.append(entry)
             _write_json(self.art_dir / "index.json", items)
             return entry, True
@@ -394,7 +412,8 @@ class WorldStore:
                 continue
             hit = [a for a in lay.get("arts", []) if a.get("image") == (old or rel)]
             for a in hit:
-                a.update(image=rel, bg=entry["bg"], pad=entry["pad"], aspect=round(look_aspect(entry), 6))
+                a.update(image=rel, bg=entry["bg"], pad=entry["pad"], frame=entry.get("frame", "white"),
+                         aspect=round(look_aspect(entry), 6))
             if hit:
                 _write_json(path, lay)
                 changed.append(room)
@@ -407,9 +426,9 @@ class WorldStore:
             entry = next((a for a in items if a["file"] == rel), None)
             if not entry:
                 raise ValueError("없는 그림입니다")
-            entry.update(art_look({"bg": body.get("bg", entry.get("bg")), "pad": body.get("pad", entry.get("pad"))}))
-            if body.get("name"):
-                entry["name"] = str(body["name"])[:80]
+            entry.update(art_look({"bg": body.get("bg", entry.get("bg")), "pad": body.get("pad", entry.get("pad")),
+                                   "frame": body.get("frame", entry.get("frame"))}))
+            entry.update(art_text(body, entry))
             _write_json(self.art_dir / "index.json", items)
             return entry, self._sync_arts(rel, entry)
 
