@@ -3,7 +3,7 @@ import { Stage, fetchCatalog } from "../tv/stage";
 import type { WallMount } from "../world/room";
 import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 import { bgOf, lookSize, padOf } from "../world/artimage";
-import { FX_PRESETS, fxOf, type ArtFx } from "../world/artfx";
+import { fxOf, type ArtFx } from "../world/artfx";
 import { LookAround } from "../world/lookaround";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
@@ -12,8 +12,9 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *
   * **방 안에 서서 보면서 건다** (2026-09-21): 벽을 하나씩 골라 평면으로 보던 것을 접고, 쓸어 넘겨 둘러보는 3D 방에서
  * 그림을 끌어 옮긴다 (world/lookaround.ts). 배경은 같은 자리에서 구운 360° 파노라마라 어느 벽이든 렌더 품질 그대로다.
- *   - 아래 설정 창은 네 탭: **작품**(슬라이드로 고르기·크기·액자·올리기) · **필터** · **하이라이트** · **조명**(방 밝기)
- *   - 그림은 비율 그대로 크기만 바꾸고, 벽을 넘는 크기로는 못 키운다. 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다
+ *   - 아래 설정 창은 세 탭: **작품**(슬라이드로 걸고 내리기·사진 올리기) · **핀 조명**(고른 작품만) · **조명**(방 밝기)
+ *   - 크기·여백·배경·액자·필터·설명은 **작품 편집 창**에서 정한다 (crop.ts, 작품에 붙어 걸린 곳이 모두 따라 바뀐다)
+ *   - 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다. 벽을 넘는 크기는 화면에서 줄여 건다
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색 · 지우기)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
  *   - 한 작품은 한 전시실에 하나만 걸린다. 썸네일을 누르면 걸리고, 걸린 것을 다시 누르면 내려온다
  *   - 액자·여백·배경색·설명은 **작품에 붙는다** (편집 창에서 고치면 걸려 있는 곳이 모두 따라 바뀐다). 필터·하이라이트는 걸린 그림마다
@@ -26,7 +27,7 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
 interface Kid { id: string; name: string }
 
-type Tab = "art" | "fx" | "glow" | "light";
+type Tab = "art" | "glow" | "light";
 const GALLERY = "gallery";                // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
@@ -337,7 +338,7 @@ export async function startArt(): Promise<void> {
   function drawSlides(): void {
     const box = $("#slides");
     if (!mine.length) {
-      box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 왼쪽 '신규' 로 찍거나 '갤러리' 에서 고르세요.</p>`;
+      box.innerHTML = `<p class="hint">아직 올린 작품이 없습니다. 왼쪽 '신규' 로 찍거나 '앨범' 에서 고르세요.</p>`;
       return;
     }
     const list = [...mine];
@@ -399,8 +400,8 @@ export async function startArt(): Promise<void> {
     if (!w) { msg("걸 수 있는 벽이 없습니다", true); return; }
     const art: LayoutArt = {
       id: `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-      image: a.file, width: w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: a.frame ?? "white",
-      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a),
+      image: a.file, width: a.size ?? w.defaultSize ?? 0.8, aspect: aspectOf(a), frame: a.frame ?? "white",
+      mount: { host: w.host, id: w.id }, u: 0, v: 1.5, bg: bgOf(a), pad: padOf(a), fx: { ...fxOf(a.fx) },
     };
     fit(art, w);
     arts.push(art);
@@ -434,19 +435,20 @@ export async function startArt(): Promise<void> {
   // ---------- 고른 그림: 크기 · 액자 ----------
   // 높이 막대는 없다: 자리는 끌어서 정하고, 크기는 비율 그대로 벽 안에서만 바뀐다
   const panel = $("#panel");
-  const wIn = $<HTMLInputElement>("#w");
-  const presetIn = $<HTMLSelectElement>("#preset");
   const fxIns = [...panel.querySelectorAll<HTMLInputElement>("[data-fx]")];
   const cur = (): LayoutArt | undefined => arts.find((x) => x.id === picked);
-  presetIn.innerHTML = `<option value="">직접 맞춤</option>`
-    + FX_PRESETS.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
 
   // ---- 탭 ----
   panel.querySelectorAll<HTMLButtonElement>(".p-tabs button").forEach((b) => {
     b.onclick = () => { tab = b.dataset.tab as Tab; showTab(); };
   });
   function showTab(): void {
-    panel.querySelectorAll<HTMLElement>(".p-tabs button").forEach((t) => t.classList.toggle("on", t.dataset.tab === tab));
+    // 핀 조명은 걸린 작품을 골랐을 때만 (고른 것이 없으면 작품·조명만)
+    if (tab === "glow" && !cur()) tab = "art";
+    panel.querySelectorAll<HTMLElement>(".p-tabs button").forEach((t) => {
+      t.classList.toggle("on", t.dataset.tab === tab);
+      if (t.dataset.tab === "glow") t.hidden = !cur();
+    });
     panel.querySelectorAll<HTMLElement>(".p-body").forEach((t) => { t.hidden = t.dataset.tab !== tab; });
   }
   showTab();
@@ -454,77 +456,38 @@ export async function startArt(): Promise<void> {
   /** 고른 그림에 맞춰 설정 창을 맞춘다 (고른 것이 없으면 작품·조명만 쓸 수 있다) */
   function syncPanel(): void {
     const a = cur();
-    panel.querySelectorAll<HTMLElement>(".pick-first").forEach((el) => { el.hidden = !!a; });
-    [wIn, presetIn, ...fxIns].forEach((el) => { el.disabled = !a; });
-    if (a) {
-      wIn.min = String(MIN_W);
-      wIn.max = maxWidth(a, wallOf(a)).toFixed(2);
-      wIn.value = String(a.width);
-      showFx(fxOf(a.fx));
-    }
+    if (a) showFx(fxOf(a.fx));
+    showTab();
   }
 
-  // ---- 작품 탭: 크기 · 액자 ----
   let timer = 0;
   const later = (): void => { clearTimeout(timer); timer = window.setTimeout(() => void rebuild(), 150); };
-  const sized = (width: number): void => {
-    // 끄는 동안은 3D 그림을 늘렸다 줄였다 보여 주고, 손을 떼면 액자까지 정확히 다시 짓는다
-    const a = cur();
-    if (!a) return;
-    a.width = width;
-    fit(a, wallOf(a));                          // 커지면서 벽 밖으로 나가면 안쪽으로 밀어 넣는다
-    const g = findArt(a.id);
-    const built = g?.userData.artW as number | undefined;
-    if (g && built) g.scale.setScalar(a.width / built);
-    placeLive(a);                               // (updateMatrix 까지 한다)
-    wIn.value = String(a.width);
-    dirty = true;
-  };
-  wIn.oninput = () => sized(Number(wIn.value));
-  wIn.onchange = later;
-  panel.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((b) => {
-    b.onclick = () => { sized((cur()?.width ?? 0) + Number(b.dataset.step)); later(); };
-  });
 
-  // ---- 필터 · 하이라이트: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
+  // ---- 핀 조명: 막대를 움직이는 대로 그림에 바로 입힌다 (벽에 번지는 빛만 손을 뗀 뒤 다시 짓는다) ----
   function showFx(fx: ArtFx): void {
     fxIns.forEach((el) => {
       const key = el.dataset.fx as keyof ArtFx;
       el.value = String(fx[key]);
       el.parentElement!.querySelector("b")!.textContent = fxText(key, fx[key]);
     });
-    presetIn.value = presetOf(fx);
   }
-  const setFx = (patch: Partial<ArtFx>, wall: boolean): void => {
-    const a = cur();
-    if (!a) return;
-    const now = { ...fxOf(a.fx), ...patch };
-    a.fx = now;
-    stage.room.setArtFx(a.id, now);
-    showFx(now);
-    dirty = true;
-    if (wall) later();
-  };
   fxIns.forEach((el) => {
     el.oninput = () => {
-      const key = el.dataset.fx as keyof ArtFx;
-      setFx({ [key]: Number(el.value) }, key.startsWith("glow"));
+      const a = cur();
+      if (!a) return;
+      const now = { ...fxOf(a.fx), [el.dataset.fx as keyof ArtFx]: Number(el.value) };
+      a.fx = now;
+      stage.room.setArtFx(a.id, now);
+      showFx(now);
+      dirty = true;
+      later();                                  // 벽에 번지는 빛은 손을 뗀 뒤 다시 짓는다
     };
   });
-  presetIn.onchange = () => {
-    const preset = FX_PRESETS.find((x) => x.id === presetIn.value);
-    if (preset) setFx(preset.fx, false);
-  };
 
   const fxText = (key: keyof ArtFx, v: number): string =>
-    key === "s" || key === "glowSize" || key === "sepia" ? `${Math.round(v * 100)}%`
+    key === "glowSize" ? `${Math.round(v * 100)}%`
       : key === "glow" ? (v <= 0 ? "끔" : `${Math.round(v * 100)}%`)
-        : key === "glowTone" ? (v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게")
-          : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`;
-
-  /** 지금 값과 똑같은 '골라 쓰기' 가 있으면 그 id (없으면 직접 맞춤) */
-  const presetOf = (fx: ArtFx): string =>
-    FX_PRESETS.find((x) => (Object.keys(x.fx) as (keyof ArtFx)[]).every((k) => Math.abs((x.fx[k] ?? 0) - fx[k]) < 0.005))?.id ?? "";
+        : v < 0.34 ? "따뜻하게" : v < 0.67 ? "중간" : "차갑게";
 
   // ---------- 전시실 1실 · 2실 · 3실 ----------
   function drawHalls(): void {
@@ -573,6 +536,23 @@ export async function startArt(): Promise<void> {
       msg("없앴습니다");
     } catch (e) { msg(String(e), true); }
   }
+
+  // ---------- 설정 창 접기·펴기 (손잡이를 끌거나 누른다) ----------
+  const handle = $(".p-grab");
+  const openPanel = (on: boolean): void => { panel.classList.toggle("shut", !on); };
+  let handleY: number | null = null;
+  handle.onpointerdown = (ev) => {
+    handleY = ev.clientY;
+    handle.setPointerCapture(ev.pointerId);
+  };
+  handle.onpointerup = (ev) => {
+    if (handleY === null) return;
+    const dy = ev.clientY - handleY;
+    handleY = null;
+    if (Math.abs(dy) < 12) openPanel(panel.classList.contains("shut"));   // 살짝 눌렀다: 그냥 뒤집기
+    else openPanel(dy < 0);                                              // 위로 끌면 펴고, 아래로 끌면 접는다
+  };
+  handle.onpointercancel = () => { handleY = null; };
 
   // ---------- 조명 탭: 방 전체 밝기 ----------
   const showLight = (): void => { $("#light-num").textContent = `${Math.round(light * 100)}%`; };
@@ -672,6 +652,12 @@ const PAGE = `
   #panel .grow { flex:1 1 200px }
   #panel input[type=range] { flex:1; min-width:96px; accent-color:#e9557d }
   #panel input:disabled, #panel select:disabled { opacity:.4 }
+  /* 손잡이를 끌어(또는 눌러) 접었다 편다 */
+  #panel .p-grab { display:flex; align-items:center; justify-content:center; height:16px; margin:-6px 0 0; cursor:grab; touch-action:none }
+  #panel .p-grab span { width:44px; height:4px; border-radius:2px; background:#5b5268 }
+  #panel .p-grab:hover span { background:#e9557d }
+  #panel.shut { gap:0 }
+  #panel.shut .p-tabs, #panel.shut .p-body { display:none }
   #panel .p-tabs { display:flex; gap:4px; flex-wrap:wrap }
   #panel .p-tabs button { padding:0 16px }
   #panel .p-body { display:flex; gap:14px; align-items:center; flex-wrap:wrap; min-height:30px }
@@ -683,8 +669,8 @@ const PAGE = `
   /* 작품 슬라이드: 옆으로 넘겨 고른다 (누르면 보고 있는 벽에 걸린다) */
   /* 사진 올리기는 왼쪽에 붙박이, 작품만 옆으로 넘어간다 */
   .slide-row { display:flex; gap:8px; align-items:stretch; min-width:0; min-height:93px }   /* 안쪽 띠만 넘어가게 */
-  .up-box { flex:0 0 auto; display:flex; flex-direction:column; gap:4px; width:84px }
-  .up-box button { flex:1; height:auto; padding:0 6px }
+  .up-box { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:4px; width:56px }
+  .up-box button { height:27px; padding:0; font-size:13px }
   .up-box button:first-child { background:#e9557d; border-color:#e9557d; color:#fff }
   #slides { flex:1; min-width:0; display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; align-items:stretch }
   /* 썸네일(누르면 걸고, 걸린 것을 다시 누르면 내린다)과 아래 단추를 줄로 나눠 둔다 */
@@ -743,42 +729,31 @@ ${CROP_CSS}
 </header>
 <input id="file" type="file" accept="image/*" capture="environment" style="display:none">
 <div id="panel">
+  <div class="p-grab" title="끌어서 접기·펴기"><span></span></div>
   <div class="p-tabs">
     <button data-tab="art" class="on">작품</button>
-    <button data-tab="fx">필터</button>
-    <button data-tab="glow">하이라이트</button>
+    <button data-tab="glow" hidden>핀 조명</button>
     <button data-tab="light">조명</button>
   </div>
   <div class="p-body col" data-tab="art">
     <div class="slide-row">
       <div class="up-box">
         <button id="up-new">신규</button>
-        <button id="up-pick">갤러리</button>
+        <button id="up-pick">앨범</button>
       </div>
       <div id="slides"></div>
     </div>
     <div class="row wrap">
-      <label class="grow"><button data-step="-0.05" class="step">−</button>
-        <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
-        <button data-step="0.05" class="step">＋</button></label>
+      <span class="hint">썸네일을 누르면 보고 있는 벽에 걸립니다. 크기·여백·액자·필터는 '편집' 에서 바꿉니다.</span>
+      <span class="grow"></span>
       <label id="up-who" hidden>올릴 아이 <select id="up-kid"></select></label>
     </div>
-  </div>
-  <div class="p-body warm" data-tab="fx" hidden>
-    <label>골라 쓰기 <select id="preset"></select></label>
-    <label class="grow">밝기 <input data-fx="b" type="range" min="-1" max="1" step="0.01" value="0"> <b></b></label>
-    <label class="grow">대비 <input data-fx="c" type="range" min="-1" max="1" step="0.01" value="0"> <b></b></label>
-    <label class="grow">채도 <input data-fx="s" type="range" min="0" max="2" step="0.01" value="1"> <b></b></label>
-    <label class="grow">색온도 <input data-fx="w" type="range" min="-1" max="1" step="0.01" value="0"> <b></b></label>
-    <label class="grow">세피아 <input data-fx="sepia" type="range" min="0" max="1" step="0.01" value="0"> <b></b></label>
-    <span class="hint pick-first">먼저 걸린 작품을 누르세요.</span>
   </div>
   <div class="p-body warm" data-tab="glow" hidden>
     <label class="grow">세기 <input data-fx="glow" type="range" min="0" max="2" step="0.01" value="0"> <b></b></label>
     <label class="grow">번짐 <input data-fx="glowSize" type="range" min="0.4" max="2" step="0.01" value="1"> <b></b></label>
     <label class="grow">빛 색 <input data-fx="glowTone" type="range" min="0" max="1" step="0.01" value="0.35"> <b></b></label>
-    <span class="hint pick-first">먼저 걸린 작품을 누르세요.</span>
-    <span class="hint">작품만 환하게 비춰 줍니다 (방 밝기를 낮춰도 이 작품은 그대로).</span>
+    <span class="hint">고른 작품만 환하게 비춥니다 (방 밝기를 낮춰도 이 작품은 그대로).</span>
   </div>
   <div class="p-body warm" data-tab="light" hidden>
     <label class="grow">방 밝기 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"> <b id="light-num"></b></label>

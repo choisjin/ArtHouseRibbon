@@ -1,13 +1,15 @@
 import { bgOf, composeArt, DEFAULT_BG, lookSize, MAX_PAD, padOf, type Pad } from "../world/artimage";
 import { frameStyle, FRAME_STYLES } from "../world/frames";
+import { filterCanvas, FX_LIMIT, FX_PRESETS, fxOf, type ArtFx } from "../world/artfx";
 
 /**
  * 작품 편집 창 (전시실 꾸미기의 '사진 올리기'와 작품 목록의 '편집').
  *
  *   - **배경 지우기**: 서버(ribbon/cutout.py, BiRefNet)가 작품만 골라낸 마스크를 주고, 여기서 원본 크기로 오려 낸다.
  *     가장자리 색으로 지우던 예전 방식은 품질이 나빴다. 서버에서 모델을 못 쓰면 그 방식으로 떨어진다 ('지우는 정도' 막대).
- *   - 네 탭: **여백**(네 쪽, ± 로 미세 조정) · **배경**(뒤에 까는 색) · **액자**(종류마다 이 작품을 끼워 본 썸네일을 옆으로 넘겨 고른다) ·
- *     **설명**(이름 · 완성일 · 작품 이야기 — 부모님 전시실에서 작품과 같이 보인다)
+ *   - 다섯 탭: **크기**(벽에 걸 가로 + 네 쪽 여백) · **배경**(뒤에 까는 색) · **액자**(종류마다 이 작품을 끼워 본 썸네일) ·
+ *     **필터**(밝기·대비·채도·색온도·세피아) · **설명**(이름 · 완성일 · 이야기 — 부모님 전시실에서 같이 보인다)
+ * 화면을 가득 채우고 미리 보기를 크게 둔다: 여기서 정한 것이 벽에 걸렸을 때의 모습 그대로다.
  * 올라가는 파일은 **배경 없는 원본**(투명 PNG)이고, 여백과 배경색은 값으로만 저장한다 — 그래서 나중에 다시 편집해도
  * AI 를 또 돌리지 않고, 부모님은 배경 없는 원본도 내려받을 수 있다. 이미 올린 작품의 여백·배경색만 바꾸면
  * 파일은 그대로 두고 값만 고친다 (PUT /api/artworks/meta, 걸려 있는 곳도 서버가 같이 맞춘다).
@@ -15,11 +17,13 @@ import { frameStyle, FRAME_STYLES } from "../world/frames";
 
 export interface Artwork {
   file: string; name: string; width: number; height: number; kid_id?: string | null;
-  bg?: string; pad?: number[]; frame?: string; made?: string; note?: string;
+  bg?: string; pad?: number[]; frame?: string; size?: number; fx?: Partial<ArtFx>; made?: string; note?: string;
 }
 export interface Cropper { edit(a: Artwork): Promise<void> }
 
 const THUMB = 74;               // 액자 고르기 썸네일 속 그림의 긴 변 (px)
+const MIN_SIZE = 0.15, MAX_SIZE = 3;   // 벽에 걸 가로 (m). 서버 world_store 와 같다
+const PREVIEW = 1400;           // 미리 보기 그림의 픽셀 한계 (화면 크기에 맞춰 늘려 보여 준다)
 const MAX_SIDE = 2000;          // 올리기 전에 이 크기로 줄인다 (부모님이 크게 볼 수 있을 만큼은 남긴다)
 const AI_SIDE = 1024;           // AI 에 보내는 크기 (모델 입력이 1024 라 더 커도 소용없다)
 const SWATCHES = ["#ffffff", "#faf5ea", "#eeeeee", "#222222", "#fbdce4", "#dcecf9", "#fff1c2", "#dff2df"];
@@ -44,6 +48,9 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
   const linkIn = $<HTMLInputElement>("#pad-link");
   const padIns = [...dlg.querySelectorAll<HTMLInputElement>("input[data-pad]")];   // 막대만 (± 단추는 따로)
   const bgIn = $<HTMLInputElement>("#bg");
+  const sizeIn = $<HTMLInputElement>("#crop-size-w");
+  const presetIn = $<HTMLSelectElement>("#crop-preset");
+  const fxIns = [...dlg.querySelectorAll<HTMLInputElement>("[data-fx]")];
   const nameIn = $<HTMLInputElement>("#crop-title");
   const madeIn = $<HTMLInputElement>("#crop-made");
   const noteIn = $<HTMLTextAreaElement>("#crop-note");
@@ -56,10 +63,14 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
   let pad: Pad = [0, 0, 0, 0];
   let bg = DEFAULT_BG;
   let frame = "white";
+  let size = 0.8;                          // 벽에 걸 가로 (m)
+  let fx: ArtFx = fxOf(null);
   let editing: Artwork | null = null;      // 이미 올린 작품을 편집하는 중이면 그 작품
   let tab = "pad";                         // 보고 있는 탭 (액자 탭일 때만 썸네일을 다시 그린다)
   let session = 0;                         // 창을 닫았다 다시 열면 늦게 온 AI 답은 버린다
 
+  presetIn.innerHTML = `<option value="">직접 맞춤</option>`
+    + FX_PRESETS.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
   $("#swatches").innerHTML = SWATCHES.map((c) => `<button data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
 
   const open = (img: HTMLImageElement, name: string, old: Artwork | null): void => {
@@ -72,7 +83,11 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     pad = [...padOf(old)] as Pad;
     bg = bgOf(old);
     frame = old?.frame ?? "white";
+    size = old?.size ?? 0.8;
+    fx = fxOf(old?.fx);
     bgIn.value = bg;
+    sizeIn.value = String(size);
+    showFx();
     nameIn.value = old?.name ?? name.replace(/\.[^.]+$/, "");
     madeIn.value = old?.made ?? new Date().toLocaleDateString("sv-SE");   // 새 사진은 오늘
     noteIn.value = old?.note ?? "";
@@ -142,15 +157,22 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     if (!pic) return;
     const look = { bg, pad };
     const full = lookSize(pic.width, pic.height, look);
-    const room = (canvas.parentElement!.parentElement?.clientWidth || 480) - 2;
-    const s = Math.min(1, room / full.w, window.innerHeight * 0.34 / full.h);
+    // 미리 보기는 빈 자리를 가득 채운다 (전체화면 창이라 자리가 넓다)
+    const wrap = canvas.parentElement!;
+    const roomW = Math.max(120, wrap.clientWidth - 8), roomH = Math.max(120, wrap.clientHeight - 8);
+    const s = Math.min(1, PREVIEW / Math.max(full.w, full.h));
     const shown = composeArt(pic, pic.width, pic.height, look, Math.max(full.w, full.h) * s);
     canvas.width = shown.width;
     canvas.height = shown.height;
     canvas.getContext("2d")!.drawImage(shown, 0, 0);
+    filterCanvas(shown, fx);                  // 필터는 그림에만 (액자·배경은 그대로)
+    canvas.getContext("2d")!.drawImage(shown, 0, 0);
     frameAround(canvas, frameStyle(frame), Math.max(shown.width, shown.height));
+    const fit = Math.min(roomW / canvas.width, roomH / canvas.height);
+    canvas.style.width = `${Math.round(canvas.width * fit)}px`;
+    canvas.style.height = `${Math.round(canvas.height * fit)}px`;
     if (tab === "frame") drawFrames();
-    $("#crop-size").textContent = `${Math.round(full.w)}×${Math.round(full.h)}`;
+    $("#crop-size").textContent = `${size.toFixed(2)}m · ${Math.round(full.w)}×${Math.round(full.h)}px`;
     dlg.querySelectorAll<HTMLElement>("[data-color]").forEach((b) => b.classList.toggle("on", b.dataset.color === bg));
     padIns.forEach((el, i) => { el.parentElement!.querySelector("b")!.textContent = `${Math.round(pad[i] * 100)}%`; });
   }
@@ -162,6 +184,42 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     draw();
   };
   padIns.forEach((el, i) => { el.oninput = () => setPad(i, Number(el.value)); });
+  const setSize = (v: number): void => {
+    size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(v * 100) / 100));
+    sizeIn.value = String(size);
+    draw();
+  };
+  sizeIn.oninput = () => setSize(Number(sizeIn.value));
+  dlg.querySelectorAll<HTMLButtonElement>("[data-sizestep]").forEach((b) => {
+    b.onclick = () => setSize(size + Number(b.dataset.sizestep));
+  });
+
+  // ---- 필터 (걸린 그림의 하이라이트는 전시실 화면의 '핀 조명' 탭에서) ----
+  const fxText = (key: keyof ArtFx, v: number): string =>
+    key === "s" || key === "sepia" ? `${Math.round(v * 100)}%` : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`;
+  function showFx(): void {
+    fxIns.forEach((el) => {
+      const key = el.dataset.fx as keyof ArtFx;
+      el.value = String(fx[key]);
+      el.parentElement!.querySelector("b")!.textContent = fxText(key, fx[key]);
+    });
+    presetIn.value = FX_PRESETS.find((x) => (Object.keys(x.fx) as (keyof ArtFx)[])
+      .every((k) => Math.abs((x.fx[k] ?? 0) - fx[k]) < 0.005))?.id ?? "";
+  }
+  fxIns.forEach((el) => {
+    el.oninput = () => {
+      fx = { ...fx, [el.dataset.fx as keyof ArtFx]: Number(el.value) };
+      showFx();
+      draw();
+    };
+  });
+  presetIn.onchange = () => {
+    const preset = FX_PRESETS.find((x) => x.id === presetIn.value);
+    if (!preset) return;
+    fx = { ...fx, ...preset.fx };
+    showFx();
+    draw();
+  };
   dlg.querySelectorAll<HTMLButtonElement>("[data-padstep]").forEach((b) => {
     const i = Number(b.dataset.pad), step = Number(b.dataset.padstep);
     b.onclick = () => setPad(i, Number(padIns[i].value) + step);
@@ -228,7 +286,8 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     session++;
   };
   /** 창에 적힌 값들 (올리기·저장에 같이 보낸다) */
-  const text = () => ({ bg, pad, frame, name: nameIn.value.trim() || "작품", made: madeIn.value, note: noteIn.value.trim() });
+  const text = () => ({ bg, pad, frame, size, fx, name: nameIn.value.trim() || "작품",
+                        made: madeIn.value, note: noteIn.value.trim() });
 
   $("#crop-cancel").onclick = close;
   $("#crop-ok").onclick = async () => {
@@ -429,7 +488,7 @@ function colorMask(src: ImageData, tol: number): Uint8ClampedArray {
 
 /** 전시실 꾸미기 화면에 넣는 편집 창 (art/index.ts 의 PAGE 에 들어간다) */
 export const CROP_HTML = `
-<div id="crop" class="modal">
+<div id="crop" class="modal full">
   <div class="box">
     <div id="cv-wrap"><canvas id="cv"></canvas></div>
     <p class="hint" id="crop-status"></p>
@@ -442,13 +501,19 @@ export const CROP_HTML = `
     </div>
     <label class="row" id="tol-row" hidden>지우는 정도 <input id="tol" type="range" min="2" max="60" value="16" style="flex:1"></label>
     <div class="c-tabs">
-      <button data-tab="pad" class="on">여백</button>
+      <button data-tab="pad" class="on">크기</button>
       <button data-tab="bg">배경</button>
       <button data-tab="frame">액자</button>
+      <button data-tab="fx">필터</button>
       <button data-tab="note">설명</button>
     </div>
     <div class="c-body pads" data-tab="pad">
-      <label class="row four"><input id="pad-link" type="checkbox" checked> 네 쪽 같이</label>
+      <label class="row big"><span class="p-name">작품</span>
+        <button data-sizestep="-0.05" class="step">−</button>
+        <input id="crop-size-w" type="range" min="${MIN_SIZE}" max="${MAX_SIZE}" step="0.01" value="0.8">
+        <button data-sizestep="0.05" class="step">＋</button>
+        <b>벽에 걸 가로</b></label>
+      <label class="row four"><input id="pad-link" type="checkbox" checked> 여백을 네 쪽 같이</label>
       ${SIDES.map((n, i) => `<label class="row">
         <span class="p-name">${n}</span>
         <button data-pad="${i}" data-padstep="-1" class="step">−</button>
@@ -463,6 +528,13 @@ export const CROP_HTML = `
       <div id="frame-slides"></div>
       <span class="hint">벽에 걸었을 때 이 액자로 보입니다.</span>
     </div>
+    <div class="c-body pads" data-tab="fx" hidden>
+      <label class="row four">골라 쓰기 <select id="crop-preset"></select></label>
+      ${[["b", "밝기"], ["c", "대비"], ["s", "채도"], ["w", "색온도"], ["sepia", "세피아"]].map(([k, n]) => `
+        <label class="row"><span class="p-name">${n}</span>
+          <input data-fx="${k}" type="range" min="${FX_LIMIT[k as keyof ArtFx][0]}" max="${FX_LIMIT[k as keyof ArtFx][1]}"
+            step="0.01" value="0"> <b></b></label>`).join("")}
+    </div>
     <div class="c-body notes" data-tab="note" hidden>
       <label class="row">이름 <input id="crop-title" type="text" maxlength="80" placeholder="작품 이름"></label>
       <label class="row">완성일 <input id="crop-made" type="date"></label>
@@ -473,11 +545,12 @@ export const CROP_HTML = `
 </div>`;
 
 export const CROP_CSS = `
-  #crop { z-index:6 }
-  #crop .box { width:min(600px,94vw) }
-  #crop .box > * { flex:0 0 auto }        /* 창이 좁아도 줄이지 말고 창을 굴리게 */
-  #cv-wrap { align-self:center; line-height:0 }
-  #cv { max-width:100%; box-shadow:0 1px 8px rgba(0,0,0,.25) }
+  /* 작품 편집: 화면을 가득 채운다 (미리 보기가 곧 벽에 걸린 모습) */
+  #crop { z-index:6; padding:0 }
+  #crop .box { width:100vw; height:100dvh; max-height:none; border-radius:0; padding:10px 14px 14px; gap:8px }
+  #crop .box > * { flex:0 0 auto }
+  #crop #cv-wrap { flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center; line-height:0 }
+  #cv { max-width:100%; max-height:100%; box-shadow:0 2px 14px rgba(0,0,0,.3) }
   #crop .c-tabs { display:flex; gap:6px; flex-wrap:wrap; border-top:1px solid #e3ded8; padding-top:10px }
   #crop .c-tabs button { padding:6px 16px }
   #crop .c-body { min-height:96px; align-content:start }
@@ -494,11 +567,15 @@ export const CROP_CSS = `
   /* 네 쪽 막대를 같은 길이로 (한 줄에 하나씩), 양 끝의 ± 로 1% 씩 */
   #crop .pads { display:flex; flex-direction:column; gap:6px }
   #crop .pads .p-name { min-width:3em }
+  #crop .pads .big { border-bottom:1px solid #e3ded8; padding-bottom:8px; margin-bottom:2px }
+  #crop .pads .big b { color:#8b8279; font-weight:400; min-width:6em; text-align:left }
+  #crop .pads .four select { margin-left:4px }
   #crop .pads input[type=range] { flex:1; min-width:80px }
   #crop .c-tabs button, #crop .box button { height:30px }
   #crop .step { width:30px; padding:0; text-align:center }
   #crop .pads b { min-width:3em; text-align:right }
   #crop .notes { display:flex; flex-direction:column; gap:8px }
+  #crop .pads { max-width:720px }
   #crop .notes textarea { resize:vertical; min-height:64px }
   #crop .notes input[type=text], #crop .notes textarea { flex:1; padding:6px 8px; border:1px solid #cdc6bd;
                                                          border-radius:8px; background:#fff; color:#241f2b; font:inherit }

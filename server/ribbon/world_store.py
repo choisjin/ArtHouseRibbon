@@ -43,6 +43,19 @@ _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: 액자 종류 (client world/frames.ts 의 FRAME_STYLES id 와 같아야 한다)
 FRAMES = ("canvas", "white", "black", "wood", "walnut", "gold", "silver", "brass",
           "white_mat", "black_mat", "wood_mat", "gold_mat", "float", "float_wood")
+MIN_SIZE, MAX_SIZE = 0.15, 3.0    # 벽에 걸 때의 가로 (m). 벽보다 크면 화면에서 줄인다
+#: 이미지 필터 (client world/artfx.ts): 밝기·대비·채도·색온도·세피아. 하이라이트(glow*)는 걸린 그림마다 따로 둔다
+FX_RANGE = {"b": (-1.0, 1.0, 0.0), "c": (-1.0, 1.0, 0.0), "s": (0.0, 2.0, 1.0),
+            "w": (-1.0, 1.0, 0.0), "sepia": (0.0, 1.0, 0.0)}
+
+
+def art_fx(body: Dict[str, Any]) -> Dict[str, float]:
+    raw = body.get("fx") if isinstance(body.get("fx"), dict) else {}
+    out = {}
+    for key, (lo, hi, default) in FX_RANGE.items():
+        v = raw.get(key)
+        out[key] = round(max(lo, min(hi, float(v))), 4) if isinstance(v, (int, float)) else default
+    return out
 
 
 def art_look(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -51,9 +64,12 @@ def art_look(body: Dict[str, Any]) -> Dict[str, Any]:
     pad = body.get("pad")
     ok = isinstance(pad, list) and len(pad) == 4 and all(isinstance(v, (int, float)) for v in pad)
     frame = str(body.get("frame") or "")
+    size = body.get("size")
     return {"bg": bg.lower() if _COLOR.match(bg) else "#ffffff",
             "pad": [round(max(0.0, min(MAX_PAD, float(v))), 4) for v in pad] if ok else [0, 0, 0, 0],
-            "frame": frame if frame in FRAMES else "white"}
+            "frame": frame if frame in FRAMES else "white",
+            "size": round(max(MIN_SIZE, min(MAX_SIZE, float(size))), 3) if isinstance(size, (int, float)) else 0.8,
+            "fx": art_fx(body)}
 
 
 def art_text(body: Dict[str, Any], old: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -435,8 +451,10 @@ class WorldStore:
                 continue
             hit = [a for a in lay.get("arts", []) if a.get("image") == (old or rel)]
             for a in hit:
+                # 걸린 그림의 하이라이트(glow*)는 그대로 두고 작품의 필터만 덮어쓴다
                 a.update(image=rel, bg=entry["bg"], pad=entry["pad"], frame=entry.get("frame", "white"),
-                         aspect=round(look_aspect(entry), 6))
+                         width=entry.get("size", 0.8), aspect=round(look_aspect(entry), 6),
+                         fx={**(a.get("fx") or {}), **(entry.get("fx") or {})})
             if hit:
                 _write_json(path, lay)
                 changed.append(room)
@@ -449,8 +467,8 @@ class WorldStore:
             entry = next((a for a in items if a["file"] == rel), None)
             if not entry:
                 raise ValueError("없는 그림입니다")
-            entry.update(art_look({"bg": body.get("bg", entry.get("bg")), "pad": body.get("pad", entry.get("pad")),
-                                   "frame": body.get("frame", entry.get("frame"))}))
+            keep = {k: entry.get(k) for k in ("bg", "pad", "frame", "size", "fx")}
+            entry.update(art_look({**keep, **{k: v for k, v in body.items() if k in keep}}))
             entry.update(art_text(body, entry))
             _write_json(self.art_dir / "index.json", items)
             return entry, self._sync_arts(rel, entry)

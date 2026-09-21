@@ -116,7 +116,8 @@ def test_artwork_look_is_synced_to_hung_arts(store):
     up = {"name": "a", "data": "data:image/png;base64," + PNG_1PX, "width": 200, "height": 100, "kid_id": "k1"}
     art, _ = store.add_artwork(up)
     assert art["bg"] == "#ffffff" and art["pad"] == [0, 0, 0, 0] and art["frame"] == "white"   # 정하지 않으면 흰 배경·흰 액자
-    assert art["made"] == "" and art["note"] == ""
+    assert art["made"] == "" and art["note"] == "" and art["size"] == 0.8
+    assert art["fx"] == {"b": 0, "c": 0, "s": 1, "w": 0, "sepia": 0}     # 필터도 걸지 않은 상태
     hung = {"id": "x", "image": art["file"], "width": 1, "aspect": 0.5, "mount": {"host": None, "id": "back"}}
     store.save_layout("kid-k1", {"items": [], "arts": [hung]})
     store.save_layout("kid-k1@2", {"items": [], "arts": [{**hung, "id": "y"}]})
@@ -127,7 +128,11 @@ def test_artwork_look_is_synced_to_hung_arts(store):
     assert entry["frame"] == "gold" and entry["name"] == "봄 소풍" and entry["made"] == "2026-09-14"
     assert store.update_artwork(art["file"], {"made": "어제", "frame": "없는액자"})[0] == {**entry, "made": "", "frame": "white"}
     store.update_artwork(art["file"], {"frame": "gold", "made": "2026-09-14"})
+    # 크기와 필터도 작품에 붙는다. 걸린 그림의 하이라이트(glow*)는 그대로 두고 필터만 덮어쓴다
+    store.save_layout("kid-k1@2", {"items": [], "arts": [{**hung, "id": "y", "fx": {"glow": 1.2, "s": 0.2}}]})
+    store.update_artwork(art["file"], {"size": 5, "fx": {"s": 1.4, "sepia": 0.5}})
     got = store.layout("kid-k1@2")["arts"][0]
+    assert got["width"] == 3.0 and got["fx"]["glow"] == 1.2 and got["fx"]["s"] == 1.4 and got["fx"]["sepia"] == 0.5
     assert got["bg"] == "#fbdce4" and got["pad"] == [0.1, 0.2, 0.1, 0.4] and got["frame"] == "gold"
     assert got["aspect"] == pytest.approx((100 + 0.6 * 200) / (200 + 0.2 * 200), rel=1e-4)
     assert store.update_artwork(art["file"], {"bg": "red"})[0]["bg"] == "#ffffff"   # 이상한 색은 흰색으로
