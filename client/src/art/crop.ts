@@ -7,7 +7,7 @@ import { filterCanvas, FX_LIMIT, FX_PRESETS, fxOf, type ArtFx } from "../world/a
  *
  *   - **배경 지우기**: 서버(ribbon/cutout.py, BiRefNet)가 작품만 골라낸 마스크를 주고, 여기서 원본 크기로 오려 낸다.
  *     가장자리 색으로 지우던 예전 방식은 품질이 나빴다. 서버에서 모델을 못 쓰면 그 방식으로 떨어진다 ('지우는 정도' 막대).
- *   - 다섯 탭: **크기**(벽에 걸 가로 + 네 쪽 여백) · **배경**(뒤에 까는 색) · **액자**(종류마다 이 작품을 끼워 본 썸네일) ·
+ *   - 다섯 탭: **여백**(네 쪽) · **배경**(뒤에 까는 색) · **액자**(종류마다 이 작품을 끼워 본 썸네일) ·
  *     **필터**(밝기·대비·채도·색온도·세피아) · **설명**(이름 · 완성일 · 이야기 — 부모님 전시실에서 같이 보인다)
  * 화면을 가득 채우고 미리 보기를 크게 둔다: 여기서 정한 것이 벽에 걸렸을 때의 모습 그대로다.
  * 올라가는 파일은 **배경 없는 원본**(투명 PNG)이고, 여백과 배경색은 값으로만 저장한다 — 그래서 나중에 다시 편집해도
@@ -22,7 +22,6 @@ export interface Artwork {
 export interface Cropper { edit(a: Artwork): Promise<void> }
 
 const THUMB = 74;               // 액자 고르기 썸네일 속 그림의 긴 변 (px)
-const MIN_SIZE = 0.15, MAX_SIZE = 3;   // 벽에 걸 가로 (m). 서버 world_store 와 같다
 const PREVIEW = 1400;           // 미리 보기 그림의 픽셀 한계 (화면 크기에 맞춰 늘려 보여 준다)
 const MAX_SIDE = 2000;          // 올리기 전에 이 크기로 줄인다 (부모님이 크게 볼 수 있을 만큼은 남긴다)
 const AI_SIDE = 1024;           // AI 에 보내는 크기 (모델 입력이 1024 라 더 커도 소용없다)
@@ -48,7 +47,6 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
   const linkIn = $<HTMLInputElement>("#pad-link");
   const padIns = [...dlg.querySelectorAll<HTMLInputElement>("input[data-pad]")];   // 막대만 (± 단추는 따로)
   const bgIn = $<HTMLInputElement>("#bg");
-  const sizeIn = $<HTMLInputElement>("#crop-size-w");
   const presetIn = $<HTMLSelectElement>("#crop-preset");
   const fxIns = [...dlg.querySelectorAll<HTMLInputElement>("[data-fx]")];
   const nameIn = $<HTMLInputElement>("#crop-title");
@@ -83,10 +81,9 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     pad = [...padOf(old)] as Pad;
     bg = bgOf(old);
     frame = old?.frame ?? "white";
-    size = old?.size ?? 0.8;
+    size = old?.size ?? 0.8;                 // 크기는 전시실 화면의 '배치' 탭에서 바꾼다 (여기서는 그대로 넘긴다)
     fx = fxOf(old?.fx);
     bgIn.value = bg;
-    sizeIn.value = String(size);
     showFx();
     nameIn.value = old?.name ?? name.replace(/\.[^.]+$/, "");
     madeIn.value = old?.made ?? new Date().toLocaleDateString("sv-SE");   // 새 사진은 오늘
@@ -172,7 +169,7 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     canvas.style.width = `${Math.round(canvas.width * fit)}px`;
     canvas.style.height = `${Math.round(canvas.height * fit)}px`;
     if (tab === "frame") drawFrames();
-    $("#crop-size").textContent = `${size.toFixed(2)}m · ${Math.round(full.w)}×${Math.round(full.h)}px`;
+    $("#crop-size").textContent = `${Math.round(full.w)}×${Math.round(full.h)}px`;
     dlg.querySelectorAll<HTMLElement>("[data-color]").forEach((b) => b.classList.toggle("on", b.dataset.color === bg));
     padIns.forEach((el, i) => { el.parentElement!.querySelector("b")!.textContent = `${Math.round(pad[i] * 100)}%`; });
   }
@@ -184,16 +181,6 @@ export function mountCrop(kidId: () => string, done: (a: Artwork, replaced?: Art
     draw();
   };
   padIns.forEach((el, i) => { el.oninput = () => setPad(i, Number(el.value)); });
-  const setSize = (v: number): void => {
-    size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(v * 100) / 100));
-    sizeIn.value = String(size);
-    draw();
-  };
-  sizeIn.oninput = () => setSize(Number(sizeIn.value));
-  dlg.querySelectorAll<HTMLButtonElement>("[data-sizestep]").forEach((b) => {
-    b.onclick = () => setSize(size + Number(b.dataset.sizestep));
-  });
-
   // ---- 필터 (걸린 그림의 하이라이트는 전시실 화면의 '핀 조명' 탭에서) ----
   const fxText = (key: keyof ArtFx, v: number): string =>
     key === "s" || key === "sepia" ? `${Math.round(v * 100)}%` : `${v > 0 ? "+" : ""}${Math.round(v * 100)}`;
@@ -501,19 +488,14 @@ export const CROP_HTML = `
     </div>
     <label class="row" id="tol-row" hidden>지우는 정도 <input id="tol" type="range" min="2" max="60" value="16" style="flex:1"></label>
     <div class="c-tabs">
-      <button data-tab="pad" class="on">크기</button>
+      <button data-tab="pad" class="on">여백</button>
       <button data-tab="bg">배경</button>
       <button data-tab="frame">액자</button>
       <button data-tab="fx">필터</button>
       <button data-tab="note">설명</button>
     </div>
     <div class="c-body pads" data-tab="pad">
-      <label class="row big"><span class="p-name">작품</span>
-        <button data-sizestep="-0.05" class="step">−</button>
-        <input id="crop-size-w" type="range" min="${MIN_SIZE}" max="${MAX_SIZE}" step="0.01" value="0.8">
-        <button data-sizestep="0.05" class="step">＋</button>
-        <b>벽에 걸 가로</b></label>
-      <label class="row four"><input id="pad-link" type="checkbox" checked> 여백을 네 쪽 같이</label>
+      <label class="row four"><input id="pad-link" type="checkbox" checked> 네 쪽 같이</label>
       ${SIDES.map((n, i) => `<label class="row">
         <span class="p-name">${n}</span>
         <button data-pad="${i}" data-padstep="-1" class="step">−</button>
@@ -526,7 +508,6 @@ export const CROP_HTML = `
     </div>
     <div class="c-body col" data-tab="frame" hidden>
       <div id="frame-slides"></div>
-      <span class="hint">벽에 걸었을 때 이 액자로 보입니다.</span>
     </div>
     <div class="c-body pads" data-tab="fx" hidden>
       <label class="row four">골라 쓰기 <select id="crop-preset"></select></label>
@@ -553,10 +534,11 @@ export const CROP_CSS = `
   #cv { max-width:100%; max-height:100%; box-shadow:0 2px 14px rgba(0,0,0,.3) }
   #crop .c-tabs { display:flex; gap:6px; flex-wrap:wrap; border-top:1px solid #e3ded8; padding-top:10px }
   #crop .c-tabs button { padding:6px 16px }
-  #crop .c-body { min-height:96px; align-content:start }
+  #crop .c-body { min-height:150px; align-content:start }
   #crop .c-body.col { display:flex; flex-direction:column; gap:6px }
   /* 액자 고르기: 이 작품을 끼워 본 썸네일을 옆으로 넘긴다 */
-  #frame-slides { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px }
+  #frame-slides { display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; min-height:146px; padding-bottom:6px;
+                  scrollbar-width:thin }
   #frame-slides button { flex:0 0 auto; width:104px; padding:6px 4px; display:flex; flex-direction:column;
                          align-items:center; gap:4px; background:#fff }
   #frame-slides button.on { border-color:#e9557d; box-shadow:0 0 0 2px #e9557d55 }

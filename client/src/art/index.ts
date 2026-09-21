@@ -12,8 +12,8 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *
   * **방 안에 서서 보면서 건다** (2026-09-21): 벽을 하나씩 골라 평면으로 보던 것을 접고, 쓸어 넘겨 둘러보는 3D 방에서
  * 그림을 끌어 옮긴다 (world/lookaround.ts). 배경은 같은 자리에서 구운 360° 파노라마라 어느 벽이든 렌더 품질 그대로다.
- *   - 아래 설정 창은 세 탭: **작품**(슬라이드로 걸고 내리기·사진 올리기) · **핀 조명**(고른 작품만) · **조명**(방 밝기)
- *   - 크기·여백·배경·액자·필터·설명은 **작품 편집 창**에서 정한다 (crop.ts, 작품에 붙어 걸린 곳이 모두 따라 바뀐다)
+ *   - 아래 설정 창은 세 탭: **작품**(슬라이드로 걸고 내리기·사진 올리기) · **핀 조명**(고른 작품만) · **배치**(크기·방 밝기)
+ *   - 여백·배경·액자·필터·설명은 **작품 편집 창**에서 정한다 (crop.ts). 크기까지 작품에 붙어서 걸린 곳이 모두 따라 바뀐다
  *   - 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다. 벽을 넘는 크기는 화면에서 줄여 건다
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색 · 지우기)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
  *   - 한 작품은 한 전시실에 하나만 걸린다. 썸네일을 누르면 걸리고, 걸린 것을 다시 누르면 내려온다
@@ -27,7 +27,7 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
 interface Kid { id: string; name: string }
 
-type Tab = "art" | "glow" | "light";
+type Tab = "art" | "glow" | "place";
 const GALLERY = "gallery";                // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
@@ -111,7 +111,7 @@ export async function startArt(): Promise<void> {
         "GET", `/api/kids/${encodeURIComponent(kid)}/gallery?hall=${hall}`);
     $("#hall-row").hidden = gallery;
     $("#open-share").hidden = gallery;
-    $("#up-who").hidden = !gallery;
+    $("#up-row").hidden = !gallery;
     room = d.room;
     hall = d.hall;
     halls = d.halls;
@@ -436,6 +436,7 @@ export async function startArt(): Promise<void> {
   // 높이 막대는 없다: 자리는 끌어서 정하고, 크기는 비율 그대로 벽 안에서만 바뀐다
   const panel = $("#panel");
   const fxIns = [...panel.querySelectorAll<HTMLInputElement>("[data-fx]")];
+  const wIn = $<HTMLInputElement>("#w");
   const cur = (): LayoutArt | undefined => arts.find((x) => x.id === picked);
 
   // ---- 탭 ----
@@ -456,9 +457,42 @@ export async function startArt(): Promise<void> {
   /** 고른 그림에 맞춰 설정 창을 맞춘다 (고른 것이 없으면 작품·조명만 쓸 수 있다) */
   function syncPanel(): void {
     const a = cur();
-    if (a) showFx(fxOf(a.fx));
+    wIn.disabled = !a;
+    if (a) {
+      wIn.min = String(MIN_W);
+      wIn.max = maxWidth(a, wallOf(a)).toFixed(2);
+      wIn.value = String(a.width);
+      showFx(fxOf(a.fx));
+    }
     showTab();
   }
+
+  // ---- 배치 탭: 크기 (작품에 붙는 값이라 걸린 곳이 모두 따라 바뀐다) ----
+  let sizeSave = 0;
+  const sized = (width: number): void => {
+    const a = cur();
+    if (!a) return;
+    a.width = width;
+    fit(a, wallOf(a));                          // 벽 밖으로 나가면 안쪽으로 밀어 넣는다
+    const g = findArt(a.id);
+    const built = g?.userData.artW as number | undefined;
+    if (g && built) g.scale.setScalar(a.width / built);
+    placeLive(a);
+    wIn.value = String(a.width);
+    dirty = true;
+    later();
+    clearTimeout(sizeSave);                     // 손을 뗀 뒤 작품에도 적어 둔다 (다음에 걸 때도 이 크기로)
+    sizeSave = window.setTimeout(() => {
+      const art = mine.find((x) => x.file === a.image);
+      if (!art) return;
+      art.size = a.width;
+      void api("PUT", "/api/artworks/meta", { file: a.image, size: a.width }).catch(() => undefined);
+    }, 600);
+  };
+  wIn.oninput = () => sized(Number(wIn.value));
+  panel.querySelectorAll<HTMLButtonElement>("[data-step]").forEach((b) => {
+    b.onclick = () => sized((cur()?.width ?? 0) + Number(b.dataset.step));
+  });
 
   let timer = 0;
   const later = (): void => { clearTimeout(timer); timer = window.setTimeout(() => void rebuild(), 150); };
@@ -495,7 +529,7 @@ export async function startArt(): Promise<void> {
     box.innerHTML = Array.from({ length: halls }, (_, i) =>
       `<button data-hall="${i + 1}" class="${i + 1 === hall ? "on" : ""}">${i + 1}실${
         i + 1 === hall && halls > 1 ? `<span class="x" data-act="del" title="이 전시실 없애기">✕</span>` : ""}</button>`).join("")
-      + `<button data-act="add" class="step" title="전시실 늘리기">＋</button>`;
+      + `<button data-act="add" class="step" title="전시실 늘리기">+</button>`;
     box.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
       b.onclick = (ev) => {
         if (b.dataset.act === "add") { void setHalls(halls + 1); return; }
@@ -635,7 +669,7 @@ const PAGE = `
   select, button { height:30px; padding:0 10px; border:1px solid #4a4356; border-radius:8px;
                    background:#241f2b; color:#f3efe9; box-sizing:border-box }
   button { cursor:pointer }
-  .step { width:30px; padding:0; text-align:center }
+  .step { display:inline-flex; align-items:center; justify-content:center; width:30px; padding:0; line-height:1 }
   button.on { background:#e9557d; border-color:#e9557d; color:#fff }
   button.ghost { color:#c9b7bd }
   button:hover { border-color:#e9557d }
@@ -663,7 +697,7 @@ const PAGE = `
   #panel .p-body { display:flex; gap:14px; align-items:center; flex-wrap:wrap; min-height:30px }
   #panel .p-body.col { flex-direction:column; align-items:stretch; flex-wrap:nowrap; gap:6px }
   #panel .p-body[hidden] { display:none }
-  #panel .p-body.warm input[type=range] { accent-color:#ffd166 }
+  #panel .p-body.warm input[type=range], #panel .warm input[type=range] { accent-color:#ffd166 }
   #panel .p-body b { min-width:3.4em }
   #panel .p-body .hint { color:#9d94a8; margin:0 }
   /* 작품 슬라이드: 옆으로 넘겨 고른다 (누르면 보고 있는 벽에 걸린다) */
@@ -733,7 +767,7 @@ ${CROP_CSS}
   <div class="p-tabs">
     <button data-tab="art" class="on">작품</button>
     <button data-tab="glow" hidden>핀 조명</button>
-    <button data-tab="light">조명</button>
+    <button data-tab="place">배치</button>
   </div>
   <div class="p-body col" data-tab="art">
     <div class="slide-row">
@@ -743,21 +777,21 @@ ${CROP_CSS}
       </div>
       <div id="slides"></div>
     </div>
-    <div class="row wrap">
-      <span class="hint">썸네일을 누르면 보고 있는 벽에 걸립니다. 크기·여백·액자·필터는 '편집' 에서 바꿉니다.</span>
+    <div class="row wrap" id="up-row" hidden>
       <span class="grow"></span>
-      <label id="up-who" hidden>올릴 아이 <select id="up-kid"></select></label>
+      <label id="up-who">올릴 아이 <select id="up-kid"></select></label>
     </div>
   </div>
   <div class="p-body warm" data-tab="glow" hidden>
     <label class="grow">세기 <input data-fx="glow" type="range" min="0" max="2" step="0.01" value="0"> <b></b></label>
     <label class="grow">번짐 <input data-fx="glowSize" type="range" min="0.4" max="2" step="0.01" value="1"> <b></b></label>
     <label class="grow">빛 색 <input data-fx="glowTone" type="range" min="0" max="1" step="0.01" value="0.35"> <b></b></label>
-    <span class="hint">고른 작품만 환하게 비춥니다 (방 밝기를 낮춰도 이 작품은 그대로).</span>
   </div>
-  <div class="p-body warm" data-tab="light" hidden>
-    <label class="grow">방 밝기 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"> <b id="light-num"></b></label>
-    <span class="hint">이 전시실 전체가 밝아지고 어두워집니다. 저장해야 TV 에도 그대로 나옵니다.</span>
+  <div class="p-body" data-tab="place" hidden>
+    <label class="grow">크기 <button data-step="-0.05" class="step">−</button>
+      <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
+      <button data-step="0.05" class="step">+</button></label>
+    <label class="grow warm">방 밝기 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"> <b id="light-num"></b></label>
   </div>
 </div>
 <div id="share" class="modal">
