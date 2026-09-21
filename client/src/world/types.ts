@@ -73,6 +73,8 @@ export interface LayoutArt {
   /** 배경을 지운 작품 뒤에 까는 색(없으면 흰색)과 여백 [왼,위,오,아래] (world/artimage.ts). 작품을 편집하면 서버가 맞춰 준다 */
   bg?: string;
   pad?: number[];
+  /** 고정: 끌어서 옮기거나 잘못 내리지 않게 잠근 그림 (전시실 꾸미기) */
+  pin?: boolean;
   /** 이 그림에 건 이미지 필터와 하이라이트 (world/artfx.ts 의 ArtFx). 없으면 원본 그대로 */
   fx?: Partial<Record<"b" | "c" | "s" | "w" | "sepia" | "glow" | "glowTone" | "glowSize", number>> | null;
 }

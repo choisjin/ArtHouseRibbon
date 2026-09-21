@@ -17,6 +17,7 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 끄는 동안 다른 벽으로 넘어가면 그 벽으로 옮겨 걸린다. 벽을 넘는 크기는 화면에서 줄여 건다
  *   - 작품 편집(AI 배경 지우기 · 여백 · 배경색 · 지우기)은 crop.ts. 이미 올린 작품도 다시 편집할 수 있다
  *   - 한 작품은 한 전시실에 하나만 걸린다. 썸네일을 누르면 걸리고, 걸린 것을 다시 누르면 내려온다
+ *   - 썸네일 위 **핀**으로 고정하면 끌어서 옮기거나 잘못 내려지지 않는다 (LayoutArt.pin)
  *   - 액자·여백·배경색·설명은 **작품에 붙는다** (편집 창에서 고치면 걸려 있는 곳이 모두 따라 바뀐다). 필터·하이라이트는 걸린 그림마다
  *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 슬라이드는 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
@@ -28,6 +29,9 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 interface Kid { id: string; name: string }
 
 type Tab = "art" | "glow" | "place";
+/** 썸네일 위에 얹는 핀 (그림 글자가 아니라 작은 그림) */
+const PIN = `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+  <path d="M14.5 2.5 21.5 9.5l-2 2-1.5-.5-4 4 .5 3-2 2-4-4-5 5 5-5-4-4 2-2 3 .5 4-4-.5-1.5z" fill="currentColor"/></svg>`;
 const GALLERY = "gallery";                // 고르는 칸에서 '전시장' 의 값 (아이 전시실은 아이 id)
 
 const MIN_W = 0.15;                       // 그림 가로 (m). 가장 큰 크기는 걸린 벽이 정한다 (maxWidth)
@@ -298,6 +302,7 @@ export async function startArt(): Promise<void> {
     }
     picked = a.id;
     markPicked();
+    if (a.pin) { msg("고정된 작품입니다. 핀을 풀면 옮길 수 있어요"); return; }
     dragging = a;
     // 잡은 곳과 그림 가운데의 차이를 기억한다 (잡자마자 가운데로 튀지 않게)
     const spot = spotAt();
@@ -353,6 +358,8 @@ export async function startArt(): Promise<void> {
       const hung = arts.find((x) => x.image === a.file);          // 한 전시실에 하나만 건다
       return `${head}<div class="slide${hung ? " hung" : ""}" data-file="${esc(a.file)}" title="${esc(a.name)}">
         <img src="/${esc(a.file)}" alt="" loading="lazy" style="background:${bgOf(a)}">
+        ${hung ? `<button class="s-pin${hung.pin ? " on" : ""}" data-act="pin"
+          title="${hung.pin ? "고정 풀기" : "여기 고정하기"}">${PIN}</button>` : ""}
         <div class="s-btns">
           <button data-act="cut">편집</button>
           <button data-act="del" class="ghost">삭제</button>
@@ -368,8 +375,9 @@ export async function startArt(): Promise<void> {
       const a = mine.find((x) => x.file === el.dataset.file);
       if (!a) return;
       el.onclick = (ev) => {
-        const act = (ev.target as HTMLElement).dataset.act;
-        if (act === "cut") void edit(a);
+        const act = (ev.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act;
+        if (act === "pin") togglePin(a.file);
+        else if (act === "cut") void edit(a);
         else if (act === "del") void removeArtwork(a);
         else if (arts.some((x) => x.image === a.file)) takeDown(a.file);   // 걸린 것을 다시 누르면 내린다
         else void hang(a);
@@ -385,8 +393,19 @@ export async function startArt(): Promise<void> {
     return [...room].sort((p, q) => p.normal.dot(ahead) - q.normal.dot(ahead))[0] ?? mounts[0];
   }
 
+  /** 고정: 끌어서 옮기거나 잘못 내려지지 않게 (썸네일 위 핀) */
+  function togglePin(file: string): void {
+    const a = arts.find((x) => x.image === file);
+    if (!a) return;
+    a.pin = !a.pin;
+    dirty = true;
+    drawSlides();
+    msg(a.pin ? "고정했습니다" : "고정을 풀었습니다");
+  }
+
   /** 벽에서 내린다 (걸린 썸네일을 다시 누를 때) */
   function takeDown(file: string): void {
+    if (arts.find((x) => x.image === file)?.pin) { msg("고정된 작품입니다. 핀을 풀고 내려 주세요", true); return; }
     arts = arts.filter((x) => x.image !== file);
     picked = null;
     dirty = true;
@@ -590,6 +609,12 @@ export async function startArt(): Promise<void> {
 
   // ---------- 조명 탭: 방 전체 밝기 ----------
   const showLight = (): void => { $("#light-num").textContent = `${Math.round(light * 100)}%`; };
+  panel.querySelectorAll<HTMLButtonElement>("[data-light]").forEach((b) => {
+    b.onclick = () => {
+      lightIn.value = String(Math.min(1.6, Math.max(0.2, light + Number(b.dataset.light))));
+      lightIn.dispatchEvent(new Event("input"));
+    };
+  });
   lightIn.oninput = () => {
     light = Number(lightIn.value);
     stage.setLight(light);                      // 바로 보여 준다 (저장해야 TV 에도 반영된다)
@@ -713,6 +738,11 @@ const PAGE = `
   .slide:hover { border-color:#e9557d }
   .slide.hung { border-color:#e9557d; box-shadow:inset 0 0 0 2px #e9557d55 }
   .slide img { width:100%; height:66px; object-fit:contain; display:block; background:#fff }
+  .slide .s-pin { position:absolute; top:3px; right:3px; display:flex; align-items:center; justify-content:center;
+                  width:22px; height:22px; padding:0; border-radius:50%; border:0; color:#fff; background:#1b1724aa }
+  .slide .s-pin svg { pointer-events:none }
+  .slide .s-pin:hover { background:#1b1724e6 }
+  .slide .s-pin.on { background:#e9557d }
   .slide .s-btns { display:flex; border-top:1px solid #3a3346 }
   .slide .s-btns button { flex:1; height:24px; padding:0; border:0; border-radius:0; font-size:11px; background:#1b1724 }
   .slide .s-btns button + button { border-left:1px solid #3a3346 }
@@ -791,7 +821,9 @@ ${CROP_CSS}
     <label class="grow">크기 <button data-step="-0.05" class="step">−</button>
       <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
       <button data-step="0.05" class="step">+</button></label>
-    <label class="grow warm">방 밝기 <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1"> <b id="light-num"></b></label>
+    <label class="grow warm">방 밝기 <button data-light="-0.05" class="step">−</button>
+      <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1">
+      <button data-light="0.05" class="step">+</button> <b id="light-num"></b></label>
   </div>
 </div>
 <div id="share" class="modal">
