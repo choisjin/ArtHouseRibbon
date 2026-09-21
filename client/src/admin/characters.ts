@@ -1,6 +1,7 @@
 import type { CharacterProfile, RibbonConfig } from "../protocol";
 import type { Ribbon3D } from "../tv/ribbon3d";
-import { CHARACTERS, characterOf, DEFAULT_CHARACTER, DEFAULT_LOOK, type RibbonLook } from "../world/doll";
+import { CHARACTERS, characterOf, DEFAULT_CHARACTER, DEFAULT_LOOK, fetchCharacters, specOf,
+         type CharacterSpec, type RibbonLook } from "../world/doll";
 import { mountPromises } from "./promises";
 import { api, type AdminCtx, esc, mountPreview, snapshot } from "./shared";
 
@@ -49,8 +50,17 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     else if (!current) { rendered = ""; renderList(); }
   }).catch((err) => ctx.msg(`목소리 목록을 못 읽음: ${err}`, true));
 
+  // 쓸 수 있는 캐릭터 (client/public/world/<id>.glb). 아이마다 만들어 넣으면 여기에 바로 나온다
+  let specs: CharacterSpec[] = Object.values(CHARACTERS);
+  void fetchCharacters().then((list) => {
+    specs = list;
+    rendered = "";
+    if (current) renderDetail(current); else renderList();
+  });
+  const specById = (id: string): CharacterSpec => specs.find((c) => c.id === id) ?? specOf(id);
+
   function show(id?: string): void {
-    current = id && CHARACTERS[id] ? id : undefined;
+    current = id && specs.some((c) => c.id === id) ? id : undefined;
     rendered = "";
     if (current) renderDetail(current); else renderList();
   }
@@ -64,7 +74,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     rendered = key;
     const r = cfg.ribbon;
     const opts = (withNone: boolean) => (withNone ? `<option value="">없음 (혼자)</option>` : "")
-      + Object.values(CHARACTERS).map((c) => `<option value="${c.id}">${esc(profileOf(c.id)?.name ?? c.name)}</option>`).join("");
+      + specs.map((c) => `<option value="${c.id}">${esc(profileOf(c.id)?.name ?? c.name)}</option>`).join("");
     el.innerHTML = `
       <div class="chars">
         <section class="card">
@@ -76,7 +86,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
           <p class="hint">바꾸면 바로 저장되고 TV 화면이 한 번 새로 열립니다. 주인공의 이름·성격·목소리로 대화합니다.</p>
         </section>
         <div class="profile-grid">
-          ${Object.values(CHARACTERS).map((c) => card(c.id)).join("")}
+          ${specs.map((c) => card(c.id)).join("")}
         </div>
         ${commonForm()}
         <section class="card">
@@ -88,7 +98,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
     const main = el.querySelector("#main-sel") as HTMLSelectElement;
     const friend = el.querySelector("#friend-sel") as HTMLSelectElement;
     main.value = characterOf(r.character).id;
-    friend.value = r.friend && CHARACTERS[r.friend] ? r.friend : "";
+    friend.value = r.friend && specs.some((c) => c.id === r.friend) ? r.friend : "";
     const saveCast = async () => {
       if (main.value === friend.value) friend.value = "";
       try {
@@ -106,7 +116,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
   }
 
   function card(id: string): string {
-    const spec = CHARACTERS[id];
+    const spec = specById(id);
     const p = profileOf(id);
     const role = roleOf(id);
     const outfit = spec.outfits.find((o) => o.id === p?.look?.outfit)?.name ?? spec.outfits[0].name;
@@ -228,7 +238,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
   let preview: Ribbon3D | null = null;
 
   function renderDetail(id: string): void {
-    const spec = CHARACTERS[id];
+    const spec = specById(id);
     const p = profileOf(id);
     if (!p) { el.innerHTML = `<p class="hint">설정을 읽는 중…</p>`; return; }
     rendered = "detail";

@@ -38,6 +38,21 @@ MAX_HALLS = 9
 LIGHT_MIN, LIGHT_MAX = 0.2, 1.6   # 전시실 조명 밝기 (1 = 렌더 그대로)
 MAX_PAD = 0.4              # 작품 여백: 그림 긴 변에 대한 비율 (client world/artimage.ts 와 같다)
 MAX_NOTE = 600             # 작품 설명 글자 수
+#: 캐릭터 모델을 넣어 두는 곳의 파일 이름 (client/public/world/<id>.glb). 아이마다 새로 만들어 넣을 수 있다
+SHELL_GLB = ("room_shell",)       # 방 껍데기는 캐릭터가 아니다
+POSES = ("Sway", "Greet", "Clap", "Point", "LookUp", "Tilt", "Sit")
+
+
+def art_guide(raw: Any, known: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+    """전시실에 세워 둔 캐릭터 {who, x, y, rot, pose}. 없거나 모르는 캐릭터면 None (안 세운다)"""
+    if not isinstance(raw, dict) or not isinstance(raw.get("who"), str):
+        return None
+    if known is not None and raw["who"] not in known:
+        return None
+    num = lambda k, d: round(float(raw[k]), 4) if isinstance(raw.get(k), (int, float)) else d   # noqa: E731
+    pose = raw.get("pose")
+    return {"who": raw["who"], "x": num("x", 0.0), "y": num("y", 0.0), "rot": num("rot", 0.0),
+            "pose": pose if pose in POSES else "Sway"}
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: 액자 종류 (client world/frames.ts 의 FRAME_STYLES id 와 같아야 한다)
@@ -172,7 +187,7 @@ class WorldStore:
             for i, saved in enumerate(kept, 1):
                 room = self.kid_room(kid_id, i)
                 out = {"room": room, "kid_id": kid_id, "arts": saved.get("arts", []),
-                       "light": saved.get("light", 1.0)}
+                       "light": saved.get("light", 1.0), "guide": saved.get("guide")}
                 if i == 1:
                     out["halls"] = len(kept)
                 _write_json(self.layout_path(room), out)
@@ -222,6 +237,25 @@ class WorldStore:
             self.layout_path(self.kid_room(kid, h)).unlink(missing_ok=True)
         if self.kid_of((_read_json(self.dir / "world.json", {}) or {}).get("active") or "") == kid:
             _write_json(self.dir / "world.json", {"active": self.rooms()[0] if self.rooms() else "classroom"})
+
+    # ---------- 캐릭터 ----------
+    def characters(self) -> List[Dict[str, str]]:
+        """쓸 수 있는 캐릭터 (client/public/world/<id>.glb). 아이마다 만들어 넣으면 바로 늘어난다.
+        이름은 같은 폴더의 characters.json {"<id>": "보이는 이름"} 에서, 없으면 파일 이름 그대로"""
+        folder = self.catalog_path.parent
+        names = _read_json(folder / "characters.json", {}) or {}
+        out = []
+        for glb in sorted(folder.glob("*.glb")):
+            if glb.stem.startswith(SHELL_GLB):
+                continue
+            out.append({"id": glb.stem, "name": str(names.get(glb.stem) or glb.stem), "file": glb.name})
+        return out
+
+    def character_file(self, who: str) -> Optional[Path]:
+        for c in self.characters():
+            if c["id"] == who:
+                return self.catalog_path.parent / c["file"]
+        return None
 
     # ---------- 부모님께 보내는 전시실 주소 ----------
     def share_token(self, kid_id: str) -> str:
@@ -297,7 +331,8 @@ class WorldStore:
             # shell: 방 모양·벽(그림 거는 면)을 어디서 가져오는지 TV 에 알려 준다
             base = {k: v for k, v in base.items() if k != "light"}
             return {**base, "room": room, "shell": KID_SHELL, "kid_id": kid, "arts": mine.get("arts", []),
-                    "light": mine.get("light", 1.0), "hall": self.hall_of(room), "halls": self.halls(kid)}
+                    "light": mine.get("light", 1.0), "guide": mine.get("guide"),
+                    "hall": self.hall_of(room), "halls": self.halls(kid)}
         lay = _read_json(self.layout_path(room)) or self.default_layout(room)
         return self._arts_only(lay) if lay and room == KID_SHELL else lay
 
@@ -344,9 +379,10 @@ class WorldStore:
         kid = self.kid_of(room)
         if kid is not None:                     # 아이 전시실은 걸린 그림만 저장한다
             light = data.get("light", 1.0)
+            guide = art_guide(data.get("guide"), [c["id"] for c in self.characters()])
             data = self.validate({**(self.layout(KID_SHELL) or {"items": []}), "arts": data.get("arts", [])})
             saved = {"room": room, "kid_id": kid, "arts": data["arts"],
-                     "light": max(LIGHT_MIN, min(LIGHT_MAX, float(light)))}
+                     "light": max(LIGHT_MIN, min(LIGHT_MAX, float(light))), "guide": guide}
             with self._lock:
                 if self.hall_of(room) == 1:     # 전시실 수는 1실 파일에 적혀 있다
                     saved["halls"] = self.halls(kid)

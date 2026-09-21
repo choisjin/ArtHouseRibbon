@@ -855,6 +855,12 @@ async def api_world_get(room: str | None = None):
                          "render": renderer.status()})
 
 
+@app.get("/api/world/characters")
+async def api_world_characters():
+    """쓸 수 있는 캐릭터 (client/public/world/<id>.glb). 아이마다 만들어 넣으면 여기에 바로 나온다"""
+    return JSONResponse({"characters": world.characters()})
+
+
 @app.get("/api/world/view")
 async def api_world_view(room: str | None = None):
     """TV 가 그리는 그대로의 값(배치 + 배경 렌더). 전시실 꾸미기(?mode=art)가 TV 와 같은 화면을 띄운다"""

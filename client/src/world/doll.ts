@@ -14,7 +14,9 @@ export interface RibbonLook {
 export const DEFAULT_LOOK: RibbonLook = { outfit: "apron", hair: "#f48a9e", bow: "#de2834", dress: "#80d6be", blouse: "#ffe896" };
 
 /**
- * 쓸 수 있는 캐릭터 (2026-09-20 사용자 결정: 올리·서율만 쓴다. 리본이 인형은 뺐다 - 서비스 이름 '리본'은 그대로).
+ * 쓸 수 있는 캐릭터. **아이마다 만들어 늘린다** (2026-09-21): client/public/world/<id>.glb 를 넣으면
+ * 서버가 세어서 알려 주고(`GET /api/world/characters`, world_store.characters), 화면은 fetchCharacters() 로 받는다.
+ * 여기 적어 둔 것은 이름·옷처럼 따로 챙겨 줄 것이 있는 캐릭터뿐이고, 모르는 id 는 specOf 가 기본 몸꼴로 만들어 준다.
  * 모두 Character_Creator 에서 같은 비율·같은 뼈대로 만들어서
  * 얼굴(Eye_L/R, Blush_L/R, Furrow_L/R, Mouth_*)과 동작(Walk/Greet/Nod/…/Peek)이 똑같다.
  * 다른 것은 모델 파일과 옷(부품 이름 앞머리), 색을 바꿀 수 있는 재질뿐이다.
@@ -44,6 +46,26 @@ export const CHARACTERS: Record<string, CharacterSpec> = {
 
 export const DEFAULT_CHARACTER = "seoyul";
 export const characterOf = (id: string | undefined): CharacterSpec => CHARACTERS[id ?? ""] ?? CHARACTERS[DEFAULT_CHARACTER];
+
+/** 같은 뼈대로 새로 만든 캐릭터의 기본 옷 (Character_Creator 가 붙이는 부품 이름) */
+export const DEFAULT_OUTFITS = [{ id: "apron", name: "앞치마", prefix: "AP_" }, { id: "tee", name: "반팔 티", prefix: "TE_" }];
+
+/** 그 id 의 캐릭터 (모르는 id 면 <id>.glb 를 쓰는 기본 몸꼴로). characterOf 와 달리 다른 캐릭터로 바꿔치지 않는다 */
+export const specOf = (id: string): CharacterSpec =>
+  CHARACTERS[id] ?? { id, name: id, file: `${id}.glb`, outfits: DEFAULT_OUTFITS, tint: {} };
+
+/** 서버에 있는 캐릭터 모두 (아이마다 만들어 넣은 것까지). 못 읽으면 여기 적어 둔 것만 */
+export async function fetchCharacters(): Promise<CharacterSpec[]> {
+  try {
+    const r = await fetch("/api/world/characters").then((x) => x.json()) as
+      { characters?: { id: string; name: string; file: string }[] };
+    const list = (r.characters ?? []).map((c) => (CHARACTERS[c.id] ? { ...CHARACTERS[c.id], name: c.name || CHARACTERS[c.id].name }
+      : { id: c.id, name: c.name || c.id, file: c.file, outfits: DEFAULT_OUTFITS, tint: {} }));
+    return list.length ? list : Object.values(CHARACTERS);
+  } catch {
+    return Object.values(CHARACTERS);
+  }
+}
 
 export interface DollAsset { scene: THREE.Group; animations: THREE.AnimationClip[] }
 
@@ -84,7 +106,9 @@ function fabric(src: THREE.Material): THREE.Material {
 export async function loadDoll(file = CHARACTERS[DEFAULT_CHARACTER].file): Promise<DollAsset> {
   let job = cached.get(file);
   if (!job) {
-    job = new GLTFLoader().loadAsync(`${WORLD_BASE}${file}`).then((g) => ({ scene: g.scene, animations: g.animations }));
+    // 내보낸 전시실(.html)은 glb 를 data: 주소로 박아 넣는다 — 그때는 그대로 읽는다
+    const url = /^(data:|https?:|blob:)/.test(file) ? file : `${WORLD_BASE}${file}`;
+    job = new GLTFLoader().loadAsync(url).then((g) => ({ scene: g.scene, animations: g.animations }));
     cached.set(file, job);
   }
   const src = await job;

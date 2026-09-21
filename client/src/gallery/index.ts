@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Stage, fetchCatalog } from "../tv/stage";
 import { filterCanvas, fxOf } from "../world/artfx";
 import { bgOf, composeArt } from "../world/artimage";
+import { buildGuide, guideOf, type GuideModel } from "../world/guide";
 import { LookAround } from "../world/lookaround";
 import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 
@@ -39,7 +40,16 @@ export async function startGallery(): Promise<void> {
   const stage = new Stage($("#view"), await fetchCatalog());
   stage.setLooking(true);
   const looker = new LookAround(stage, stage.renderer.domElement);
-  const loop = (): void => { requestAnimationFrame(loop); looker.tick(); stage.render(); };
+  let guideModel: GuideModel | null = null;        // 전시실에 세워 둔 캐릭터 (world/guide.ts)
+  let tick = performance.now();
+  const loop = (): void => {
+    requestAnimationFrame(loop);
+    const now = performance.now();
+    guideModel?.update(Math.min(0.05, (now - tick) / 1000));
+    tick = now;
+    looker.tick();
+    stage.render();
+  };
   requestAnimationFrame(loop);
   let hall = 0;
 
@@ -47,6 +57,7 @@ export async function startGallery(): Promise<void> {
     hall = n;
     const h = data.halls[n];
     await stage.setWorld(h.room, h.layout, renderNow(h.render));
+    await showGuide(h.layout?.guide);
     const tabs = $("#halls");
     tabs.innerHTML = data.halls.length > 1
       ? data.halls.map((_, i) => `<button data-hall="${i}" class="${i === n ? "on" : ""}">${i + 1}실</button>`).join("") : "";
@@ -60,6 +71,24 @@ export async function startGallery(): Promise<void> {
       img.onclick = () => open(img.dataset.file!, h.layout?.arts?.find((a) => a.image === img.dataset.file));
     });
     $("#note").textContent = files.length ? "옆으로 쓸어 넘겨 둘러보세요 · 작품을 누르면 크게 볼 수 있어요" : "아직 걸린 작품이 없어요";
+  }
+
+  /** 이 실에 세워 둔 캐릭터 (없으면 치운다) */
+  async function showGuide(raw: Layout["guide"]): Promise<void> {
+    const g = guideOf(raw);
+    if (guideModel && (!g || guideModel.group.userData.who !== g.who)) {
+      stage.scene.remove(guideModel.group);
+      guideModel = null;
+    }
+    if (!g) return;
+    if (!guideModel) {
+      try {
+        guideModel = await buildGuide(g);
+      } catch { return; }                            // 캐릭터가 없어도 전시실은 보여 준다
+      guideModel.group.userData.who = g.who;
+      stage.scene.add(guideModel.group);
+    }
+    guideModel.place(g);
   }
 
   // ---------- 방 안의 그림 누르기 ----------

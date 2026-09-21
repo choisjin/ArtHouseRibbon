@@ -163,6 +163,30 @@ def test_gallery_holds_artworks_only(store):
     assert len(store.layout("classroom")["items"]) == 1
 
 
+def test_characters_come_from_the_world_folder(store, tmp_path):
+    """캐릭터는 client/public/world/<id>.glb 를 세어서 알려 준다 (아이마다 만들어 넣으면 바로 늘어난다)"""
+    folder = store.catalog_path.parent
+    for name in ("ollie.glb", "seoyul.glb", "jiwoo.glb", "room_shell.glb", "room_shell_gallery.glb"):
+        (folder / name).write_bytes(b"glb")
+    (folder / "characters.json").write_text(json.dumps({"seoyul": "서율 (여자)"}), encoding="utf-8")
+    got = store.characters()
+    assert [c["id"] for c in got] == ["jiwoo", "ollie", "seoyul"]      # 방 껍데기는 빼고
+    assert [c["name"] for c in got] == ["jiwoo", "ollie", "서율 (여자)"]   # 이름을 안 적으면 파일 이름
+    assert store.character_file("jiwoo") == folder / "jiwoo.glb" and store.character_file("없는아이") is None
+
+
+def test_kid_gallery_keeps_the_guide(store):
+    """전시실에 세워 둔 캐릭터는 그 실에 저장된다 (모르는 캐릭터면 안 세운다)"""
+    store.kid_ids = lambda: ["k1"]
+    (store.catalog_path.parent / "jiwoo.glb").write_bytes(b"glb")
+    store.save_layout("kid-k1", {"items": [], "arts": [],
+                                 "guide": {"who": "jiwoo", "x": 1.5, "y": "여기", "rot": 90, "pose": "Nope"}})
+    guide = store.layout("kid-k1")["guide"]
+    assert guide == {"who": "jiwoo", "x": 1.5, "y": 0.0, "rot": 90.0, "pose": "Sway"}   # 이상한 값은 기본값으로
+    store.save_layout("kid-k1", {"items": [], "arts": [], "guide": {"who": "없는아이", "x": 0, "y": 0}})
+    assert store.layout("kid-k1")["guide"] is None
+
+
 def test_renderer_info_and_stale(store, tmp_path):
     import asyncio
 

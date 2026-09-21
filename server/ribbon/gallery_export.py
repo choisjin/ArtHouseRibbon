@@ -18,7 +18,9 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("ribbon.export")
 
-MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+        ".glb": "model/gltf-binary"}
+# 캐릭터 모델은 하나에 10MB 쯤이라 세워 둔 것만 담는다 (world_store.character_file)
 BIG = 60 * 1024 * 1024        # 이보다 커지면 로그로 알려 준다 (폰에서 열기 버겁다)
 
 
@@ -53,6 +55,7 @@ def build(world: Any, kid: Any, viewer_js: str, render_dir: Path) -> tuple[str, 
         pano = _pano_path(render_dir, info)
         halls.append({
             "light": lay.get("light", 1.0),
+            "guide": lay.get("guide"),
             "pano": _data_url(pano) if pano else None,
             "arts": [{k: a[k] for k in ("image", "width", "aspect", "frame", "mount", "u", "v", "bg", "pad", "fx")
                       if k in a} for a in lay.get("arts", [])],
@@ -73,8 +76,22 @@ def build(world: Any, kid: Any, viewer_js: str, render_dir: Path) -> tuple[str, 
                 if url:
                     images[art["image"]] = url
 
+    guides: Dict[str, str] = {}                     # 세워 둔 캐릭터의 glb (쓰는 것만)
+    for hall in halls:
+        who = (hall.get("guide") or {}).get("who")
+        if not who or who in guides:
+            continue
+        path = world.character_file(who)
+        url = _data_url(path) if path else None
+        if url:
+            guides[who] = url
+        else:
+            log.warning("내보내기: 캐릭터 모델을 못 읽었습니다 %s", who)
+            hall["guide"] = None
+
     data = {
         "kid": kid.name,
+        "guides": guides,
         "made": dt.date.today().isoformat(),
         "room": {
             "unit_per_m": room.get("unit_per_m", 2.2222),

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { bgOf, composeArt, padOf } from "../world/artimage";
 import { filterCanvas, fxOf } from "../world/artfx";
 import { buildFrame, frameStyle } from "../world/frames";
+import { buildGuide, guideOf, type Guide, type GuideModel } from "../world/guide";
 
 /**
  * 가져가는 전시실 (.html 한 장, 2026-09-21).
@@ -25,7 +26,8 @@ interface ExportData {
   kid: string;
   made: string;
   room: { unit_per_m: number; front_y: number; back_y: number; mounts: Mount[] };
-  halls: { light: number; pano: string | null; arts: ExportArt[] }[];
+  halls: { light: number; pano: string | null; guide?: Partial<Guide> | null; arts: ExportArt[] }[];
+  guides: Record<string, string>;           // 세워 둔 캐릭터의 glb (data: 주소)
   artworks: { file: string; name: string; made?: string; note?: string; bg?: string; pad?: number[]; width: number; height: number }[];
   images: Record<string, string>;
 }
@@ -102,6 +104,7 @@ function startRoom(gl: THREE.WebGLRenderer): void {
 
   const ball = panoBall();
   scene.add(ball);
+  let guideModel: GuideModel | null = null;
   const group = new THREE.Group();
   scene.add(group);
   const U = data.room.unit_per_m;
@@ -134,6 +137,7 @@ function startRoom(gl: THREE.WebGLRenderer): void {
     const pano = data.halls[hall].pano;
     ball.visible = !!pano;
     if (pano) setPano(ball, pano);
+    void showGuide(scene);
     for (const a of data.halls[hall].arts) {
       const m = data.room.mounts.find((x) => x.id === a.mount.id);
       if (!m || a.mount.host) continue;           // 가구에 올린 그림은 빼고 (전시실에는 벽뿐이다)
@@ -156,6 +160,24 @@ function startRoom(gl: THREE.WebGLRenderer): void {
       g.userData.image = a.image;
       group.add(g);
     }
+  }
+
+  /** 이 실에 세워 둔 캐릭터 (glb 도 파일 안에 들어 있다) */
+  async function showGuide(scene: THREE.Scene): Promise<void> {
+    const g = guideOf(data.halls[hall].guide);
+    if (guideModel && (!g || guideModel.group.userData.who !== g.who)) {
+      scene.remove(guideModel.group);
+      guideModel = null;
+    }
+    if (!g || !data.guides?.[g.who]) return;
+    if (!guideModel) {
+      try {
+        guideModel = await buildGuide(g, data.guides[g.who]);
+      } catch { return; }
+      guideModel.group.userData.who = g.who;
+      scene.add(guideModel.group);
+    }
+    guideModel.place(g);
   }
 
   // ---- 쓸어서 둘러보기 ----
@@ -245,6 +267,7 @@ function startRoom(gl: THREE.WebGLRenderer): void {
   resizeNow();
   const loop = (): void => {
     requestAnimationFrame(loop);
+    guideModel?.update(0.016);
     if (!points.size && Math.abs(vel) > 0.02) {    // 놓은 뒤 조금 더 돌다 멈춘다
       yaw = Math.min(LOOK_YAW, Math.max(-LOOK_YAW, yaw + vel * 0.016));
       vel *= 0.92;
