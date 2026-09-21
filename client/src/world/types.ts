@@ -91,8 +91,6 @@ export interface Layout {
   arts?: LayoutArt[];
   /** 전시실 조명 밝기 (1 = 렌더 그대로, 아이 전시실만) */
   light?: number;
-  /** 전시실에 세워 둔 캐릭터 (world/guide.ts). TV 에는 세우지 않는다 (살아 있는 캐릭터가 따로 있다) */
-  guide?: { who: string; x: number; y: number; rot: number; pose: string } | null;
   /** 아이 전시실: 몇 실인지 / 모두 몇 실인지 */
   hall?: number;
   halls?: number;

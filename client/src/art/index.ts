@@ -4,8 +4,6 @@ import type { WallMount } from "../world/room";
 import { renderNow, type Layout, type LayoutArt, type WorldRender } from "../world/types";
 import { bgOf, lookSize, padOf } from "../world/artimage";
 import { fxOf, type ArtFx } from "../world/artfx";
-import { buildGuide, guideOf, POSES, type Guide, type GuideModel } from "../world/guide";
-import { fetchCharacters } from "../world/doll";
 import { LookAround } from "../world/lookaround";
 import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
 
@@ -23,8 +21,6 @@ import { CROP_CSS, CROP_HTML, mountCrop, type Artwork } from "./crop";
  *   - 액자·여백·배경색·설명은 **작품에 붙는다** (편집 창에서 고치면 걸려 있는 곳이 모두 따라 바뀐다). 필터·하이라이트는 걸린 그림마다
  *   - **전시장**(모두가 같이 쓰는 방)도 여기서 꾸민다: 가구는 없고 작품만 건다. 슬라이드는 모든 아이 것을 아이별로 묶어 보여 준다
  *   - 전시실은 1실·2실·3실… 로 늘릴 수 있고(kid-<id>@2), 실마다 조명 밝기를 따로 둔다
- *   - **배치** 탭에서 올리·서율이를 전시실에 세워 둘 수 있다 (world/guide.ts). 바닥을 끌어 자리를 옮긴다.
- *     TV 에는 세우지 않는다 (거기에는 살아 있는 캐릭터가 따로 있다) — 부모님 전시실과 내보낸 .html 에만 나온다
  *   - 공유: 부모님께 보낼 주소를 복사한다 (/?mode=gallery&k=열쇠, 보기 전용 — gallery/index.ts).
  *     같은 창의 **내보내기**는 전시실을 .html 한 장으로 받는다 (서버 없이 폰에서 열린다 — server/ribbon/gallery_export.py)
  * 저장하면 그 아이 전시실(kid-<아이 id>)의 arts 만 바뀐다. 배경은 모든 아이가 같은 렌더(kidbase)를 쓰므로
@@ -94,8 +90,6 @@ export async function startArt(): Promise<void> {
   let hall = 1, halls = 1;
   let light = 1;
   let layout: Layout | null = null;
-  let guide: Guide | null = null;                  // 전시실에 세워 둔 캐릭터
-  let guideModel: GuideModel | null = null;
   let render: WorldRender | null | undefined = null;
   let arts: LayoutArt[] = [];
   let mine: Artwork[] = [];
@@ -108,16 +102,7 @@ export async function startArt(): Promise<void> {
   if (new URLSearchParams(location.search).has("debug")) (window as unknown as { stage?: Stage }).stage = stage;
   stage.setLooking(true);                          // 방 가운데에 서서 둘러본다 (쓸어 넘겨 왼쪽·오른쪽 벽으로)
   const looker = new LookAround(stage, stage.renderer.domElement);
-  let tick = performance.now();
-  const loop = (): void => {
-    requestAnimationFrame(loop);
-    const now = performance.now();
-    guideModel?.update(Math.min(0.05, (now - tick) / 1000));
-    tick = now;
-    looker.tick();
-    marker?.update();
-    stage.render();
-  };
+  const loop = (): void => { requestAnimationFrame(loop); looker.tick(); marker?.update(); stage.render(); };
   requestAnimationFrame(loop);
 
   async function loadKid(): Promise<void> {
@@ -137,7 +122,6 @@ export async function startArt(): Promise<void> {
     halls = d.halls;
     layout = d.layout;
     light = d.layout?.light ?? 1;
-    guide = guideOf(d.layout?.guide);
     lightIn.value = String(light);
     showLight();
     drawHalls();
@@ -148,7 +132,6 @@ export async function startArt(): Promise<void> {
     render = await api<{ render?: WorldRender | null }>("GET", `/api/world/view?room=${encodeURIComponent(room)}`)
       .then((w) => w.render).catch(() => null);
     await rebuild();
-    await showGuide();
     const before = JSON.stringify(arts);
     for (const a of arts) fit(a, wallOf(a));    // 편집으로 비율이 바뀌어 벽을 넘게 됐으면 안으로 들인다
     if (JSON.stringify(arts) !== before) { dirty = true; await rebuild(); }
@@ -310,23 +293,8 @@ export async function startArt(): Promise<void> {
     return { wall: w, u: d.dot(w.right) / stage.room.U, v: d.dot(w.up) / stage.room.U };
   }
 
-  const FLOOR = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  let dragGuide = false;
-  /** 바닥에서 지금 가리키는 자리 (블렌더 좌표) */
-  function floorAt(): { x: number; y: number } | null {
-    const hit = ray.ray.intersectPlane(FLOOR, new THREE.Vector3());
-    return hit ? { x: hit.x, y: -hit.z } : null;
-  }
-
   canvas.onpointerdown = (ev) => {
     aim(ev);
-    if (guideModel && ray.intersectObject(guideModel.group, true).length) {   // 캐릭터를 잡았다
-      dragGuide = true;
-      picked = null;
-      markPicked();
-      canvas.setPointerCapture(ev.pointerId);
-      return;
-    }
     const a = artAt();
     if (!a) {                                   // 빈 곳을 잡았다: 둘러보기 (거의 안 움직이고 놓으면 고른 것을 푼다)
       if (stage.looking) looker.begin(ev);
@@ -344,15 +312,6 @@ export async function startArt(): Promise<void> {
     canvas.setPointerCapture(ev.pointerId);
   };
   canvas.onpointermove = (ev) => {
-    if (dragGuide) {
-      aim(ev);
-      const spot = floorAt();
-      if (!spot || !guide) return;
-      guide = { ...guide, x: spot.x, y: spot.y };
-      guideModel?.place(guide);
-      dirty = true;
-      return;
-    }
     if (!dragging) { looker.move(ev); return; }
     aim(ev);
     const spot = spotAt();
@@ -367,7 +326,6 @@ export async function startArt(): Promise<void> {
     placeLive(dragging);
   };
   const drop = (ev: PointerEvent): void => {
-    if (dragGuide) { dragGuide = false; return; }
     if (!dragging) {
       const was = looker.dragging;
       looker.end(ev);
@@ -650,64 +608,6 @@ export async function startArt(): Promise<void> {
   };
   handle.onpointercancel = () => { handleY = null; };
 
-  // ---------- 배치 탭: 전시실에 세워 두는 캐릭터 ----------
-  const whoIn = $<HTMLSelectElement>("#guide-who");
-  const poseIn = $<HTMLSelectElement>("#guide-pose");
-  const rotIn = $<HTMLInputElement>("#guide-rot");
-  void fetchCharacters().then((list) => {          // 아이마다 만들어 넣은 캐릭터까지 (server world_store.characters)
-    whoIn.innerHTML = `<option value="">세우지 않기</option>`
-      + list.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
-    whoIn.value = guide?.who ?? "";
-  });
-  poseIn.innerHTML = POSES.map((x) => `<option value="${x.id}">${x.name}</option>`).join("");
-
-  /** 고른 캐릭터를 방에 세운다 (없애거나 바꾸면 다시 짓는다) */
-  async function showGuide(): Promise<void> {
-    whoIn.value = guide?.who ?? "";
-    poseIn.value = guide?.pose ?? "Sway";
-    rotIn.value = String(guide?.rot ?? 0);
-    [poseIn, rotIn].forEach((el) => { el.disabled = !guide; });
-    if (guideModel && (!guide || guideModel.group.userData.who !== guide.who)) {
-      stage.scene.remove(guideModel.group);
-      guideModel = null;
-    }
-    if (!guide) return;
-    if (!guideModel) {
-      try {
-        guideModel = await buildGuide(guide);
-      } catch (e) { msg(`캐릭터를 불러오지 못했습니다: ${e}`, true); return; }
-      guideModel.group.userData.who = guide.who;
-      stage.scene.add(guideModel.group);
-    }
-    guideModel.place(guide);
-  }
-
-  /** 처음 세울 자리: 방 가운데보다 조금 안쪽 (보는 사람 앞에 서도록) */
-  function guideSpot(): { x: number; y: number } {
-    const r = stage.room.room;
-    if (!r) return { x: 0, y: 4 };
-    const mid = (r.front_y + r.back_y) / 2;
-    return { x: 0, y: mid + Math.abs(r.back_y - r.front_y) * 0.38 };   // 온몸이 보이도록 조금 멀리
-  }
-
-  whoIn.onchange = () => {
-    guide = whoIn.value ? { ...(guide ?? { ...guideSpot(), rot: 0, pose: "Sway" }), who: whoIn.value } : null;
-    dirty = true;
-    void showGuide();
-  };
-  poseIn.onchange = () => {
-    if (!guide) return;
-    guide = { ...guide, pose: poseIn.value };
-    dirty = true;
-    void showGuide();
-  };
-  rotIn.oninput = () => {
-    if (!guide) return;
-    guide = { ...guide, rot: Number(rotIn.value) };
-    dirty = true;
-    void showGuide();
-  };
-
   // ---------- 조명 탭: 방 전체 밝기 ----------
   const showLight = (): void => { $("#light-num").textContent = `${Math.round(light * 100)}%`; };
   panel.querySelectorAll<HTMLButtonElement>("[data-light]").forEach((b) => {
@@ -767,7 +667,7 @@ export async function startArt(): Promise<void> {
   // ---------- 저장 / TV ----------
   async function save(): Promise<void> {
     await api("PUT", `/api/world/layout?room=${encodeURIComponent(room)}`,
-              { ...(layout ?? { items: [] }), arts, light, guide });
+              { ...(layout ?? { items: [] }), arts, light });
     dirty = false;
   }
   $("#save").onclick = async () => {
@@ -941,9 +841,6 @@ ${CROP_CSS}
     <label class="grow">크기 <button data-step="-0.05" class="step">−</button>
       <input id="w" type="range" min="0.15" max="3" step="0.01" value="1">
       <button data-step="0.05" class="step">+</button></label>
-    <label>캐릭터 <select id="guide-who"></select></label>
-    <label>자세 <select id="guide-pose"></select></label>
-    <label class="grow">방향 <input id="guide-rot" type="range" min="0" max="350" step="10" value="0"></label>
     <label class="grow warm">방 밝기 <button data-light="-0.05" class="step">−</button>
       <input id="light" type="range" min="0.2" max="1.6" step="0.02" value="1">
       <button data-light="0.05" class="step">+</button> <b id="light-num"></b></label>
