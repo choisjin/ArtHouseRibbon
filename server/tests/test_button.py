@@ -1,5 +1,6 @@
 """DJI 호출 버튼: 누가 눌렀는지 몰라서 먼저 말한 채널이 부른 아이"""
 import asyncio
+import time
 
 import numpy as np
 
@@ -151,3 +152,48 @@ async def test_button_while_listening_cancels_input():
     await dm.cancel_listening()
     assert dm.queue.active() is None and dm.ribbon_state == "idle"
     assert len(speaks(sent)) == before                 # 말없이 취소한다 (2026-09-21 요청)
+
+
+async def test_button_listening_ends_when_nobody_speaks():
+    """버튼을 눌렀는데 아무 말이 없어 마이크가 닫히면 "듣는 중" 표시도 내린다 (2026-09-23: 전에는 계속 남았다)"""
+    from test_dialogue_flow import make
+
+    dm, _sent, _ = make()
+    await dm.on_button([0])
+    assert dm.ribbon_state == "listening" and dm.queue.active() is None
+    await dm.mic_closed()
+    assert dm.ribbon_state == "idle"
+
+
+async def test_mic_closed_keeps_listening_when_kid_claimed():
+    from test_dialogue_flow import make
+
+    dm, _sent, _ = make()
+    await dm.on_button([0])
+    await dm.claim(0)                                     # 아이가 말을 시작했다 (거기까지 눌러 마이크가 닫힌 경우)
+    await dm.mic_closed()
+    assert dm.ribbon_state == "listening" and dm.queue.active() is not None
+
+
+async def test_heard_nothing_folds_empty_turn():
+    from test_dialogue_flow import make, speaks
+
+    dm, sent, _ = make()
+    await dm.on_button([0])
+    await dm.claim(0)
+    before = len(speaks(sent))
+    await dm.heard_nothing(0)                             # STT 가 빈 글자를 돌려줬다
+    assert dm.queue.active() is None and dm.ribbon_state == "idle"
+    assert len(speaks(sent)) == before                    # 말없이
+
+
+async def test_tick_ends_idle_listening_after_window():
+    from test_dialogue_flow import make
+
+    dm, _sent, _ = make()
+    await dm.on_button([0])
+    await dm.tick()
+    assert dm.ribbon_state == "listening"                 # 아직 기다리는 중
+    dm._listen_started = time.time() - 60
+    await dm.tick()
+    assert dm.ribbon_state == "idle"

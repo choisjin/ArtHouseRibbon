@@ -1168,7 +1168,9 @@ async def _transcribe_and_dispatch(channel: int, pcm: np.ndarray) -> None:
         kid = kids.by_channel(channel)
         recorder.save(settings.settings_path().parent / "recordings", pcm, settings.sample_rate, channel, text,
                       prompt, kid.id if kid else None)
-    if text and not _heard_elsewhere(channel, text):
+    if not text:
+        await dialogue.heard_nothing(channel)    # 잡음이었다: 버튼 뒤 첫 말로 잡힌 빈 차례면 말없이 접는다
+    elif not _heard_elsewhere(channel, text):
         await dialogue.on_utterance(channel, text)
 
 
@@ -1243,6 +1245,8 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
             log.info("말 조각: 마이크 %d %.1f초, 크기 %.3f (기준 %.3f)", channel + 1,
                      len(payload) / settings.sample_rate, proc.segmenter.last_peak, store.config.ribbon.speech_rms)
             _spawn(_transcribe_and_dispatch(channel, payload))
+        elif kind == "sleep":
+            _spawn(dialogue.mic_closed())        # 아무 말 없이 시간이 지나 마이크가 닫힘: "듣는 중" 표시 내리기
     won = button_call.check(channel)
     if won is not None:
         _spawn(dialogue.claim(won))

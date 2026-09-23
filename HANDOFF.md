@@ -232,6 +232,9 @@
   (`dialogue.cancel_listening`, `ButtonCall.cancel`), 말없이.
   ② **리본이가 말하는 중**, 그 밖 -> 말을 끊고 바로 새로 듣는다 (`reset_for_button` -> `on_button`).
   2026-09-21 의 "이어서 말할까? 새로 말할래?" 묻기(`pause_for_button`, `wants_resume`)는 삭제했다.
+  ③ 아무 말 없이 button_window(6초)가 지나 마이크가 닫히면(`sleep`) 리본이 상태도 idle 로 (`dialogue.mic_closed`,
+  마이크가 소리를 안 보낼 때를 위해 `tick` 에도 예비 시한). 전에는 "듣는 중"이 남아 버튼으로는 벗어날 수 없었고
+  관리자 '중단'을 눌러야 했다. STT 가 빈 글자를 돌려주면 빈 차례를 말없이 접는다 (`heard_nothing`).
 
 - **관리자 화면 정리** (2026-09-21 요청 묶음):
   · 입력 취소는 **말없이** (`dialogue.cancel_listening`), 말을 멈춘 뒤 "이어서" 없이 `persona.NEW_STORY_MIN`(5자)
