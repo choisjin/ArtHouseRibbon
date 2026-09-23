@@ -124,38 +124,20 @@ def test_cancel_stops_waiting():
     assert bc.armed == [] and all(pr.state == "idle" for pr in p.values())
 
 
-async def test_button_while_talking_asks_to_continue_or_start_over():
-    """말하는 중에 버튼: 말을 멈추고 이어서 할지 물어본다 (2026-09-21 요청)"""
+async def test_button_while_talking_cuts_speech_and_listens_again():
+    """말하는 중에 버튼: 말을 끊고 묻지 않고 바로 새로 듣는다 (2026-09-23 요청, main._on_button 의 순서)"""
     from test_dialogue_flow import make, speaks
 
-    dm, sent, llm = make()
+    dm, sent, _ = make()
     await dm.on_wake(0)
-    ev = asyncio.Event()
-    dm._pending_done = [("u1", ev, 5, "남은 말이야."), ("u2", asyncio.Event(), 4, "또 있어.")]
-    dm.target_kid = "a"
-    await dm.pause_for_button()
-    assert dm._paused["lines"] == ["남은 말이야.", "또 있어."]
-    assert "이어서 말할까" in speaks(sent)[-1]
-    assert any(m.get("type") == "speak.stop" for m in sent)        # TV 는 하던 소리를 버린다
-
-    await dm.on_utterance(0, "이어서")                              # 이어서 -> 남은 말을 다시 한다
-    assert speaks(sent)[-2:] == ["남은 말이야.", "또 있어."]
-    assert dm._paused is None
-
-
-async def test_button_while_talking_then_new_words_start_over():
-    from test_dialogue_flow import make, speaks
-
-    dm, sent, llm = make()
-    await dm.on_wake(0)
-    dm._pending_done = [("u1", asyncio.Event(), 5, "남은 말이야.")]
-    await dm.pause_for_button()
-    await dm.on_utterance(0, "음...")                               # 짧고 뜻 없는 말은 흘린다 (그대로 멈춘 채)
-    assert dm._paused is not None
-    await dm.on_utterance(0, "공룡 얘기 해줘")                       # 길게 말하면 그 말로 새 이야기
-    assert dm._paused is None
-    assert "남은 말이야." not in speaks(sent)[-2:]
-    assert llm.heard and "공룡" in llm.heard[-1]
+    dm._pending_done = [("u1", asyncio.Event(), 5, "남은 말이야."), ("u2", asyncio.Event(), 4, "또 있어.")]
+    assert dm.talking()
+    before = len(speaks(sent))
+    await dm.reset_for_button()
+    await dm.on_button([0])
+    assert any(m.get("type") == "speak.stop" for m in sent)        # TV 는 하던 소리와 남은 문장을 버린다
+    assert len(speaks(sent)) == before                             # "이어서 말할까?" 같은 말을 하지 않는다
+    assert not dm.talking() and dm.ribbon_state == "listening"
 
 
 async def test_button_while_listening_cancels_input():

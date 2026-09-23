@@ -1,7 +1,6 @@
 """리본이의 성격과 대화 규칙(시스템 프롬프트)."""
 from __future__ import annotations
 
-import re
 
 from typing import Dict, List, Optional
 
@@ -184,34 +183,3 @@ def filler(index: int = 0) -> str:
 
 def recall_prefix(kid_name: str) -> str:
     return f"아까 {subj(kid_name)} 말한 거. "
-
-
-# ---------- 호출 버튼으로 말을 멈췄을 때 (2026-09-21) ----------
-_RESUME_WORDS = ("이어서", "이어", "계속", "마저", "아까", "하던", "그거", "듣고싶")
-_RESUME_SHORT = ("응", "어", "네", "예", "그래", "웅", "엉", "yes")
-
-
-#: 멈춘 뒤 이만큼(글자) 넘게 말하면 "이어서" 라고 하지 않아도 새 이야기로 받는다 (2026-09-21)
-NEW_STORY_MIN = 5
-
-
-def paused_question() -> str:
-    return "이어서 말할까? 아니면 새로 말할래?"
-
-
-def input_cancelled() -> str:
-    return "알겠어, 취소했어."
-
-
-def nothing_to_resume() -> str:
-    return "이어서 할 말이 없어. 무슨 얘기 할까?"
-
-
-def wants_resume(text: str) -> bool:
-    """멈춘 말을 이어서 듣고 싶다는 대답인가 ("이어서", "계속", "응")"""
-    c = re.sub(r"[^0-9a-z가-힣]", "", text.lower())
-    if not c:
-        return False
-    if any(w in c for w in _RESUME_WORDS):
-        return True
-    return len(c) <= 3 and any(c.startswith(w) for w in _RESUME_SHORT)

@@ -1273,22 +1273,15 @@ def _listening() -> bool:
 
 
 async def _on_button() -> None:
-    """호출 버튼 (DJI 송신기 · TV 화면 종 · /api/call). 지금 무엇을 하고 있었냐에 따라 다르게 (2026-09-21):
-      - 리본이가 말하는 중  -> 말을 멈추고 "이어서 말할까? 새로 말할래?" 묻고 대답을 듣는다
-      - 아이가 말하는 중    -> "거기까지" (2026-09-23): 침묵을 기다리지 않고 지금까지 들은 말을 바로 알아듣고 답한다
+    """호출 버튼 (DJI 송신기 · TV 화면 종 · /api/call). 버튼 -> 듣기 -> 버튼 -> 거기까지 (2026-09-23):
+      - 아이가 말하는 중    -> "거기까지": 침묵을 기다리지 않고 지금까지 들은 말을 바로 알아듣고 답한다
       - 듣는 중인데 아직 말이 없음 -> 이번 입력을 취소한다 (한 번 더 눌렀다 = 그만)
-      - 그 밖              -> 하던 것을 멈추고 새로 듣는다 (먼저 말한 아이가 부른 아이, audio/button.py)"""
+      - 리본이가 말하는 중, 그 밖 -> 말을 끊고 바로 새로 듣는다 (먼저 말한 아이가 부른 아이, audio/button.py).
+        예전(2026-09-21)의 "이어서 말할까? 새로 말할래?" 묻기는 없앴다"""
     if dialogue.ignore_calls:
         log.info("호출 무시 중이라 버튼을 받지 않음")
         return
     channels = _kid_channels()
-    if dialogue.talking():
-        await dialogue.pause_for_button()
-        for proc in processors.values():
-            proc.stop_listening()
-        armed = button_call.press(channels, store.config.ribbon.button_window_s)
-        log.info("호출 버튼(말하는 중): 멈추고 마이크 %s 듣는 중", [c + 1 for c in armed])
-        return
     if _listening():
         heard = False
         for ch in channels:
@@ -1306,7 +1299,9 @@ async def _on_button() -> None:
         if not heard:
             await dialogue.cancel_listening()        # 아직 말이 없었다: 그만
         return
-    await dialogue.reset_for_button()          # 하던 대화를 멈추고 처음부터 듣는다
+    if dialogue.talking():
+        log.info("호출 버튼(리본이 말하는 중): 말을 끊고 바로 듣기")
+    await dialogue.reset_for_button()          # 하던 말·생각·대기 줄을 멈추고 처음부터 듣는다
     for proc in processors.values():
         proc.stop_listening()                    # 이어 말하기로 듣던 채널도 버튼 기준으로 새로
     await dialogue.on_button(channels)
