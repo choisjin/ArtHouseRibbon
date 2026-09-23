@@ -184,6 +184,8 @@ export interface CueMsg { type: "cue"; kind: "listen"; kid_id: string | null }
 
 /** 지금 말을 받을 수 있나 (버튼 뒤 마이크가 열려 있고 리본이가 말하지 않을 때). TV 오른쪽 위 마이크 표시 */
 export interface MicMsg { type: "mic"; on: boolean }
+/** 소켓 살아 있나 확인 (ws.ts 가 보낸 ping 의 답) */
+export interface PongMsg { type: "pong" }
 
 /** DJI 송신기 호출 버튼이 눌렸다. 누가 눌렀는지 몰라서 channels 를 잠깐 듣는다 (관리자 대화 기록) */
 export interface ButtonMsg { type: "button"; channels: number[] }
@@ -286,4 +288,4 @@ export interface MusicStateMsg {
 
 export type ServerMsg = StateMsg | SpeakMsg | RibbonStateMsg | TranscriptMsg | KidPresenceMsg | FacePositionsMsg
   | SpeakStopMsg | CueMsg | ButtonMsg | MicMsg | GameMsg | MemoryChangedMsg | AdminMsg | DevicesMsg | DeviceControlMsg
-  | MusicStateMsg | MusicListMsg;
+  | MusicStateMsg | MusicListMsg | PongMsg;

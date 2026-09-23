@@ -1321,6 +1321,10 @@ async def _handle_text(ws: WebSocket, msg: dict) -> None:
         _last_tv_call = now
         log.info("TV 화면에서 호출")
         _spawn(_on_button())
+    elif t == "ping":
+        # 폰 브라우저는 와이파이 절전으로 반쯤 죽은 소켓을 열린 것으로 알고 있다. 클라이언트가 몇 초마다 물어 오고
+        # 답이 없으면 스스로 끊고 다시 잇는다 (ws.ts)
+        await ws.send_text('{"type": "pong"}')
     elif t == "debug.wake":
         ch = int(msg.get("channel", 0))
         processors[ch].start_listening()

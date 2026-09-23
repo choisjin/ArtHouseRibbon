@@ -20,26 +20,30 @@
       .chip.active { border-color: #ffd54a; }
       #bubble { left: 0; top: 0; display: none; font-size: clamp(28px, 4vw, 56px); background: #fff; border-radius: 999px; padding: 4px 14px; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
       #bubble.thinking { animation: bob 1.2s ease-in-out infinite; }
-      /* 리본이 부르기 (src/tv/callbutton.ts): 화면에는 보이지 않게 숨겨 두고(2026-09-21 요청),
-         오른쪽 아래 구석을 누르면 부를 수 있게 남겨 둔다. 키보드·블루투스 리모컨도 그대로 */
-      #call-btn { opacity: 0; right: 2vw; bottom: 2.5vh; z-index: 35; display: flex; flex-direction: column; align-items: center; gap: .6vh;
-        background: none; border: none; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-      #call-btn .sw-plate { width: clamp(34px, 3.1vw, 62px); aspect-ratio: 3 / 5; border-radius: 12%/7%;
-        background: linear-gradient(150deg, #fdfbf7, #e8e2d8 60%, #d8d1c6);
-        box-shadow: 0 .5vh 1.2vh rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.7);
-        display: grid; place-items: center; transition: transform .12s; }
-      #call-btn .sw-rocker { width: 62%; height: 70%; border-radius: 10%/6%; position: relative;
-        background: linear-gradient(#fffdf9 0 46%, #efe9df 46% 100%);
-        box-shadow: inset 0 .25vh .5vh rgba(0,0,0,.18), 0 .1vh .2vh rgba(255,255,255,.8);
-        transition: background .15s; }
-      #call-btn .sw-led { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);
-        width: 22%; aspect-ratio: 1; border-radius: 50%; background: #cfc7bb; transition: background .2s, box-shadow .2s; }
-      /* 말을 받는 동안 불이 켜진다 */
-      #call-btn.listening .sw-led { background: #ff5a5a; box-shadow: 0 0 .8vh .2vh rgba(255,90,90,.8); }
-      #call-btn.pressed .sw-plate { transform: scale(.96); }
-      #call-btn.pressed .sw-rocker { background: linear-gradient(#efe9df 0 54%, #fffdf9 54% 100%); }
-      #call-btn .sw-label { font-size: clamp(10px, 1vw, 15px); color: rgba(255,255,255,.75); font-weight: 600;
-        letter-spacing: .02em; text-shadow: 0 1px 3px rgba(0,0,0,.55); }
+      /* 리본이 부르기 (src/tv/callbutton.ts): 오른쪽 아래 작은 종 (2026-09-23).
+         종은 작지만 #call-btn 자체가 구석의 손바닥 크기 터치 영역이라 감으로 눌러도 맞는다. 키보드·블루투스 리모컨도 그대로 */
+      #call-btn { right: 0; bottom: 0; z-index: 35; width: clamp(96px, 20vw, 180px); height: clamp(96px, 26vh, 180px);
+        display: flex; align-items: flex-end; justify-content: flex-end;
+        padding: 0 max(2.4vw, env(safe-area-inset-right)) max(2.4vh, env(safe-area-inset-bottom)) 0;
+        background: none; border: none; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+      #call-btn .bell { position: relative; width: clamp(26px, 3vw, 44px); aspect-ratio: 1; display: grid; place-items: center;
+        border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.28);
+        box-shadow: 0 2px 8px rgba(0,0,0,.35); transform-origin: 50% 12%; transition: background .2s; }
+      #call-btn svg { width: 60%; height: 60%; fill: rgba(255,255,255,.85); }
+      #call-btn .dot { position: absolute; top: 6%; right: 6%; width: 24%; aspect-ratio: 1; border-radius: 50%;
+        background: transparent; transition: background .2s, box-shadow .2s; }
+      /* 말을 받는 동안 점이 켜진다 */
+      #call-btn.listening .bell { background: rgba(255,90,90,.35); }
+      #call-btn.listening .dot { background: #ff5a5a; box-shadow: 0 0 6px 2px rgba(255,90,90,.8); }
+      /* 누른 순간: 종이 흔들리고 화면 가장자리가 한 번 반짝 (서버 답을 기다리지 않는 표시) */
+      #call-btn.pressed .bell { animation: ring .6s ease-out; }
+      @keyframes ring { 0% { transform: rotate(0) scale(1.15); } 20% { transform: rotate(-18deg) scale(1.15); }
+        40% { transform: rotate(14deg) scale(1.1); } 60% { transform: rotate(-9deg); } 80% { transform: rotate(5deg); } 100% { transform: rotate(0); } }
+      #call-flash { position: fixed; inset: 0; z-index: 34; pointer-events: none; opacity: 0;
+        box-shadow: inset 0 0 0 4px rgba(255,213,74,.9), inset 0 0 40px rgba(255,213,74,.45); }
+      #call-flash.on { animation: flash .6s ease-out; }
+      @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
       /* 화면 가득 보기 단추 (전체화면이 아닐 때만, src/tv/immersive.ts) */
       #fullscreen-btn { left: 2vw; bottom: 2vh; z-index: 40; font: inherit; font-size: 14px; color: #eee;
         background: rgba(14,11,22,.7); border: 1px solid rgba(255,255,255,.25); border-radius: 999px;
