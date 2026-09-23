@@ -110,6 +110,39 @@ def test_segmenter_drops_quiet_utterance_far_away():
     assert seg.last_peak > 0.08
 
 
+def test_flush_returns_speech_so_far_without_waiting_for_silence():
+    """호출 버튼 한 번 더 = "거기까지" (2026-09-23): 침묵 없이도 지금까지 모은 말을 바로 내놓는다"""
+    seg = UtteranceSegmenter(EnergyVAD(0.015), 16000, silence_ms=1300, max_utterance_s=10)
+    assert seg.flush() is None                              # 아직 말이 없다
+    for f in _frames(np.concatenate([_silence(0.3), _tone(1.0)])):
+        assert seg.push(f) is None                          # 침묵이 없어 아직 안 나온다
+    out = seg.flush()
+    assert out is not None and 1.0 * 16000 <= out.size <= 1.4 * 16000
+    assert not seg.in_speech and seg.flush() is None        # 비웠다
+
+
+def test_flush_drops_too_short_or_quiet():
+    seg = UtteranceSegmenter(EnergyVAD(0.04), 16000, silence_ms=1300, max_utterance_s=10)
+    for f in _frames(_tone(0.1)):                           # 0.1초: 너무 짧다
+        seg.push(f)
+    assert seg.flush() is None
+    for f in _frames(_tone(1.0, amp=0.08)):                 # 기준은 넘지만 2배에는 못 미침 (멀리서)
+        seg.push(f)
+    assert seg.flush() is None
+
+
+def test_channel_processor_flush_single_shot_closes():
+    proc = ChannelProcessor(0, Settings(), _AlwaysWake())
+    assert proc.flush() is None                             # idle 이면 없다
+    proc.single_shot = True
+    proc.start_listening(0.0)
+    for f in _frames(_tone(1.0)):
+        proc.feed(f, 0.5)
+    out = proc.flush()
+    assert out is not None and out.size >= 16000
+    assert proc.state == "idle"                             # 버튼 방식: 말 한 번 받았으니 닫는다
+
+
 def test_channel_processor_set_speech_rms_changes_threshold():
     proc = ChannelProcessor(0, Settings(), _AlwaysWake())
     proc.set_speech_rms(0.1)

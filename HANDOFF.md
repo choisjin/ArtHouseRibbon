@@ -230,7 +230,9 @@
   ① **리본이가 말하는 중** -> 말을 멈추고 "이어서 말할까? 아니면 새로 말할래?" (`dialogue.pause_for_button`).
   아직 재생하지 않은 문장을 들고 있다가 "이어서·계속·응" 이면 그 문장부터 다시 말하고(`_resume_paused`),
   다른 말을 하면 그 말을 새 이야기로 받는다 (`persona.wants_resume`).
-  ② **아이 말을 듣는 중** -> 이번 입력 취소 (`dialogue.cancel_listening`, `ButtonCall.cancel`), "알겠어, 취소했어."
+  ② **아이가 말하는 중** -> **"거기까지"** (2026-09-23 요청): 침묵(end_silence)을 기다리지 않고 지금까지 들은 말을
+  바로 인식해 답한다 (`ChannelProcessor.flush` -> `UtteranceSegmenter.flush`). 듣는 중인데 아직 말이 없었으면
+  예전처럼 이번 입력 취소 (`dialogue.cancel_listening`, `ButtonCall.cancel`), 말없이.
   ③ 그 밖 -> 예전처럼 하던 것을 멈추고 새로 듣는다.
 
 - **관리자 화면 정리** (2026-09-21 요청 묶음):

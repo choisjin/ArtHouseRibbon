@@ -65,6 +65,16 @@ class ChannelProcessor:
         if self.state == "listening":
             self._listen_until = now + (self.follow_up_s or self.settings.follow_up_window_s)
 
+    def flush(self) -> Optional[np.ndarray]:
+        """듣는 중에 호출 버튼을 한 번 더 눌렀다 = "거기까지" (2026-09-23): 침묵을 기다리지 않고 지금까지 들은 말을
+        바로 내놓는다. 버튼 방식(single_shot)이면 말 한 번을 받은 것이라 듣기를 닫는다"""
+        if self.state != "listening":
+            return None
+        out = self.segmenter.flush()
+        if out is not None and self.single_shot:
+            self.stop_listening()
+        return out
+
     def feed(self, pcm: np.ndarray, now: Optional[float] = None) -> List[Event]:
         now = time.time() if now is None else now
         events: List[Event] = []

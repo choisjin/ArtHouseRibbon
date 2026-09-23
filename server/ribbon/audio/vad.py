@@ -60,6 +60,20 @@ class UtteranceSegmenter:
     def in_speech(self) -> bool:
         return self._in_speech
 
+    def flush(self) -> Optional[np.ndarray]:
+        """침묵을 기다리지 않고 지금까지 모은 말을 바로 내놓는다 (호출 버튼을 한 번 더 눌러 "거기까지", 2026-09-23).
+        말을 시작하지 않았거나 너무 짧으면 None"""
+        if not self._in_speech:
+            self.reset()
+            return None
+        out = np.concatenate(self._buf) if self._buf else np.zeros(0, dtype=np.int16)
+        voiced, peak = self._voiced, self._peak
+        self.reset()
+        self.last_peak = peak
+        if voiced < self.min_voiced_samples or peak < self.vad.rms_threshold * self.PEAK_RATIO:
+            return None
+        return out
+
     def push(self, pcm: np.ndarray) -> Optional[np.ndarray]:
         """발화가 끝났으면 그 구간의 PCM 을 반환, 아니면 None."""
         rms = frame_rms(pcm)
