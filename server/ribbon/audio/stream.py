@@ -43,10 +43,20 @@ class ChannelProcessor:
         self._listen_until = now + window_s
         self.segmenter.reset()
 
+    #: 버튼으로만 끝낼 때의 안전장치: 이만큼 지나면 그래도 자른다 (아이가 버튼을 잊었을 때, 메모리·STT 길이)
+    BUTTON_ONLY_MAX_S = 120.0
+
     def set_silence_ms(self, ms: int) -> None:
-        """말이 끝났다고 보는 침묵 길이 (관리자 설정, 0.3~4초)"""
+        """말이 끝났다고 보는 침묵 길이 (관리자 설정, 0.3~4초). 자동 방식용"""
         samples = int(self.settings.sample_rate * max(300, min(4000, int(ms))) / 1000)
         self.segmenter.silence_samples = samples
+        self.segmenter.max_samples = int(self.settings.sample_rate * self.settings.max_utterance_s)
+
+    def set_end_by_button_only(self) -> None:
+        """말을 끝내는 것은 버튼(flush)만 (2026-09-24 요청): 침묵으로 자르지 않는다. 아이가 말 중간에 아무리 쉬어도
+        버튼을 누를 때까지 한 덩어리로 모은다. BUTTON_ONLY_MAX_S 가 지나면 안전장치로 자른다"""
+        self.segmenter.silence_samples = float("inf")
+        self.segmenter.max_samples = int(self.settings.sample_rate * self.BUTTON_ONLY_MAX_S)
 
     def set_speech_rms(self, rms: float) -> None:
         """말로 보는 소리 크기 기준 (관리자 설정 '가까이서 말한 것만'). 클수록 마이크 가까이서 말해야 듣는다"""

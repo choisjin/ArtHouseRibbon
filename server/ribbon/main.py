@@ -1204,10 +1204,13 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     proc = processors.get(channel)
     if proc is None:
         return
-    proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
+    button_only = store.config.ribbon.input_mode == "button"   # 버튼 -> 듣기 -> 버튼(거기까지) -> 답
+    if button_only:
+        proc.set_end_by_button_only()                          # 침묵으로 자르지 않는다: 버튼으로만 끝 (2026-09-24)
+    else:
+        proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
     proc.set_speech_rms(store.config.ribbon.speech_rms)       # 가까이서 말한 것만
     proc.follow_up_s = 20.0 if (dialogue.quiz and dialogue.quiz.active) else None   # 게임 중엔 답할 시간을 넉넉히
-    button_only = store.config.ribbon.input_mode == "button"   # 버튼을 누른 뒤 말 한 번만 받는다
     proc.single_shot = button_only
     proc.voice_wake = not button_only
     barge = _barge.setdefault(channel, BargeIn())

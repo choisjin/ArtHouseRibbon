@@ -155,7 +155,7 @@ export function mountCharacters(el: HTMLElement, ctx: AdminCtx): { show(id?: str
         <label>부르면 <select name="listen_cue">
           <option value="sound">"띵" 소리만 (아이가 바로 말할 수 있음)</option>
           <option value="voice">"응 ○○야, 말해봐." 라고 대답</option></select></label>
-        <label>말이 끝났다고 보는 조용한 시간 (초, 아이가 말하다 자주 끊기면 늘리기)
+        <label>말이 끝났다고 보는 조용한 시간 (초, 자동 방식일 때만. 버튼 방식은 버튼을 다시 눌러야 말이 끝남)
           <input name="end_silence_s" type="number" step="0.1" min="0.5" max="3" /></label>
         <label>한 번에 최대 문장 수 (놀이 상대는 1~2) <input name="max_sentences" type="number" min="1" max="6" /></label>
         <label>첫 추임새까지 (초) <input name="filler_delay_s" type="number" step="0.5" min="0.5" max="10" /></label>

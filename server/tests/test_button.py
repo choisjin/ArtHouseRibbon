@@ -206,3 +206,30 @@ def test_button_press_with_no_limit_keeps_channels_listening():
     assert bc.check(0, now=1e6) is None and bc.armed == [0, 1]   # 아직 기다린다
     p[0].feed(LOUD, now=1e6 + 1)
     assert bc.check(0, now=1e6 + 1) == 0                     # 먼저 말한 아이
+
+
+def test_button_only_end_does_not_cut_on_silence():
+    """오직 버튼으로만 말을 끝낸다 (2026-09-24 요청): 말 중간에 오래 쉬어도 자르지 않고, flush 에 한 덩어리로 나온다"""
+    from ribbon.audio.wakeword import make_wakeword
+    proc = ChannelProcessor(0, Settings(), make_wakeword(Settings()))
+    proc.single_shot = True
+    proc.set_end_by_button_only()
+    proc.start_listening(0.0, float("inf"))
+    events = []
+    t = 0.0
+    for chunk, n in ((LOUD, 50), (QUIET, 250), (LOUD, 50)):   # 1초 말 - 5초 침묵 - 1초 말
+        for _ in range(n):
+            t += 0.02
+            events += proc.feed(chunk, now=t)
+    assert events == [] and proc.state == "listening"          # 침묵 5초에도 자르지 않았다
+    out = proc.flush()
+    assert out is not None and out.size >= 6.5 * 16000         # 쉰 시간까지 한 덩어리
+    assert proc.state == "idle"                                # 버튼 방식: 말 한 번 받았으니 닫는다
+
+
+def test_set_silence_ms_restores_auto_mode_limits():
+    proc = ChannelProcessor(0, Settings(), None)
+    proc.set_end_by_button_only()
+    proc.set_silence_ms(1300)
+    assert proc.segmenter.silence_samples == int(16000 * 1.3)
+    assert proc.segmenter.max_samples == 16000 * Settings().max_utterance_s

@@ -508,8 +508,9 @@ class DialogueManager:
             await self._broadcast_state()
         active = self.queue.active()
         idle_since = max(active.activated_at or 0.0, self._last_spoken_at) if active else 0.0
+        # 버튼 방식은 아이가 버튼을 누를 때까지 말을 모으므로(길게 말해도) 여기서 차례를 접지 않는다 (2026-09-24)
         if (active and not active.text and not self._responding and not self._speak_lock.locked()
-                and not (self.quiz and self.quiz.active)
+                and not (self.quiz and self.quiz.active) and not self._button_only()
                 and idle_since and now - idle_since > self.settings.turn_idle_timeout_s):
             kid = self._kid_for_channel(active.channel)
             self.queue.complete_active(now)

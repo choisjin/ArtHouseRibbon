@@ -233,7 +233,10 @@
   (`dialogue.cancel_listening`, `ButtonCall.cancel`), 말없이.
   ② **리본이가 말하는 중**, 그 밖 -> 말을 끊고 바로 새로 듣는다 (`reset_for_button` -> `on_button`).
   2026-09-21 의 "이어서 말할까? 새로 말할래?" 묻기(`pause_for_button`, `wants_resume`)는 삭제했다.
-  ③ 듣기는 시간 제한 없이 기다린다 (2026-09-24). 자동 방식에서 이어 말하기 창이 끝나 마이크가 닫히면(`sleep`)
+  ③ 듣기는 시간 제한 없이 기다리고, **말도 버튼으로만 끝낸다** (2026-09-24): 버튼 방식이면 침묵으로 자르지 않는다
+  (`ChannelProcessor.set_end_by_button_only`, 안전장치 120초). `end_silence_ms` 는 자동 방식에서만 쓴다.
+  `tick` 의 "말 안 하면 끝내기"(turn_idle_timeout) 도 버튼 방식에서는 걸지 않는다.
+  자동 방식에서 이어 말하기 창이 끝나 마이크가 닫히면(`sleep`)
   리본이 상태도 idle 로 (`dialogue.mic_closed`). STT 가 빈 글자를 돌려주면 빈 차례를 말없이 접는다 (`heard_nothing`).
 
 - **관리자 화면 정리** (2026-09-21 요청 묶음):
