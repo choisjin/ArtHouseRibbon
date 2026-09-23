@@ -52,7 +52,7 @@ export interface RibbonConfig {
   /** 아이가 지적·금지한 것을 약속으로 기억 (서버 memory.py) */
   memory_enabled?: boolean;
   memory_max_per_kid?: number;
-  /** 호출 버튼을 누른 뒤 이 시간(초) 안에 먼저 말한 아이가 부른 아이 */
+  /** (쓰지 않음, 2026-09-24) 버튼을 누르면 시간 제한 없이 기다린다 */
   button_window_s?: number;
   /** 주소로 호출하기 열쇠 (/api/call?token=..., 폰 매크로 앱이 DJI 버튼을 잡아 부를 때) */
   call_token?: string;

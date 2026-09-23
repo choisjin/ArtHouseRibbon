@@ -41,7 +41,7 @@ class RibbonConfig(BaseModel):
     dialogue_style: int = 2      # 2 = 놀이 상대 방식(2026-09-20). 예전 설정 파일을 한 번 옮길 때 쓴다
     memory_enabled: bool = True  # 아이가 지적·금지한 것을 약속으로 기억해 다음 대화에 지킨다 (memory.py)
     memory_max_per_kid: int = 20 # 아이 한 명당 약속 수 (넘치면 오래된 것부터 뺀다)
-    button_window_s: float = 6.0 # 호출 버튼을 누른 뒤 이 시간 안에 먼저 말한 아이가 부른 아이
+    button_window_s: float = 6.0 # (2026-09-24 부터 쓰지 않음: 버튼을 누르면 시간 제한 없이 기다린다. 옛 설정 파일 호환용)
     # 주소로 호출하기 (폰 매크로 앱이 DJI 버튼=볼륨키를 잡아 부를 때): /api/call?token=...
     # 처음 켤 때 저절로 만들어진다. 관리자 설정 → 마이크 탭에 주소가 나온다
     call_token: str = ""

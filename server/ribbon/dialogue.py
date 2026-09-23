@@ -60,7 +60,6 @@ class DialogueManager:
         self._bg: set = set()                          # 뒤에서 도는 약속 뽑기 작업
         self.queue = TurnQueue()
         self.ribbon_state: RibbonState = "idle"
-        self._listen_started = 0.0             # 버튼으로 듣기 시작한 시각 (아무 말 없으면 tick 이 idle 로 되돌린다)
         self.target_kid: Optional[str] = None
         self._history: Dict[str, List[Dict[str, str]]] = {}
         self._responding = False
@@ -198,7 +197,6 @@ class DialogueManager:
         듣기 시작하고, 듣는 동안 TV 오른쪽 위에 마이크 표시가 뜬다 (main._update_mic). 먼저 말하는 아이를 기다린다 (claim)"""
         log.info("호출 버튼: 채널 %s", [c + 1 for c in channels])
         self._barged = False
-        self._listen_started = time.time()
         await self.broadcast({"type": "button", "channels": channels})
         await self._set_ribbon("listening", None)
 
@@ -208,11 +206,10 @@ class DialogueManager:
                 and not (self.quiz and self.quiz.active))
 
     async def mic_closed(self) -> None:
-        """마이크가 아무 말 없이 닫혔다 (button_window 가 지나 채널이 sleep, main 이 부른다): 듣는 표시를 내린다.
-        전에는 "듣는 중"이 그대로 남아 버튼을 다시 눌러도 벗어날 수 없었다 (2026-09-23)"""
+        """마이크가 아무 말 없이 닫혔다 (채널이 sleep, main 이 부른다): 듣는 표시를 내린다.
+        버튼 방식은 시간 제한 없이 기다리므로(2026-09-24) 여기 오지 않고, 자동 방식의 이어 말하기가 끝날 때만 온다"""
         if self._idle_listening():
             log.info("아무 말이 없어 듣기 끝")
-            self._listen_started = 0.0
             await self._set_ribbon("idle", None)
             await self._broadcast_state()
 
@@ -509,11 +506,6 @@ class DialogueManager:
             kid = self._kid_for_channel(turn.channel)
             await self._say(persona.expired_notice(call_name(kid)), kid.id, final=True)
             await self._broadcast_state()
-        # 버튼으로 듣기 시작했는데 아무 말이 없다: 마이크가 소리를 안 보내 sleep 이 오지 않아도 여기서 접는다
-        if self._listen_started and self._idle_listening():
-            rc = self.store.config.ribbon if self.store else None
-            if now - self._listen_started > (rc.button_window_s if rc else 6.0) + 3.0:
-                await self.mic_closed()
         active = self.queue.active()
         idle_since = max(active.activated_at or 0.0, self._last_spoken_at) if active else 0.0
         if (active and not active.text and not self._responding and not self._speak_lock.locked()

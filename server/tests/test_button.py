@@ -1,6 +1,5 @@
 """DJI 호출 버튼: 누가 눌렀는지 몰라서 먼저 말한 채널이 부른 아이"""
 import asyncio
-import time
 
 import numpy as np
 
@@ -187,13 +186,23 @@ async def test_heard_nothing_folds_empty_turn():
     assert len(speaks(sent)) == before                    # 말없이
 
 
-async def test_tick_ends_idle_listening_after_window():
+async def test_tick_keeps_listening_without_time_limit():
+    """버튼을 눌러 듣기 시작하면 아이가 말할 때까지 시간 제한 없이 기다린다 (2026-09-24 요청)"""
     from test_dialogue_flow import make
 
     dm, _sent, _ = make()
     await dm.on_button([0])
     await dm.tick()
-    assert dm.ribbon_state == "listening"                 # 아직 기다리는 중
-    dm._listen_started = time.time() - 60
-    await dm.tick()
-    assert dm.ribbon_state == "idle"
+    assert dm.ribbon_state == "listening"
+
+
+def test_button_press_with_no_limit_keeps_channels_listening():
+    p = procs()
+    bc = ButtonCall(p)
+    bc.press([0, 1], float("inf"), now=0.0)
+    for pr in p.values():
+        pr.feed(QUIET, now=1e6)                              # 하루가 지나도
+    assert all(p[c].state == "listening" for c in (0, 1))
+    assert bc.check(0, now=1e6) is None and bc.armed == [0, 1]   # 아직 기다린다
+    p[0].feed(LOUD, now=1e6 + 1)
+    assert bc.check(0, now=1e6 + 1) == 0                     # 먼저 말한 아이

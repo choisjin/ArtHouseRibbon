@@ -1309,7 +1309,8 @@ async def _on_button() -> None:
     for proc in processors.values():
         proc.stop_listening()                    # 이어 말하기로 듣던 채널도 버튼 기준으로 새로
     await dialogue.on_button(channels)
-    armed = button_call.press(channels, store.config.ribbon.button_window_s)   # 바로 듣는다 (TV 에 마이크 표시)
+    # 바로 듣는다 (TV 에 마이크 표시). 시간 제한 없이 아이가 말할 때까지 기다리고, 닫는 것은 버튼(거기까지)으로만 (2026-09-24)
+    armed = button_call.press(channels, float("inf"))
     log.info("호출 버튼: 마이크 %s 듣는 중", [c + 1 for c in armed])
 
 
