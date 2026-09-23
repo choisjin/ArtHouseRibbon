@@ -46,6 +46,8 @@ export interface RibbonConfig {
   listen_cue?: "sound" | "voice";
   /** 이만큼(ms) 조용하면 아이 말이 끝난 것으로 본다 */
   end_silence_ms?: number;
+  /** 말로 보는 소리 크기 기준 (RMS 0~1). 클수록 마이크 가까이서 말해야 듣는다 */
+  speech_rms?: number;
   filler_enabled?: boolean;
   /** 아이가 지적·금지한 것을 약속으로 기억 (서버 memory.py) */
   memory_enabled?: boolean;

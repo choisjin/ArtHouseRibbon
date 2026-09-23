@@ -94,3 +94,25 @@ def test_hold_drops_speech_and_restarts_follow_up_window():
     assert proc.state == "listening"
     events = [k for f in _frames(_silence(0.1)) for k, _ in proc.feed(f, now=5.5)]
     assert "sleep" not in events and "utterance" not in events
+
+
+def test_segmenter_drops_quiet_utterance_far_away():
+    """가까이서 말한 것만 (2026-09-23): 기준을 겨우 넘는 소리(멀리서 한 말)는 버리고, 충분히 큰 소리만 넘긴다"""
+    seg = UtteranceSegmenter(EnergyVAD(0.04), 16000, silence_ms=500, max_utterance_s=10)
+    # 사인파 RMS = amp/√2. amp 0.08 -> RMS 0.057: 기준(0.04)은 넘지만 2배(0.08)에는 못 미친다
+    quiet = np.concatenate([_silence(0.5), _tone(1.0, amp=0.08), _silence(1.0)])
+    assert [u for u in (seg.push(f) for f in _frames(quiet)) if u is not None] == []
+    assert seg.dropped_quiet == 1
+    # amp 0.3 -> RMS 0.21: 가까이서 한 말
+    loud = np.concatenate([_silence(0.5), _tone(1.0, amp=0.3), _silence(1.0)])
+    utts = [u for u in (seg.push(f) for f in _frames(loud)) if u is not None]
+    assert len(utts) == 1
+    assert seg.last_peak > 0.08
+
+
+def test_channel_processor_set_speech_rms_changes_threshold():
+    proc = ChannelProcessor(0, Settings(), _AlwaysWake())
+    proc.set_speech_rms(0.1)
+    assert proc.segmenter.vad.rms_threshold == 0.1
+    proc.set_speech_rms(5.0)                     # 말도 안 되는 값은 잘라 둔다
+    assert proc.segmenter.vad.rms_threshold == 0.3

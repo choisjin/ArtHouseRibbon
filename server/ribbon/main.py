@@ -1203,6 +1203,7 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
     if proc is None:
         return
     proc.set_silence_ms(store.config.ribbon.end_silence_ms)   # 관리자 화면에서 바꾸면 바로
+    proc.set_speech_rms(store.config.ribbon.speech_rms)       # 가까이서 말한 것만
     proc.follow_up_s = 20.0 if (dialogue.quiz and dialogue.quiz.active) else None   # 게임 중엔 답할 시간을 넉넉히
     button_only = store.config.ribbon.input_mode == "button"   # 버튼을 누른 뒤 말 한 번만 받는다
     proc.single_shot = button_only
@@ -1227,13 +1228,20 @@ async def _handle_audio(channel: int, pcm: np.ndarray) -> None:
         peak = barge.end()           # 리본이가 한 번 말하는 동안 이 마이크에 들어온 가장 큰 소리 = 에코 크기
         log.info("리본이 목소리가 마이크 %d 에 들어온 크기: %.3f (끼어들기 기준 %.3f)", channel + 1, peak,
                  store.config.ribbon.barge_in_rms)
-    for kind, payload in proc.feed(pcm):
+    dropped_before = proc.segmenter.dropped_quiet
+    events = proc.feed(pcm)
+    if proc.segmenter.dropped_quiet != dropped_before:
+        log.info("말 조각 버림 (작아서, 멀리서 한 말?): 마이크 %d 크기 %.3f < 기준 %.3f×2", channel + 1,
+                 proc.segmenter.last_peak, store.config.ribbon.speech_rms)
+    for kind, payload in events:
         if kind == "wake":
             if kids.by_channel(channel) is None and any(k.mic_channel is not None for k in kids.all()):
                 proc.stop_listening()        # 아이가 없는 채널의 잡음으로 깨어나지 않는다 (예: 안 쓰는 4번)
                 continue
             _spawn(dialogue.on_wake(channel, by_voice=True))   # 깨운 말을 그대로 받는다 (리본아 없이)
         elif kind == "utterance" and payload is not None:
+            log.info("말 조각: 마이크 %d %.1f초, 크기 %.3f (기준 %.3f)", channel + 1,
+                     len(payload) / settings.sample_rate, proc.segmenter.last_peak, store.config.ribbon.speech_rms)
             _spawn(_transcribe_and_dispatch(channel, payload))
     won = button_call.check(channel)
     if won is not None:

@@ -35,6 +35,9 @@ class RibbonConfig(BaseModel):
     ack_enabled: bool = False    # 인식 직후 "응!" 같은 짧은 즉시 반응 (말이 많아져서 기본은 끔)
     listen_cue: str = "sound"    # 부르면: sound = "띵" 소리만 (바로 말할 수 있게) | voice = "응 ○○야, 말해봐."
     end_silence_ms: int = 1300   # 이만큼 조용하면 아이 말이 끝난 것으로 본다. 아이들은 말 중간에 오래 쉰다
+    # 말로 보는 소리 크기(RMS 0~1) 기준 (2026-09-23 "가까이서 말한 것만"). 이보다 작은 소리는 말이 아니라 잡음으로 본다.
+    # 발화 중 가장 큰 프레임이 이 값의 2배에도 못 미치면 통째로 버린다 (audio/vad.py). 서버 로그 "말 조각" 의 크기를 보고 맞춘다
+    speech_rms: float = 0.04
     dialogue_style: int = 2      # 2 = 놀이 상대 방식(2026-09-20). 예전 설정 파일을 한 번 옮길 때 쓴다
     memory_enabled: bool = True  # 아이가 지적·금지한 것을 약속으로 기억해 다음 대화에 지킨다 (memory.py)
     memory_max_per_kid: int = 20 # 아이 한 명당 약속 수 (넘치면 오래된 것부터 뺀다)

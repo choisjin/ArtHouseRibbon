@@ -48,6 +48,10 @@ class ChannelProcessor:
         samples = int(self.settings.sample_rate * max(300, min(4000, int(ms))) / 1000)
         self.segmenter.silence_samples = samples
 
+    def set_speech_rms(self, rms: float) -> None:
+        """말로 보는 소리 크기 기준 (관리자 설정 '가까이서 말한 것만'). 클수록 마이크 가까이서 말해야 듣는다"""
+        self.segmenter.vad.rms_threshold = max(0.005, min(0.3, float(rms)))
+
     def stop_listening(self) -> None:
         self.state = "idle"
         self.segmenter.reset()
